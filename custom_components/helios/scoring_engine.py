@@ -53,11 +53,13 @@ class ScoringEngine:
     # ------------------------------------------------------------------
     def _score_surplus(self, surplus_w: float) -> float:
         """Map PV surplus to [0..1].
-        0 W → 0.0, 500 W → ~0.5, 2000 W+ → 1.0 (trapezoid membership).
-        TODO: make thresholds configurable.
+        Trapezoid: ≤0 W → 0.0, ramp 0–500 W, plateau ≥500 W → 1.0.
         """
-        # TODO: implement fuzzy trapezoid
-        return 0.0
+        if surplus_w <= 0:
+            return 0.0
+        if surplus_w >= 500:
+            return 1.0
+        return surplus_w / 500.0
 
     def _score_tempo(self, color: str | None) -> float:
         """Map Tempo color to [0..1].
@@ -70,18 +72,39 @@ class ScoringEngine:
 
     def _score_soc(self, soc: float | None) -> float:
         """Map battery SOC to [0..1].
-        High SOC → less urgent to charge → lower score for charging devices.
-        Low SOC → more urgent to conserve battery → lower score for devices.
-        Sweet spot around 40-60% → highest score.
-        TODO: implement.
+        Trapezoid bell:
+          0–15 %  → 0.0        (too low, conserve battery)
+          15–40 % → ramp 0→1.0
+          40–60 % → 1.0        (sweet spot: use devices freely)
+          60–85 % → ramp 1→0.5
+          85–100% → 0.5        (battery full, no urgency)
+        None → neutral 0.5.
         """
-        # TODO: implement
+        if soc is None:
+            return 0.5
+        if soc <= 15:
+            return 0.0
+        if soc <= 40:
+            return (soc - 15) / 25.0
+        if soc <= 60:
+            return 1.0
+        if soc <= 85:
+            return 1.0 - 0.5 * (soc - 60) / 25.0
         return 0.5
 
     def _score_forecast(self, data: dict[str, Any]) -> float:
         """Score based on solar forecast for next hours.
-        Good forecast → defer non-urgent loads to later.
-        TODO: integrate forecast sensor.
+        Good forecast → defer non-urgent loads → lower score.
+        forecast_kwh in data:
+          ≥ 5 kWh expected → 0.3 (wait for sun)
+          0–5 kWh         → linear 0.5→0.3
+          No forecast entity → neutral 0.5.
         """
-        # TODO: implement
-        return 0.5
+        forecast_kwh = data.get("forecast_kwh")
+        if forecast_kwh is None:
+            return 0.5
+        # The more sun expected, the less urgent to use devices right now
+        if forecast_kwh >= 5.0:
+            return 0.3
+        # Below 5 kWh: linearly interpolate between 0.5 (no sun) and 0.3 (plenty of sun)
+        return 0.5 - 0.2 * (forecast_kwh / 5.0)

@@ -20,6 +20,9 @@ async def async_setup_entry(
         EnergyOptimizerSurplusSensor(coordinator, entry),
         EnergyOptimizerScoreSensor(coordinator, entry),
         EnergyOptimizerBatteryActionSensor(coordinator, entry),
+        EnergyOptimizerPVPowerSensor(coordinator, entry),
+        EnergyOptimizerGridPowerSensor(coordinator, entry),
+        EnergyOptimizerHousePowerSensor(coordinator, entry),
     ])
 
 
@@ -95,3 +98,54 @@ class EnergyOptimizerBatteryActionSensor(_BaseEOSensor):
     @property
     def native_value(self) -> str:
         return self.coordinator.battery_action
+
+
+class EnergyOptimizerPVPowerSensor(_BaseEOSensor):
+    """Reports total PV production in Watts."""
+
+    _attr_name = "EO PV power"
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry.entry_id}_pv_power"
+
+    @property
+    def native_value(self) -> float:
+        return self.coordinator.pv_power_w
+
+
+class EnergyOptimizerGridPowerSensor(_BaseEOSensor):
+    """Reports grid power in Watts (positive = import, negative = export)."""
+
+    _attr_name = "EO grid power"
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry.entry_id}_grid_power"
+
+    @property
+    def native_value(self) -> float:
+        return self.coordinator.grid_power_w
+
+
+class EnergyOptimizerHousePowerSensor(_BaseEOSensor):
+    """Reports total house consumption in Watts."""
+
+    _attr_name = "EO house power"
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry.entry_id}_house_power"
+
+    @property
+    def native_value(self) -> float:
+        return self.coordinator.house_power_w
