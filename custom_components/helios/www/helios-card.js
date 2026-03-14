@@ -1,19 +1,16 @@
 /**
  * helios-card — Lovelace card for the Helios Energy Optimizer
  *
- * Shows real-time energy flow between Solar, Grid, Battery and House,
- * along with the global optimization score and current mode.
- *
  * Config example:
  *   type: custom:helios-card
  *   entities:
- *     pv_power:       sensor.eo_pv_power
- *     grid_power:     sensor.eo_grid_power      # positive=import, negative=export
- *     house_power:    sensor.eo_house_power
- *     battery_soc:    sensor.my_battery_soc     # optional (any SOC sensor)
- *     score:          sensor.eo_global_score
- *     battery_action: sensor.eo_battery_action
- *     auto_mode:      switch.eo_auto_mode
+ *     pv_power:       sensor.helios_pv_power
+ *     grid_power:     sensor.helios_grid_power    # positive=import, negative=export
+ *     house_power:    sensor.helios_house_power
+ *     battery_soc:    sensor.my_battery_soc       # optional
+ *     score:          sensor.helios_global_score
+ *     battery_action: sensor.helios_battery_action
+ *     auto_mode:      switch.helios_auto_mode
  */
 
 class HeliosCard extends HTMLElement {
@@ -21,32 +18,32 @@ class HeliosCard extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._initialized = false;
+    this._hass = null;
+    this._config = null;
   }
 
   // ------------------------------------------------------------------ Config
   setConfig(config) {
-    if (!config.entities) {
-      throw new Error("helios-card: 'entities' is required");
-    }
-    this._config = config;
+    this._config = config || {};
     if (!this._initialized) {
       this._build();
     }
+    this._update();
   }
 
   // ------------------------------------------------------------------ hass
   set hass(hass) {
     this._hass = hass;
-    this._update();
+    if (this._initialized) {
+      this._update();
+    }
   }
 
   // ------------------------------------------------------------------ Helpers
   _num(entityId, fallback = 0) {
     if (!entityId || !this._hass) return fallback;
     const s = this._hass.states[entityId];
-    if (!s || s.state === "unavailable" || s.state === "unknown") {
-      return fallback;
-    }
+    if (!s || s.state === "unavailable" || s.state === "unknown") return fallback;
     const n = parseFloat(s.state);
     return isNaN(n) ? fallback : n;
   }
@@ -54,9 +51,7 @@ class HeliosCard extends HTMLElement {
   _str(entityId, fallback = null) {
     if (!entityId || !this._hass) return fallback;
     const s = this._hass.states[entityId];
-    if (!s || s.state === "unavailable" || s.state === "unknown") {
-      return fallback;
-    }
+    if (!s || s.state === "unavailable" || s.state === "unknown") return fallback;
     return s.state;
   }
 
@@ -77,24 +72,23 @@ class HeliosCard extends HTMLElement {
       <style>
         :host { display: block; }
 
-        ha-card {
+        .card {
+          background: var(--card-background-color, #fff);
+          border-radius: var(--ha-card-border-radius, 12px);
+          box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0,0,0,0.1));
           padding: 16px;
           font-family: var(--primary-font-family, Roboto, sans-serif);
           color: var(--primary-text-color);
         }
 
-        /* ---- Header ---- */
         .header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 4px;
+          margin-bottom: 8px;
         }
-        .title {
-          font-size: 15px;
-          font-weight: 600;
-          letter-spacing: 0.3px;
-        }
+        .title { font-size: 15px; font-weight: 600; letter-spacing: 0.3px; }
+
         .mode-btn {
           padding: 3px 11px;
           border-radius: 12px;
@@ -103,33 +97,25 @@ class HeliosCard extends HTMLElement {
           color: #fff;
           cursor: pointer;
           border: none;
+          background: #9E9E9E;
           transition: background 0.3s;
         }
 
-        /* ---- SVG energy flow ---- */
-        .flow-wrap {
-          width: 100%;
-          margin: 4px 0 8px;
-        }
+        .flow-wrap { width: 100%; margin: 4px 0 8px; }
         svg { width: 100%; height: auto; display: block; }
 
-        /* Flow line base */
         .fl {
           fill: none;
           stroke: #e0e0e0;
           stroke-width: 2.5;
           stroke-linecap: round;
         }
-        /* Active animated flow */
         .fl-on {
           stroke-dasharray: 8 5;
           animation: flowDash linear infinite;
         }
-        @keyframes flowDash {
-          to { stroke-dashoffset: -26; }
-        }
+        @keyframes flowDash { to { stroke-dashoffset: -26; } }
 
-        /* ---- Footer ---- */
         .footer {
           padding-top: 10px;
           border-top: 1px solid var(--divider-color, #e0e0e0);
@@ -157,6 +143,7 @@ class HeliosCard extends HTMLElement {
           border-radius: 4px;
           transition: width 0.6s ease, background 0.6s ease;
           width: 0%;
+          background: #9E9E9E;
         }
         .score-num {
           font-size: 12px;
@@ -164,8 +151,6 @@ class HeliosCard extends HTMLElement {
           min-width: 34px;
           text-align: right;
         }
-
-        /* Chips row */
         .chips { display: flex; gap: 7px; flex-wrap: wrap; }
         .chip {
           display: inline-flex;
@@ -178,32 +163,21 @@ class HeliosCard extends HTMLElement {
           border-radius: 12px;
         }
         .dot {
-          width: 8px;
-          height: 8px;
+          width: 8px; height: 8px;
           border-radius: 50%;
           flex-shrink: 0;
         }
       </style>
 
-      <ha-card>
-        <!-- Header -->
+      <div class="card">
         <div class="header">
           <div class="title">⚡ Helios</div>
-          <button class="mode-btn" id="mode-btn">—</button>
+          <button class="mode-btn" id="h-mode-btn">—</button>
         </div>
 
-        <!-- SVG energy flow diagram -->
-        <!--
-          Layout (300×185 viewBox):
-                     ☀️ PV  (150, 38)
-                      |
-          ⚡ Grid — 🏠 House — 🔋 Bat
-           (45,125)   (150,125)  (255,125)
-        -->
         <div class="flow-wrap">
           <svg viewBox="0 0 300 185" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <!-- Arrow markers, one per flow colour -->
               <marker id="h-arr-pv"      markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7Z" fill="#F9A825"/></marker>
               <marker id="h-arr-gin"     markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7Z" fill="#7B1FA2"/></marker>
               <marker id="h-arr-gout"    markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7Z" fill="#388E3C"/></marker>
@@ -211,20 +185,16 @@ class HeliosCard extends HTMLElement {
               <marker id="h-arr-bat-dch" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7Z" fill="#0288D1"/></marker>
             </defs>
 
-            <!-- ===== Flow lines ===== -->
-            <!-- PV → House (vertical) -->
-            <line id="h-line-pv" class="fl" x1="150" y1="64" x2="150" y2="97"/>
-            <text id="h-lbl-pv" x="157" y="83" font-size="9" fill="#E65100" text-anchor="start"></text>
+            <!-- Flow lines -->
+            <line id="h-line-pv"   class="fl" x1="150" y1="64"  x2="150" y2="97"/>
+            <line id="h-line-grid" class="fl" x1="73"  y1="125" x2="122" y2="125"/>
+            <line id="h-line-bat"  class="fl" x1="178" y1="125" x2="227" y2="125"/>
 
-            <!-- Grid ↔ House (horizontal left) -->
-            <line id="h-line-grid" class="fl" x1="73" y1="125" x2="122" y2="125"/>
-            <text id="h-lbl-grid" x="97" y="119" font-size="9" text-anchor="middle"></text>
+            <!-- Power labels on lines -->
+            <text id="h-lbl-pv"   x="157" y="83"  font-size="9" fill="#E65100" text-anchor="start"></text>
+            <text id="h-lbl-grid" x="97"  y="119" font-size="9" text-anchor="middle"></text>
+            <text id="h-lbl-bat"  x="203" y="119" font-size="9" text-anchor="middle"></text>
 
-            <!-- Battery ↔ House (horizontal right) -->
-            <line id="h-line-bat" class="fl" x1="178" y1="125" x2="227" y2="125"/>
-            <text id="h-lbl-bat" x="203" y="119" font-size="9" text-anchor="middle"></text>
-
-            <!-- ===== Nodes ===== -->
             <!-- PV — top center -->
             <circle cx="150" cy="38" r="27" fill="#FFF8E1" stroke="#F9A825" stroke-width="2"/>
             <text x="150" y="32" text-anchor="middle" font-size="18">☀️</text>
@@ -248,7 +218,6 @@ class HeliosCard extends HTMLElement {
           </svg>
         </div>
 
-        <!-- Footer: score bar + chips -->
         <div class="footer">
           <div class="score-row">
             <div class="lbl">Score</div>
@@ -257,12 +226,11 @@ class HeliosCard extends HTMLElement {
           </div>
           <div class="chips" id="h-chips"></div>
         </div>
-      </ha-card>
+      </div>
     `;
 
-    // Mode button click → toggle the switch entity
-    this.shadowRoot.getElementById("mode-btn").addEventListener("click", () => {
-      const entityId = this._config.entities?.auto_mode;
+    this.shadowRoot.getElementById("h-mode-btn").addEventListener("click", () => {
+      const entityId = this._config?.entities?.auto_mode;
       if (!entityId || !this._hass) return;
       const state = this._hass.states[entityId];
       if (!state) return;
@@ -276,67 +244,62 @@ class HeliosCard extends HTMLElement {
     this._initialized = true;
   }
 
-  // ------------------------------------------------------------------ Update (on every hass change)
+  // ------------------------------------------------------------------ Update
   _update() {
-    if (!this._initialized || !this._hass || !this._config) return;
+    if (!this._initialized) return;
 
-    const e = this._config.entities || {};
+    try {
+      this._doUpdate();
+    } catch (e) {
+      console.error("helios-card: error during update", e);
+    }
+  }
 
-    // --- Read values ---
+  _doUpdate() {
+    const e = this._config?.entities || {};
+
     const pv         = this._num(e.pv_power);
-    const grid        = this._num(e.grid_power);   // >0 import, <0 export
-    const house       = this._num(e.house_power);
-    const soc         = e.battery_soc ? this._num(e.battery_soc, null) : null;
-    const score       = this._num(e.score);
-    const battAction  = this._str(e.battery_action) ?? "idle";
-    const tempo       = this._attr(e.score, "tempo_color");
-    const modeAttr    = this._attr(e.score, "mode");
-    const switchState = this._str(e.auto_mode);
-    const mode        = modeAttr ?? (switchState === "on" ? "auto" : switchState === "off" ? "off" : null);
+    const grid       = this._num(e.grid_power);
+    const house      = this._num(e.house_power);
+    const soc        = e.battery_soc ? this._num(e.battery_soc, null) : null;
+    const score      = this._num(e.score);
+    const battAction = this._str(e.battery_action) ?? "idle";
+    const tempo      = this._attr(e.score, "tempo_color");
+    const modeAttr   = this._attr(e.score, "mode");
+    const switchSt   = this._str(e.auto_mode);
+    const mode       = modeAttr ?? (switchSt === "on" ? "auto" : switchSt === "off" ? "off" : null);
 
-    // --- Node values ---
+    // Node values
     this._txt("h-val-pv",    this._fmt(pv));
     this._txt("h-val-house", this._fmt(house));
 
     const gridSign = grid > 0 ? "+" : "";
     this._txt("h-val-grid", `${gridSign}${this._fmt(grid)}`);
-    this._css("h-node-grid", {
-      fill:   grid < 0 ? "#E8F5E9" : "#F3E5F5",
-      stroke: grid < 0 ? "#388E3C" : "#7B1FA2",
-    });
-    this._txtAttr("h-val-grid", "fill", grid < 0 ? "#2E7D32" : "#6A1B9A");
+    this._svgAttr("h-node-grid", "fill",   grid < 0 ? "#E8F5E9" : "#F3E5F5");
+    this._svgAttr("h-node-grid", "stroke", grid < 0 ? "#388E3C" : "#7B1FA2");
+    this._svgAttr("h-val-grid",  "fill",   grid < 0 ? "#2E7D32" : "#6A1B9A");
 
     this._txt("h-val-bat-soc", soc !== null ? `${Math.round(soc)}%` : "—");
-    const batActionLabel = { charge: "↑ charge", discharge: "↓ décharge", reserve: "🔒 réserve", idle: "—" };
-    this._txt("h-val-bat-action", batActionLabel[battAction] ?? battAction);
+    const batLabels = { charge: "↑ charge", discharge: "↓ décharge", reserve: "🔒 réserve", idle: "—" };
+    this._txt("h-val-bat-action", batLabels[battAction] ?? battAction);
+    this._svgAttr("h-node-bat", "stroke", battAction === "discharge" ? "#0288D1" : "#1565C0");
 
-    // Battery node border pulses when active
-    this._css("h-node-bat", {
-      stroke: battAction === "charge" ? "#1565C0" : battAction === "discharge" ? "#0288D1" : "#1565C0",
-    });
-
-    // --- PV → House flow ---
+    // PV → House
     this._flow("h-line-pv", "h-lbl-pv", {
-      active: pv > 10,
-      power: pv,
-      color: "#F9A825",
-      marker: "h-arr-pv",
+      active: pv > 10, power: pv, color: "#F9A825", marker: "h-arr-pv",
       x1: 150, y1: 64, x2: 150, y2: 97,
-      lblX: 157, lblY: 83, lblAnchor: "start",
-      lblColor: "#E65100",
+      lblX: 157, lblY: 83, lblAnchor: "start", lblColor: "#E65100",
     });
 
-    // --- Grid flow (direction depends on sign) ---
+    // Grid flow
     const gridAbs = Math.abs(grid);
     if (grid > 10) {
-      // Import: Grid → House
       this._flow("h-line-grid", "h-lbl-grid", {
         active: true, power: gridAbs, color: "#7B1FA2", marker: "h-arr-gin",
         x1: 73, y1: 125, x2: 122, y2: 125,
         lblX: 97, lblY: 119, lblAnchor: "middle", lblColor: "#7B1FA2",
       });
     } else if (grid < -10) {
-      // Export: House → Grid
       this._flow("h-line-grid", "h-lbl-grid", {
         active: true, power: gridAbs, color: "#388E3C", marker: "h-arr-gout",
         x1: 122, y1: 125, x2: 73, y2: 125,
@@ -346,20 +309,17 @@ class HeliosCard extends HTMLElement {
       this._flowOff("h-line-grid", "h-lbl-grid", 73, 125, 122, 125);
     }
 
-    // --- Battery flow ---
-    // Estimate battery power from energy balance: bat ≈ pv - house - grid
-    const batPowerEst = Math.abs(pv - house - grid);
-    if (battAction === "charge" && batPowerEst > 10) {
-      // House/PV → Battery
+    // Battery flow
+    const batPow = Math.abs(pv - house - grid);
+    if (battAction === "charge" && batPow > 10) {
       this._flow("h-line-bat", "h-lbl-bat", {
-        active: true, power: batPowerEst, color: "#1565C0", marker: "h-arr-bat-chg",
+        active: true, power: batPow, color: "#1565C0", marker: "h-arr-bat-chg",
         x1: 178, y1: 125, x2: 227, y2: 125,
         lblX: 203, lblY: 119, lblAnchor: "middle", lblColor: "#1565C0",
       });
-    } else if (battAction === "discharge" && batPowerEst > 10) {
-      // Battery → House
+    } else if (battAction === "discharge" && batPow > 10) {
       this._flow("h-line-bat", "h-lbl-bat", {
-        active: true, power: batPowerEst, color: "#0288D1", marker: "h-arr-bat-dch",
+        active: true, power: batPow, color: "#0288D1", marker: "h-arr-bat-dch",
         x1: 227, y1: 125, x2: 178, y2: 125,
         lblX: 203, lblY: 119, lblAnchor: "middle", lblColor: "#0288D1",
       });
@@ -367,24 +327,24 @@ class HeliosCard extends HTMLElement {
       this._flowOff("h-line-bat", "h-lbl-bat", 178, 125, 227, 125);
     }
 
-    // --- Score bar ---
+    // Score bar
     const scoreColor = score > 0.6 ? "#4CAF50" : score > 0.3 ? "#FF9800" : "#F44336";
     const bar = this.shadowRoot.getElementById("h-score-bar");
     if (bar) {
-      bar.style.width    = `${Math.round(score * 100)}%`;
+      bar.style.width      = `${Math.round(score * 100)}%`;
       bar.style.background = scoreColor;
     }
-    this._txt("h-score-num", score.toFixed(2));
+    this._txt("h-score-num", this._hass ? score.toFixed(2) : "—");
 
-    // --- Mode button ---
-    const btn = this.shadowRoot.getElementById("mode-btn");
+    // Mode button
+    const btn = this.shadowRoot.getElementById("h-mode-btn");
     if (btn) {
       const modeColors = { auto: "#4CAF50", off: "#F44336", manual: "#FF9800" };
       btn.style.background = modeColors[mode] ?? "#9E9E9E";
       btn.textContent = mode ? mode.toUpperCase() : "—";
     }
 
-    // --- Chips ---
+    // Chips
     const chips = [];
     if (tempo) {
       const tempoMap = { blue: ["#2196F3", "Bleu"], white: ["#9E9E9E", "Blanc"], red: ["#F44336", "Rouge"] };
@@ -410,12 +370,9 @@ class HeliosCard extends HTMLElement {
     if (!line) return;
 
     if (active && power > 10) {
-      // Speed: faster = more power (clamp between 0.4s and 3s)
       const speed = Math.max(0.4, Math.min(3.0, 2000 / Math.max(power, 100)));
-      line.setAttribute("x1", x1);
-      line.setAttribute("y1", y1);
-      line.setAttribute("x2", x2);
-      line.setAttribute("y2", y2);
+      line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+      line.setAttribute("x2", x2); line.setAttribute("y2", y2);
       line.setAttribute("stroke", color);
       line.setAttribute("marker-end", `url(#${marker})`);
       line.classList.add("fl-on");
@@ -435,10 +392,8 @@ class HeliosCard extends HTMLElement {
   _flowOff(lineId, lblId, x1, y1, x2, y2) {
     const line = this.shadowRoot.getElementById(lineId);
     if (line) {
-      line.setAttribute("x1", x1);
-      line.setAttribute("y1", y1);
-      line.setAttribute("x2", x2);
-      line.setAttribute("y2", y2);
+      line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+      line.setAttribute("x2", x2); line.setAttribute("y2", y2);
       line.setAttribute("stroke", "#e0e0e0");
       line.removeAttribute("marker-end");
       line.classList.remove("fl-on");
@@ -453,40 +408,39 @@ class HeliosCard extends HTMLElement {
     if (el) el.textContent = text;
   }
 
-  _txtAttr(id, attr, value) {
+  _svgAttr(id, attr, value) {
     const el = this.shadowRoot.getElementById(id);
     if (el) el.setAttribute(attr, value);
   }
 
-  _css(id, styles) {
-    const el = this.shadowRoot.getElementById(id);
-    if (!el) return;
-    for (const [k, v] of Object.entries(styles)) el.setAttribute(k, v);
-  }
-
-  // ------------------------------------------------------------------ Card metadata (Lovelace UI)
+  // ------------------------------------------------------------------ Card metadata
   static getStubConfig() {
     return {
       entities: {
-        pv_power:       "sensor.eo_pv_power",
-        grid_power:     "sensor.eo_grid_power",
-        house_power:    "sensor.eo_house_power",
-        battery_soc:    "",               // e.g. sensor.solaredge_battery_level
-        score:          "sensor.eo_global_score",
-        battery_action: "sensor.eo_battery_action",
-        auto_mode:      "switch.eo_auto_mode",
+        pv_power:       "sensor.helios_pv_power",
+        grid_power:     "sensor.helios_grid_power",
+        house_power:    "sensor.helios_house_power",
+        battery_soc:    "",
+        score:          "sensor.helios_global_score",
+        battery_action: "sensor.helios_battery_action",
+        auto_mode:      "switch.helios_auto_mode",
       },
     };
   }
+
+  getCardSize() { return 4; }
 }
 
-customElements.define("helios-card", HeliosCard);
+// Guard against double registration (script loaded twice)
+if (!customElements.get("helios-card")) {
+  customElements.define("helios-card", HeliosCard);
+}
 
-// Register card in Lovelace UI picker
 window.customCards = window.customCards || [];
-window.customCards.push({
-  type:        "helios-card",
-  name:        "Helios Energy Flow",
-  description: "Flux d'énergie solaire, batterie et réseau avec score de décision.",
-  preview:     true,
-});
+if (!window.customCards.find((c) => c.type === "helios-card")) {
+  window.customCards.push({
+    type:        "helios-card",
+    name:        "Helios Energy Flow",
+    description: "Flux d'énergie solaire, batterie et réseau avec score de décision.",
+  });
+}
