@@ -38,15 +38,23 @@ jobs:
             echo "Unrecognised version format: $current" >&2
             exit 1
           fi
-          echo "version=$next" >> "$GITHUB_OUTPUT"
+          # Skip if tag already exists (workflow ran twice on same state)
+          if git ls-remote --tags origin | grep -q "refs/tags/v${next}$"; then
+            echo "Tag v${next} already exists — skipping release."
+            echo "version=" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$next" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Update manifest version
+        if: steps.version.outputs.version != ''
         run: |
           jq --arg v "${{ steps.version.outputs.version }}" '.version = $v' \
             custom_components/helios/manifest.json > _tmp.json
           mv _tmp.json custom_components/helios/manifest.json
 
       - name: Commit and tag
+        if: steps.version.outputs.version != ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -57,6 +65,7 @@ jobs:
           git push origin "v${{ steps.version.outputs.version }}"
 
       - name: Create GitHub Release
+        if: steps.version.outputs.version != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "v${{ steps.version.outputs.version }}"
