@@ -246,26 +246,20 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_device_appliance(self, user_input: dict | None = None):
-        errors: dict[str, str] = {}
         if user_input is not None:
-            if not user_input.get(CONF_APPLIANCE_START_SCRIPT):
-                errors[CONF_APPLIANCE_START_SCRIPT] = "required"
-            if not user_input.get(CONF_APPLIANCE_READY_ENTITY):
-                errors[CONF_APPLIANCE_READY_ENTITY] = "required"
-            if not errors:
-                self._current_device.update(user_input)
-                return await self.async_step_device_common()
+            self._current_device.update(user_input)
+            return await self.async_step_device_common()
 
         return self.async_show_form(
             step_id="device_appliance",
             data_schema=vol.Schema({
-                vol.Required(CONF_APPLIANCE_READY_ENTITY): selector.EntitySelector(
+                vol.Optional(CONF_APPLIANCE_READY_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["input_boolean", "binary_sensor"])
                 ),
                 vol.Optional(CONF_APPLIANCE_PREPARE_SCRIPT): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="script")
                 ),
-                vol.Required(CONF_APPLIANCE_START_SCRIPT): selector.EntitySelector(
+                vol.Optional(CONF_APPLIANCE_START_SCRIPT): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="script")
                 ),
                 vol.Optional(CONF_APPLIANCE_POWER_ENTITY): selector.EntitySelector(
@@ -392,10 +386,12 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
 # ---------------------------------------------------------------------------
 
 class EnergyOptimizerOptionsFlow(OptionsFlow):
-    """Reconfigure without reinstalling — edits sources, battery and strategy."""
+    """Reconfigure without reinstalling — edits sources, battery, strategy and device scripts."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._entry = config_entry
+        self._devices: list[dict[str, Any]] = []
+        self._editing_device_idx: int = 0
 
     def _current(self, key: str, fallback: Any = None) -> Any:
         """Return current value from options (priority) or data."""
@@ -410,13 +406,15 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 return await self.async_step_battery()
             if section == "strategy":
                 return await self.async_step_strategy()
+            if section == "devices":
+                return await self.async_step_devices_select()
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
                 vol.Required("section"): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=["sources", "battery", "strategy"]
+                        options=["sources", "battery", "strategy", "devices"]
                     )
                 ),
             }),
@@ -493,6 +491,85 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 if self._current(k) is not None
             }),
             errors=errors,
+        )
+
+    async def async_step_devices_select(self, user_input: dict | None = None):
+        """Select which device to edit scripts for."""
+        self._devices = list(
+            self._entry.options.get(
+                CONF_DEVICES, self._entry.data.get(CONF_DEVICES, [])
+            )
+        )
+
+        if not self._devices:
+            # No devices configured — nothing to edit
+            return self.async_create_entry(data=self._entry.options)
+
+        if user_input is not None:
+            self._editing_device_idx = int(user_input["device_index"])
+            return await self.async_step_device_scripts()
+
+        device_options = [
+            {"value": str(i), "label": d.get(CONF_DEVICE_NAME, f"Appareil {i + 1}")}
+            for i, d in enumerate(self._devices)
+        ]
+
+        return self.async_show_form(
+            step_id="devices_select",
+            data_schema=vol.Schema({
+                vol.Required("device_index"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=device_options)
+                ),
+            }),
+        )
+
+    async def async_step_device_scripts(self, user_input: dict | None = None):
+        """Edit script/entity fields for the selected device."""
+        device = self._devices[self._editing_device_idx]
+        device_type = device.get(CONF_DEVICE_TYPE, "")
+
+        if user_input is not None:
+            # Strip empty strings (user cleared the field)
+            cleaned = {k: v for k, v in user_input.items() if v}
+            # Remove keys that were cleared
+            for key in (
+                CONF_APPLIANCE_READY_ENTITY,
+                CONF_APPLIANCE_PREPARE_SCRIPT,
+                CONF_APPLIANCE_START_SCRIPT,
+            ):
+                if key not in cleaned:
+                    device.pop(key, None)
+            device.update(cleaned)
+            self._devices[self._editing_device_idx] = device
+            new_options = {**self._entry.options, CONF_DEVICES: self._devices}
+            return self.async_create_entry(data=new_options)
+
+        if device_type != DEVICE_TYPE_APPLIANCE:
+            # Only appliances have configurable scripts for now
+            return self.async_create_entry(data=self._entry.options)
+
+        def _cur(key):
+            return device.get(key)
+
+        schema_fields: dict = {}
+        ready = _cur(CONF_APPLIANCE_READY_ENTITY)
+        prepare = _cur(CONF_APPLIANCE_PREPARE_SCRIPT)
+        start = _cur(CONF_APPLIANCE_START_SCRIPT)
+
+        schema_fields[vol.Optional(CONF_APPLIANCE_READY_ENTITY, **({} if ready is None else {"default": ready}))] = (
+            selector.EntitySelector(selector.EntitySelectorConfig(domain=["input_boolean", "binary_sensor"]))
+        )
+        schema_fields[vol.Optional(CONF_APPLIANCE_PREPARE_SCRIPT, **({} if prepare is None else {"default": prepare}))] = (
+            selector.EntitySelector(selector.EntitySelectorConfig(domain="script"))
+        )
+        schema_fields[vol.Optional(CONF_APPLIANCE_START_SCRIPT, **({} if start is None else {"default": start}))] = (
+            selector.EntitySelector(selector.EntitySelectorConfig(domain="script"))
+        )
+
+        return self.async_show_form(
+            step_id="device_scripts",
+            data_schema=vol.Schema(schema_fields),
+            description_placeholders={"device_name": device.get(CONF_DEVICE_NAME, "")},
         )
 
 

@@ -42,7 +42,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         )
         self.scoring_engine   = ScoringEngine(entry.data)
         self.battery_strategy = BatteryStrategy(entry.data)
-        self.device_manager   = DeviceManager(hass, entry.data.get(CONF_DEVICES, []), entry.data)
+        devices = entry.options.get(CONF_DEVICES, entry.data.get(CONF_DEVICES, []))
+        self.device_manager   = DeviceManager(hass, devices, entry.data)
 
         # Latest computed state — exposed to sensor/switch entities
         self.pv_power_w:      float       = 0.0
