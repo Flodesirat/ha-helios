@@ -1,105 +1,676 @@
-"""Device manager — maintains device registry and dispatches on/off commands."""
+"""Device manager — full dispatch engine with per-device scoring."""
 from __future__ import annotations
 
 import logging
-from datetime import time
+import time as time_mod
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 
 from .const import (
+    # Device types
+    DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_HVAC,
+    DEVICE_TYPE_APPLIANCE, DEVICE_TYPE_POOL,
+    # Common device config
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
-    CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY, CONF_DEVICE_MIN_ON_MINUTES,
-    CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
+    CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
+    CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
+    CONF_DEVICE_INTERRUPTIBLE, CONF_DEVICE_MUST_RUN_DAILY, CONF_DEVICE_DEADLINE,
+    CONF_DEVICE_WEIGHT_PRIORITY, CONF_DEVICE_WEIGHT_FIT, CONF_DEVICE_WEIGHT_URGENCY,
+    # EV
     CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
-    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET,
+    CONF_EV_DEPARTURE_TIME, CONF_EV_MIN_CHARGE_POWER_W, CONF_EV_BATTERY_CAPACITY_WH,
+    # Water heater
+    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
+    # HVAC
     CONF_HVAC_TEMP_ENTITY, CONF_HVAC_SETPOINT_ENTITY,
-    DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_HVAC, DEVICE_TYPE_APPLIANCE,
+    CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
+    HVAC_MODE_HEAT, HVAC_MODE_COOL,
+    # Pool
+    CONF_POOL_FILTRATION_ENTITY, CONF_POOL_SPLIT_SESSIONS,
+    # Appliance
+    CONF_APPLIANCE_READY_ENTITY, CONF_APPLIANCE_PREPARE_SCRIPT,
+    CONF_APPLIANCE_START_SCRIPT, CONF_APPLIANCE_POWER_ENTITY,
+    CONF_APPLIANCE_POWER_THRESHOLD_W, CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
+    APPLIANCE_STATE_IDLE, APPLIANCE_STATE_READY, APPLIANCE_STATE_PREPARING,
+    APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_DONE,
+    # General
+    CONF_SCAN_INTERVAL_MINUTES, CONF_DISPATCH_THRESHOLD,
+    # Defaults
+    DEFAULT_DEVICE_PRIORITY, DEFAULT_DEVICE_MIN_ON_MINUTES,
+    DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
+    DEFAULT_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_FIT, DEFAULT_DEVICE_WEIGHT_URGENCY,
+    DEFAULT_EV_SOC_TARGET, DEFAULT_EV_MIN_CHARGE_POWER_W,
+    DEFAULT_WH_TEMP_TARGET, DEFAULT_WH_TEMP_MIN,
+    DEFAULT_HVAC_HYSTERESIS_K, DEFAULT_HVAC_MIN_OFF_MINUTES, HVAC_MODE_HEAT,
+    DEFAULT_POOL_SPLIT_SESSIONS,
+    DEFAULT_APPLIANCE_POWER_THRESHOLD_W, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES,
+    DEFAULT_SCAN_INTERVAL, DEFAULT_DISPATCH_THRESHOLD,
+    STORAGE_KEY, STORAGE_VERSION,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
+# How long (seconds) power must stay below threshold to confirm cycle ended
+_APPLIANCE_LOW_POWER_CONFIRM_S = 180
+
 
 class ManagedDevice:
-    """Represents one configurable device."""
+    """Represents one controllable device with its full configuration."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.name: str = config[CONF_DEVICE_NAME]
-        self.device_type: str = config[CONF_DEVICE_TYPE]
-        self.switch_entity: str = config[CONF_DEVICE_SWITCH_ENTITY]
-        self.power_w: float = config[CONF_DEVICE_POWER_W]
-        self.priority: int = config.get(CONF_DEVICE_PRIORITY, 5)
-        self.min_on_minutes: int = config.get(CONF_DEVICE_MIN_ON_MINUTES, 30)
-        self.allowed_start: str = config.get(CONF_DEVICE_ALLOWED_START, "00:00")
-        self.allowed_end: str   = config.get(CONF_DEVICE_ALLOWED_END,   "23:59")
+        # ---- Common ----
+        self.name: str          = config[CONF_DEVICE_NAME]
+        self.device_type: str   = config[CONF_DEVICE_TYPE]
+        self.switch_entity: str | None = config.get(CONF_DEVICE_SWITCH_ENTITY)
+        self.power_w: float     = float(config.get(CONF_DEVICE_POWER_W, 0))
+        self.priority: int      = int(config.get(CONF_DEVICE_PRIORITY, DEFAULT_DEVICE_PRIORITY))
+        self.min_on_minutes: int = int(config.get(CONF_DEVICE_MIN_ON_MINUTES, DEFAULT_DEVICE_MIN_ON_MINUTES))
+        self.allowed_start: str = config.get(CONF_DEVICE_ALLOWED_START, DEFAULT_ALLOWED_START)
+        self.allowed_end: str   = config.get(CONF_DEVICE_ALLOWED_END,   DEFAULT_ALLOWED_END)
+        self.must_run_daily: bool = bool(config.get(CONF_DEVICE_MUST_RUN_DAILY, False))
+        self.deadline: str | None = config.get(CONF_DEVICE_DEADLINE)
 
-        # Type-specific
-        self.ev_soc_entity:       str | None = config.get(CONF_EV_SOC_ENTITY)
-        self.ev_plugged_entity:   str | None = config.get(CONF_EV_PLUGGED_ENTITY)
-        self.ev_soc_target:       float      = config.get(CONF_EV_SOC_TARGET, 80)
-        self.wh_temp_entity:      str | None = config.get(CONF_WH_TEMP_ENTITY)
-        self.wh_temp_target:      float      = config.get(CONF_WH_TEMP_TARGET, 55)
-        self.hvac_temp_entity:    str | None = config.get(CONF_HVAC_TEMP_ENTITY)
-        self.hvac_setpoint_entity:str | None = config.get(CONF_HVAC_SETPOINT_ENTITY)
+        # Interruptible is derived from device type (explicit override allowed)
+        _interruptible_default = (self.device_type != DEVICE_TYPE_APPLIANCE)
+        self.interruptible: bool = bool(config.get(CONF_DEVICE_INTERRUPTIBLE, _interruptible_default))
 
-        # Runtime state
-        self.is_on: bool = False
-        self.on_since_minutes: float = 0.0
-        self.blocked_until: float | None = None  # epoch timestamp
+        # ---- Per-device dispatch weights ----
+        self.w_priority: float = float(config.get(CONF_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_PRIORITY))
+        self.w_fit: float      = float(config.get(CONF_DEVICE_WEIGHT_FIT,      DEFAULT_DEVICE_WEIGHT_FIT))
+        self.w_urgency: float  = float(config.get(CONF_DEVICE_WEIGHT_URGENCY,  DEFAULT_DEVICE_WEIGHT_URGENCY))
+
+        # ---- EV ----
+        self.ev_soc_entity: str | None       = config.get(CONF_EV_SOC_ENTITY)
+        self.ev_plugged_entity: str | None   = config.get(CONF_EV_PLUGGED_ENTITY)
+        self.ev_soc_target: float            = float(config.get(CONF_EV_SOC_TARGET, DEFAULT_EV_SOC_TARGET))
+        self.ev_departure_time: str | None   = config.get(CONF_EV_DEPARTURE_TIME)
+        self.ev_min_charge_power_w: float    = float(config.get(CONF_EV_MIN_CHARGE_POWER_W, DEFAULT_EV_MIN_CHARGE_POWER_W))
+        self.ev_battery_capacity_wh: float | None = (
+            float(config[CONF_EV_BATTERY_CAPACITY_WH]) if config.get(CONF_EV_BATTERY_CAPACITY_WH) else None
+        )
+
+        # ---- Water heater ----
+        self.wh_temp_entity: str | None = config.get(CONF_WH_TEMP_ENTITY)
+        self.wh_temp_target: float      = float(config.get(CONF_WH_TEMP_TARGET, DEFAULT_WH_TEMP_TARGET))
+        self.wh_temp_min: float         = float(config.get(CONF_WH_TEMP_MIN,    DEFAULT_WH_TEMP_MIN))
+
+        # ---- HVAC ----
+        self.hvac_temp_entity: str | None     = config.get(CONF_HVAC_TEMP_ENTITY)
+        self.hvac_setpoint_entity: str | None = config.get(CONF_HVAC_SETPOINT_ENTITY)
+        self.hvac_mode: str                   = config.get(CONF_HVAC_MODE, HVAC_MODE_HEAT)
+        self.hvac_hysteresis_k: float         = float(config.get(CONF_HVAC_HYSTERESIS_K, DEFAULT_HVAC_HYSTERESIS_K))
+        self.hvac_min_off_minutes: int        = int(config.get(CONF_HVAC_MIN_OFF_MINUTES, DEFAULT_HVAC_MIN_OFF_MINUTES))
+
+        # ---- Pool ----
+        self.pool_filtration_entity: str | None = config.get(CONF_POOL_FILTRATION_ENTITY)
+        self.pool_split_sessions: bool          = bool(config.get(CONF_POOL_SPLIT_SESSIONS, DEFAULT_POOL_SPLIT_SESSIONS))
+
+        # ---- Appliance ----
+        self.appliance_ready_entity: str | None   = config.get(CONF_APPLIANCE_READY_ENTITY)
+        self.appliance_prepare_script: str | None = config.get(CONF_APPLIANCE_PREPARE_SCRIPT)
+        self.appliance_start_script: str | None   = config.get(CONF_APPLIANCE_START_SCRIPT)
+        self.appliance_power_entity: str | None   = config.get(CONF_APPLIANCE_POWER_ENTITY)
+        self.appliance_power_threshold_w: float   = float(config.get(
+            CONF_APPLIANCE_POWER_THRESHOLD_W, DEFAULT_APPLIANCE_POWER_THRESHOLD_W
+        ))
+        self.appliance_cycle_duration_minutes: int = int(config.get(
+            CONF_APPLIANCE_CYCLE_DURATION_MINUTES, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES
+        ))
+
+        # ---- Runtime state ----
+        self.is_on: bool                      = False
+        self.turned_on_at: float | None       = None  # epoch seconds
+        self.turned_off_at: float | None      = None
+
+        # Pool — daily run tracking (persisted externally)
+        self.pool_daily_run_minutes: float    = 0.0
+        self.pool_last_date: date | None      = None
+
+        # Appliance state machine
+        self.appliance_state: str             = APPLIANCE_STATE_IDLE
+        self.appliance_cycle_start: float | None = None
+        self.appliance_low_power_since: float | None = None
 
     # ------------------------------------------------------------------
-    # Eligibility checks
+    # Allowed time window
     # ------------------------------------------------------------------
     def is_in_allowed_window(self, now: time) -> bool:
-        """Return True if current time is within the device's allowed schedule."""
-        # TODO: implement
-        return True
+        """True if *now* falls within [allowed_start, allowed_end]."""
+        try:
+            sh, sm = map(int, self.allowed_start.split(":"))
+            eh, em = map(int, self.allowed_end.split(":"))
+            start = time(sh, sm)
+            end   = time(eh, em)
+        except (ValueError, AttributeError):
+            return True
 
+        if start <= end:
+            return start <= now <= end
+        # Overnight window (e.g. 22:00–06:00)
+        return now >= start or now <= end
+
+    # ------------------------------------------------------------------
+    # Satisfaction — has the device reached its target?
+    # ------------------------------------------------------------------
     def is_satisfied(self, hass: HomeAssistant) -> bool:
-        """Return True if the device has already reached its target (SOC, temp…).
-        Satisfied devices should not be turned on even with high score.
-        """
-        # TODO: per-type satisfaction check
+        if self.device_type == DEVICE_TYPE_EV:
+            if not self._state_bool(hass, self.ev_plugged_entity, fallback=True):
+                return True  # car not plugged → nothing to do
+            return self._state_float(hass, self.ev_soc_entity) >= self.ev_soc_target
+
+        if self.device_type == DEVICE_TYPE_WATER_HEATER:
+            return self._state_float(hass, self.wh_temp_entity) >= self.wh_temp_target
+
+        if self.device_type == DEVICE_TYPE_HVAC:
+            current  = self._state_float(hass, self.hvac_temp_entity)
+            setpoint = self._state_float(hass, self.hvac_setpoint_entity)
+            if self.hvac_mode == HVAC_MODE_HEAT:
+                return current >= setpoint - self.hvac_hysteresis_k
+            return current <= setpoint + self.hvac_hysteresis_k  # cool
+
+        if self.device_type == DEVICE_TYPE_POOL:
+            return self.pool_daily_run_minutes >= self._pool_required_minutes(hass)
+
+        if self.device_type == DEVICE_TYPE_APPLIANCE:
+            # Appliance is "satisfied" when it's not waiting to run
+            return self.appliance_state in (APPLIANCE_STATE_IDLE, APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_DONE)
+
         return False
 
-    def device_score_modifier(self, hass: HomeAssistant) -> float:
-        """Return a [0..1] modifier based on device-specific urgency.
-        EV: low SOC → high modifier. Water heater: low temp → high modifier.
-        """
-        # TODO: implement per type
-        return 1.0
+    # ------------------------------------------------------------------
+    # Must-run override — ignore score, turn on unconditionally
+    # ------------------------------------------------------------------
+    def must_run_now(self, hass: HomeAssistant) -> bool:
+        if self.device_type == DEVICE_TYPE_WATER_HEATER:
+            # Below legionella threshold → force heating regardless of surplus
+            return self._state_float(hass, self.wh_temp_entity) < self.wh_temp_min
 
+        if self.device_type == DEVICE_TYPE_POOL:
+            # Not enough time left today to meet the filtration quota
+            required_m = self._pool_required_minutes(hass)
+            deficit_m  = max(0.0, required_m - self.pool_daily_run_minutes)
+            if deficit_m <= 0:
+                return False
+            now      = datetime.now()
+            midnight = datetime.combine(now.date() + timedelta(days=1), time(0, 0))
+            minutes_left = (midnight - now).total_seconds() / 60
+            return deficit_m >= minutes_left
+
+        return False
+
+    # ------------------------------------------------------------------
+    # Urgency modifier [0..1] — how urgent is it to run this device now?
+    # ------------------------------------------------------------------
+    def urgency_modifier(self, hass: HomeAssistant) -> float:
+        if self.device_type == DEVICE_TYPE_EV:
+            soc = self._state_float(hass, self.ev_soc_entity, fallback=self.ev_soc_target)
+            soc_deficit      = max(0.0, self.ev_soc_target - soc) / max(self.ev_soc_target, 1)
+            departure_urgency = self._deadline_urgency(
+                self.ev_departure_time,
+                energy_wh=self.ev_battery_capacity_wh,
+                power_w=self.power_w or 3700,
+            )
+            return min(1.0, 0.6 * soc_deficit + 0.4 * departure_urgency)
+
+        if self.device_type == DEVICE_TYPE_WATER_HEATER:
+            temp      = self._state_float(hass, self.wh_temp_entity)
+            temp_range = max(self.wh_temp_target - self.wh_temp_min, 1.0)
+            deficit   = max(0.0, self.wh_temp_target - temp)
+            return min(1.0, deficit / temp_range)
+
+        if self.device_type == DEVICE_TYPE_HVAC:
+            current  = self._state_float(hass, self.hvac_temp_entity)
+            setpoint = self._state_float(hass, self.hvac_setpoint_entity)
+            deviation = abs(setpoint - current)
+            return min(1.0, deviation / 3.0)  # max urgency at 3 °C off-target
+
+        if self.device_type == DEVICE_TYPE_POOL:
+            required_m = self._pool_required_minutes(hass)
+            if required_m <= 0:
+                return 0.0
+            deficit_m = max(0.0, required_m - self.pool_daily_run_minutes)
+            now      = datetime.now()
+            midnight = datetime.combine(now.date() + timedelta(days=1), time(0, 0))
+            minutes_left = max(1.0, (midnight - now).total_seconds() / 60)
+            return min(1.0, deficit_m / minutes_left)
+
+        if self.device_type == DEVICE_TYPE_APPLIANCE:
+            if self.appliance_state != APPLIANCE_STATE_READY:
+                return 0.0
+            energy_wh = (
+                (self.appliance_cycle_duration_minutes or DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES)
+                / 60 * self.power_w
+            )
+            return self._deadline_urgency(self.deadline, energy_wh=energy_wh, power_w=self.power_w)
+
+        return 0.5  # neutral for unknown types
+
+    # ------------------------------------------------------------------
+    # Fit score [0..1] — how well does device power match available surplus?
+    # ------------------------------------------------------------------
+    @staticmethod
+    def compute_fit_score(
+        device_power_w: float,
+        surplus_w: float,
+        bat_available_w: float,
+    ) -> float:
+        """
+        Zone 1 — device ≤ surplus (solar covers it, no battery needed):
+            fit = device_power / surplus   [0..1]
+            → rewards devices that absorb more of the available solar
+
+        Zone 2 — surplus < device ≤ surplus + bat_available (battery helps):
+            fit = 1.0 − 0.4 × (battery_fraction)   [0.6..1.0]
+            → acceptable, penalised proportionally to battery usage
+
+        Zone 3 — device > surplus + bat_available (grid import needed):
+            fit = 0.4 × (1 − grid_fraction)   [0..0.4]
+            → heavily penalised, only selected as last resort
+        """
+        if device_power_w <= 0:
+            return 0.0
+        effective = surplus_w + bat_available_w
+        if effective <= 0:
+            return 0.0
+
+        if device_power_w <= surplus_w:
+            return device_power_w / max(surplus_w, 1.0)
+
+        if device_power_w <= effective:
+            bat_fraction = (device_power_w - surplus_w) / max(bat_available_w, 1.0)
+            return 1.0 - 0.4 * bat_fraction
+
+        grid_import   = device_power_w - effective
+        grid_fraction = grid_import / device_power_w
+        return max(0.0, 0.4 * (1.0 - grid_fraction))
+
+    # ------------------------------------------------------------------
+    # Composite effective score [0..1]
+    # ------------------------------------------------------------------
+    def effective_score(
+        self,
+        hass: HomeAssistant,
+        surplus_w: float,
+        bat_available_w: float,
+    ) -> float:
+        priority_score = self.priority / 10.0
+        fit     = self.compute_fit_score(self.power_w, surplus_w, bat_available_w)
+        urgency = self.urgency_modifier(hass)
+
+        total_w = self.w_priority + self.w_fit + self.w_urgency
+        if total_w <= 0:
+            return 0.0
+
+        return (
+            self.w_priority * priority_score
+            + self.w_fit     * fit
+            + self.w_urgency * urgency
+        ) / total_w
+
+    # ------------------------------------------------------------------
+    # Pool helpers
+    # ------------------------------------------------------------------
+    def update_pool_run_time(self, scan_interval_minutes: float, today: date) -> None:
+        """Called each coordinator cycle. Resets counter only at date change."""
+        if self.pool_last_date != today:
+            self.pool_daily_run_minutes = 0.0
+            self.pool_last_date = today
+        if self.is_on:
+            self.pool_daily_run_minutes += scan_interval_minutes
+
+    def _pool_required_minutes(self, hass: HomeAssistant) -> float:
+        if not self.pool_filtration_entity:
+            return 0.0
+        state = hass.states.get(self.pool_filtration_entity)
+        if state is None or state.state in ("unavailable", "unknown"):
+            return 0.0
+        try:
+            return float(state.state) * 60.0  # hours → minutes
+        except ValueError:
+            return 0.0
+
+    # ------------------------------------------------------------------
+    # Deadline / departure urgency helper
+    # ------------------------------------------------------------------
+    def _deadline_urgency(
+        self,
+        deadline_str: str | None,
+        energy_wh: float | None,
+        power_w: float,
+    ) -> float:
+        """Returns [0..1] — rises as deadline approaches.
+
+        0.3 baseline when no deadline; 1.0 when no time left.
+        """
+        if not deadline_str:
+            return 0.3
+
+        try:
+            h, m = map(int, deadline_str.split(":"))
+            now         = datetime.now()
+            deadline_dt = datetime.combine(now.date(), time(h, m))
+            if deadline_dt <= now:
+                deadline_dt += timedelta(days=1)  # already passed today → tomorrow
+
+            seconds_left = (deadline_dt - now).total_seconds()
+
+            if energy_wh and power_w:
+                seconds_needed = (energy_wh / power_w) * 3600
+            elif self.appliance_cycle_duration_minutes:
+                seconds_needed = self.appliance_cycle_duration_minutes * 60
+            else:
+                seconds_needed = 3600  # 1 h fallback
+
+            margin = seconds_left - seconds_needed
+            if margin <= 0:
+                return 1.0
+            if margin < 3_600:       # less than 1 h margin
+                return 0.8
+            if margin < 10_800:      # less than 3 h margin — ramp 0.3→0.8
+                return 0.3 + 0.5 * (1.0 - margin / 10_800)
+            return 0.3
+
+        except (ValueError, AttributeError):
+            return 0.3
+
+    # ------------------------------------------------------------------
+    # HA state readers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _state_float(
+        hass: HomeAssistant,
+        entity_id: str | None,
+        fallback: float = 0.0,
+    ) -> float:
+        if not entity_id:
+            return fallback
+        s = hass.states.get(entity_id)
+        if s is None or s.state in ("unavailable", "unknown"):
+            return fallback
+        try:
+            return float(s.state)
+        except ValueError:
+            return fallback
+
+    @staticmethod
+    def _state_bool(
+        hass: HomeAssistant,
+        entity_id: str | None,
+        fallback: bool = True,
+    ) -> bool:
+        if not entity_id:
+            return fallback
+        s = hass.states.get(entity_id)
+        if s is None:
+            return fallback
+        return s.state in ("on", "true", "home", "connected", "plugged_in", "1")
+
+
+# ===========================================================================
+# DeviceManager
+# ===========================================================================
 
 class DeviceManager:
-    """Manages the full list of devices and dispatches actions."""
+    """Orchestrates all managed devices: scoring, dispatch, state machines."""
 
-    def __init__(self, hass: HomeAssistant, devices_config: list[dict]) -> None:
-        self.devices: list[ManagedDevice] = [
-            ManagedDevice(cfg) for cfg in devices_config
-        ]
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        devices_config: list[dict[str, Any]],
+        config: dict[str, Any],
+    ) -> None:
+        self.devices: list[ManagedDevice] = [ManagedDevice(c) for c in devices_config]
+        self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self._scan_interval: float = float(config.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL))
+        self._dispatch_threshold: float = float(config.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD))
 
-    async def async_dispatch(self, hass: HomeAssistant, score_input: dict[str, Any]) -> None:
-        """Rank eligible devices and turn them on/off based on available surplus.
+    # ------------------------------------------------------------------
+    # Startup — restore persisted pool run data
+    # ------------------------------------------------------------------
+    async def async_setup(self) -> None:
+        """Load pool daily run counters from HA storage."""
+        data: dict = await self._store.async_load() or {}
+        today = date.today()
+        for device in self.devices:
+            if device.device_type != DEVICE_TYPE_POOL:
+                continue
+            stored = data.get(device.name, {})
+            stored_date_str: str | None = stored.get("date")
+            if stored_date_str:
+                try:
+                    stored_date = date.fromisoformat(stored_date_str)
+                    if stored_date == today:
+                        device.pool_daily_run_minutes = float(stored.get("minutes", 0.0))
+                        device.pool_last_date = today
+                        _LOGGER.debug(
+                            "Pool '%s': restored %.1f min for today",
+                            device.name, device.pool_daily_run_minutes,
+                        )
+                except ValueError:
+                    pass
 
-        Algorithm (to implement):
-        1. Compute each device's effective score = global_score × priority_weight × device_modifier
-        2. Sort descending
-        3. Greedily assign surplus_w to devices (highest score first)
-        4. Devices that fit within surplus → turn ON
-        5. Devices that exceed available power → turn OFF
-        6. Respect min_on_minutes (don't turn off a device that just started)
-        """
-        # TODO: implement dispatch loop
-        pass
+    async def _async_save_pool_data(self) -> None:
+        """Persist pool daily run counters (called after each update)."""
+        data: dict = {}
+        for device in self.devices:
+            if device.device_type == DEVICE_TYPE_POOL:
+                data[device.name] = {
+                    "date": (device.pool_last_date or date.today()).isoformat(),
+                    "minutes": device.pool_daily_run_minutes,
+                }
+        if data:
+            await self._store.async_save(data)
 
-    async def _async_set_device(self, hass: HomeAssistant, device: ManagedDevice, on: bool) -> None:
-        """Call switch.turn_on or switch.turn_off for a device."""
-        service = "turn_on" if on else "turn_off"
-        await hass.services.async_call(
-            "homeassistant",
-            service,
-            {"entity_id": device.switch_entity},
-            blocking=False,
-        )
+    # ------------------------------------------------------------------
+    # Main dispatch loop — called each coordinator cycle
+    # ------------------------------------------------------------------
+    async def async_dispatch(
+        self,
+        hass: HomeAssistant,
+        score_input: dict[str, Any],
+    ) -> None:
+        global_score:   float = score_input.get("global_score",   0.0)
+        surplus_w:      float = score_input.get("surplus_w",      0.0)
+        bat_available_w: float = score_input.get("bat_available_w", 0.0)
+        today = date.today()
+        now   = datetime.now().time()
+
+        # ---- Update pool run counters ----
+        pool_changed = False
+        for device in self.devices:
+            if device.device_type == DEVICE_TYPE_POOL:
+                before = device.pool_daily_run_minutes
+                device.update_pool_run_time(self._scan_interval, today)
+                if device.pool_daily_run_minutes != before:
+                    pool_changed = True
+        if pool_changed:
+            await self._async_save_pool_data()
+
+        # ---- Collect must-run overrides ----
+        must_run = {d for d in self.devices if d.must_run_now(hass)}
+
+        # ---- Gate: skip normal dispatch if global score too low ----
+        if global_score < self._dispatch_threshold and not must_run:
+            for device in self.devices:
+                if device.device_type == DEVICE_TYPE_APPLIANCE:
+                    continue  # appliance state machine runs regardless
+                if device.is_on and device.interruptible and self._min_on_elapsed(device):
+                    await self._async_set_switch(hass, device, False)
+            return
+
+        # ---- Score all eligible devices ----
+        scored: list[tuple[float, ManagedDevice]] = []
+
+        for device in self.devices:
+            # Appliance state machine is handled separately
+            if device.device_type == DEVICE_TYPE_APPLIANCE:
+                await self._async_handle_appliance(
+                    hass, device, global_score, surplus_w, bat_available_w
+                )
+                continue
+
+            # Outside allowed window → turn off
+            if not device.is_in_allowed_window(now):
+                if device.is_on and device.interruptible and self._min_on_elapsed(device):
+                    await self._async_set_switch(hass, device, False)
+                continue
+
+            # Must-run override → force on immediately
+            if device in must_run:
+                if not device.is_on:
+                    await self._async_set_switch(hass, device, True)
+                continue
+
+            # Already satisfied → turn off
+            if device.is_satisfied(hass):
+                if device.is_on and device.interruptible and self._min_on_elapsed(device):
+                    await self._async_set_switch(hass, device, False)
+                continue
+
+            score = device.effective_score(hass, surplus_w, bat_available_w)
+            scored.append((score, device))
+
+        # ---- Greedy allocation (highest score first) ----
+        scored.sort(key=lambda x: x[0], reverse=True)
+        remaining = surplus_w + bat_available_w
+
+        for score, device in scored:
+            fit = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
+
+            # Skip if fit is negligible (would import too much from grid)
+            if fit < 0.1:
+                if device.is_on and device.interruptible and self._min_on_elapsed(device):
+                    await self._async_set_switch(hass, device, False)
+                continue
+
+            if device.power_w <= remaining:
+                remaining -= device.power_w
+                if not device.is_on:
+                    await self._async_set_switch(hass, device, True)
+            else:
+                if device.is_on and device.interruptible and self._min_on_elapsed(device):
+                    await self._async_set_switch(hass, device, False)
+
+    # ------------------------------------------------------------------
+    # Appliance state machine
+    # ------------------------------------------------------------------
+    async def _async_handle_appliance(
+        self,
+        hass: HomeAssistant,
+        device: ManagedDevice,
+        global_score: float,
+        surplus_w: float,
+        bat_available_w: float,
+    ) -> None:
+        now_ts = time_mod.time()
+
+        if device.appliance_state == APPLIANCE_STATE_IDLE:
+            # Watch ready entity — transition to READY when user marks it
+            ready = ManagedDevice._state_bool(hass, device.appliance_ready_entity, fallback=False)
+            if ready:
+                device.appliance_state = APPLIANCE_STATE_READY
+                _LOGGER.info("Appliance '%s': ready to run", device.name)
+            return
+
+        if device.appliance_state == APPLIANCE_STATE_READY:
+            fit     = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
+            urgency = device.urgency_modifier(hass)
+
+            should_start = (
+                (global_score >= 0.4 and fit >= 0.3)
+                or urgency >= 0.8   # deadline imminent → start regardless of surplus
+            )
+            if not should_start:
+                return
+
+            # Transition: READY → PREPARING → RUNNING
+            device.appliance_state = APPLIANCE_STATE_PREPARING
+            _LOGGER.info("Appliance '%s': starting (score=%.2f fit=%.2f urgency=%.2f)",
+                         device.name, global_score, fit, urgency)
+
+            if device.appliance_prepare_script:
+                await hass.services.async_call(
+                    "script", "turn_on",
+                    {"entity_id": device.appliance_prepare_script},
+                    blocking=False,
+                )
+
+            if device.appliance_start_script:
+                await hass.services.async_call(
+                    "script", "turn_on",
+                    {"entity_id": device.appliance_start_script},
+                    blocking=False,
+                )
+
+            device.appliance_state     = APPLIANCE_STATE_RUNNING
+            device.appliance_cycle_start = now_ts
+            device.is_on               = True
+            return
+
+        if device.appliance_state == APPLIANCE_STATE_RUNNING:
+            done = False
+
+            if device.appliance_power_entity:
+                # Primary: detect power drop
+                power = ManagedDevice._state_float(hass, device.appliance_power_entity)
+                if power < device.appliance_power_threshold_w:
+                    if device.appliance_low_power_since is None:
+                        device.appliance_low_power_since = now_ts
+                    elif now_ts - device.appliance_low_power_since >= _APPLIANCE_LOW_POWER_CONFIRM_S:
+                        done = True
+                else:
+                    device.appliance_low_power_since = None
+            elif device.appliance_cycle_start is not None:
+                # Fallback: elapsed time
+                elapsed_m = (now_ts - device.appliance_cycle_start) / 60
+                done = elapsed_m >= device.appliance_cycle_duration_minutes
+
+            if done:
+                device.appliance_state          = APPLIANCE_STATE_DONE
+                device.is_on                    = False
+                device.appliance_cycle_start    = None
+                device.appliance_low_power_since = None
+                _LOGGER.info("Appliance '%s': cycle complete", device.name)
+                if device.appliance_ready_entity:
+                    await hass.services.async_call(
+                        "input_boolean", "turn_off",
+                        {"entity_id": device.appliance_ready_entity},
+                        blocking=False,
+                    )
+            return
+
+        if device.appliance_state == APPLIANCE_STATE_DONE:
+            device.appliance_state = APPLIANCE_STATE_IDLE
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    def _min_on_elapsed(self, device: ManagedDevice) -> bool:
+        """True if the device has been on long enough to allow turning it off."""
+        if device.turned_on_at is None:
+            return True
+        elapsed_m = (time_mod.time() - device.turned_on_at) / 60
+        return elapsed_m >= device.min_on_minutes
+
+    async def _async_set_switch(
+        self,
+        hass: HomeAssistant,
+        device: ManagedDevice,
+        on: bool,
+    ) -> None:
+        if device.switch_entity:
+            await hass.services.async_call(
+                "homeassistant",
+                "turn_on" if on else "turn_off",
+                {"entity_id": device.switch_entity},
+                blocking=False,
+            )
         device.is_on = on
-        _LOGGER.debug("%s → %s", device.name, service)
+        if on:
+            device.turned_on_at  = time_mod.time()
+        else:
+            device.turned_off_at = time_mod.time()
+        _LOGGER.debug("Device '%s' → %s", device.name, "ON" if on else "OFF")

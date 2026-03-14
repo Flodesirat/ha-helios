@@ -1,58 +1,92 @@
-"""Battery strategy — decides charge/discharge/idle/reserve actions."""
+"""Battery strategy — two-state model: forced_charge or autoconsommation.
+
+Design principles:
+- Helios never directly controls charge/discharge power levels.
+- It only switches between two modes by calling user-defined scripts.
+- The battery's own BMS/inverter handles all power management in each mode.
+- Calling a script only on state *change* avoids spamming the inverter.
+"""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 
 from .const import (
-    CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX, CONF_BATTERY_SOC_RESERVE_ROUGE,
-    CONF_BATTERY_CHARGE_ENTITY, CONF_BATTERY_DISCHARGE_ENTITY,
-    DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
+    CONF_BATTERY_SOC_RESERVE_ROUGE,
+    CONF_BATTERY_CHARGE_SCRIPT,
+    CONF_BATTERY_AUTOCONSUM_SCRIPT,
+    DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
+    BATTERY_ACTION_FORCED_CHARGE,
+    BATTERY_ACTION_AUTOCONSOMMATION,
     TEMPO_RED,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 
 class BatteryStrategy:
-    """Decides what the battery should do each cycle.
-
-    Actions:
-      "charge"    — push energy into battery (from PV surplus or cheap grid)
-      "discharge" — pull energy from battery to cover house load
-      "reserve"   — hold SOC, do not discharge (e.g. red Tempo day)
-      "idle"      — no active command
-    """
+    """Decide battery mode and apply via user scripts."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.soc_min     = config.get(CONF_BATTERY_SOC_MIN,          DEFAULT_BATTERY_SOC_MIN)
-        self.soc_max     = config.get(CONF_BATTERY_SOC_MAX,          DEFAULT_BATTERY_SOC_MAX)
-        self.soc_reserve = config.get(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE)
-        self.charge_entity    = config.get(CONF_BATTERY_CHARGE_ENTITY)
-        self.discharge_entity = config.get(CONF_BATTERY_DISCHARGE_ENTITY)
+        self.soc_reserve: float = config.get(
+            CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE
+        )
+        self.charge_script: str | None = config.get(CONF_BATTERY_CHARGE_SCRIPT)
+        self.autoconsum_script: str | None = config.get(CONF_BATTERY_AUTOCONSUM_SCRIPT)
+        self._last_action: str | None = None
 
+    # ------------------------------------------------------------------
+    # Decision
+    # ------------------------------------------------------------------
     def decide(self, data: dict[str, Any]) -> str:
-        """Return action string based on current state.
+        """Return 'forced_charge' or 'autoconsommation'.
 
-        Priority order:
-        1. Red Tempo + SOC < reserve → charge (use HC or PV)
-        2. Red Tempo → reserve (protect SOC for HP period)
-        3. Surplus PV + SOC < max → charge
-        4. No surplus + SOC > min → discharge
-        5. → idle
+        forced_charge: Tempo RED and SOC below reserve threshold.
+          → Fill battery during cheap HC hours before HP starts.
+
+        autoconsommation: all other cases.
+          → The inverter's native mode handles surplus absorption
+            and discharge autonomously — fast and failure-safe.
         """
-        # TODO: implement full decision tree
-        soc = data.get("battery_soc")
-        surplus_w = data.get("surplus_w", 0.0)
+        soc   = data.get("battery_soc")
         tempo = data.get("tempo_color")
 
-        if soc is None:
-            return "idle"
+        if (
+            tempo == TEMPO_RED
+            and soc is not None
+            and soc < self.soc_reserve
+        ):
+            return BATTERY_ACTION_FORCED_CHARGE
 
-        # TODO: implement
-        return "idle"
+        return BATTERY_ACTION_AUTOCONSOMMATION
 
+    # ------------------------------------------------------------------
+    # Application
+    # ------------------------------------------------------------------
     async def async_apply(self, hass: HomeAssistant, action: str) -> None:
-        """Send commands to battery charge/discharge entities.
-        TODO: implement entity writes via hass.services.async_call.
-        """
-        pass
+        """Call the appropriate user script — only on state change."""
+        if action == self._last_action:
+            return  # nothing changed, avoid hammering the inverter
+
+        script = (
+            self.charge_script
+            if action == BATTERY_ACTION_FORCED_CHARGE
+            else self.autoconsum_script
+        )
+
+        if script:
+            await hass.services.async_call(
+                "script",
+                "turn_on",
+                {"entity_id": script},
+                blocking=False,
+            )
+            _LOGGER.info("Battery → %s (script: %s)", action, script)
+        else:
+            _LOGGER.debug(
+                "Battery action '%s' has no script configured — skipping", action
+            )
+
+        self._last_action = action

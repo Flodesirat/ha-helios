@@ -1,4 +1,4 @@
-"""Config flow and options flow for Energy Optimizer."""
+"""Config flow and options flow for Helios Energy Optimizer."""
 from __future__ import annotations
 
 import logging
@@ -11,39 +11,71 @@ from homeassistant.helpers import selector
 
 from .const import (
     DOMAIN,
-    CONF_PV_POWER_ENTITY, CONF_GRID_POWER_ENTITY, CONF_HOUSE_POWER_ENTITY,
-    CONF_TEMPO_COLOR_ENTITY,
-    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_CHARGE_ENTITY,
-    CONF_BATTERY_DISCHARGE_ENTITY, CONF_BATTERY_CAPACITY_KWH,
-    CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX, CONF_BATTERY_SOC_RESERVE_ROUGE,
+    # Sources
+    CONF_PV_POWER_ENTITY, CONF_GRID_POWER_ENTITY,
+    CONF_HOUSE_POWER_ENTITY, CONF_TEMPO_COLOR_ENTITY,
+    # Battery
+    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY,
+    CONF_BATTERY_CHARGE_SCRIPT, CONF_BATTERY_AUTOCONSUM_SCRIPT,
+    CONF_BATTERY_CAPACITY_KWH, CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
+    CONF_BATTERY_SOC_RESERVE_ROUGE,
+    CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
+    # Devices list
     CONF_DEVICES,
+    # Common device fields
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
-    CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY, CONF_DEVICE_MIN_ON_MINUTES,
-    CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
+    CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
+    CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
+    CONF_DEVICE_MUST_RUN_DAILY, CONF_DEVICE_DEADLINE,
+    CONF_DEVICE_WEIGHT_PRIORITY, CONF_DEVICE_WEIGHT_FIT, CONF_DEVICE_WEIGHT_URGENCY,
+    # EV
     CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
-    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET,
+    CONF_EV_DEPARTURE_TIME, CONF_EV_MIN_CHARGE_POWER_W, CONF_EV_BATTERY_CAPACITY_WH,
+    # Water heater
+    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
+    # HVAC
     CONF_HVAC_TEMP_ENTITY, CONF_HVAC_SETPOINT_ENTITY,
-    CONF_APPLIANCE_PROGRAM_ENTITY,
+    CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
+    HVAC_MODES,
+    # Pool
+    CONF_POOL_FILTRATION_ENTITY, CONF_POOL_SPLIT_SESSIONS,
+    # Appliance
+    CONF_APPLIANCE_READY_ENTITY, CONF_APPLIANCE_PREPARE_SCRIPT,
+    CONF_APPLIANCE_START_SCRIPT, CONF_APPLIANCE_POWER_ENTITY,
+    CONF_APPLIANCE_POWER_THRESHOLD_W, CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
+    # Scoring weights
     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
     CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
-    CONF_SCAN_INTERVAL_MINUTES, CONF_MODE,
+    # Strategy
+    CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
+    # Device / general types and defaults
     DEVICE_TYPES, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER,
-    DEVICE_TYPE_HVAC, DEVICE_TYPE_APPLIANCE,
+    DEVICE_TYPE_HVAC, DEVICE_TYPE_APPLIANCE, DEVICE_TYPE_POOL,
+    MODES, MODE_AUTO,
     DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
-    DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
+    DEFAULT_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_CAPACITY_KWH,
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
     DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_FORECAST,
-    DEFAULT_SCAN_INTERVAL, DEFAULT_DEVICE_PRIORITY,
-    DEFAULT_DEVICE_MIN_ON_MINUTES, DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
-    DEFAULT_EV_SOC_TARGET, DEFAULT_WH_TEMP_TARGET,
-    MODES, MODE_AUTO,
+    DEFAULT_SCAN_INTERVAL, DEFAULT_DISPATCH_THRESHOLD,
+    DEFAULT_DEVICE_PRIORITY, DEFAULT_DEVICE_MIN_ON_MINUTES,
+    DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
+    DEFAULT_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_FIT, DEFAULT_DEVICE_WEIGHT_URGENCY,
+    DEFAULT_EV_SOC_TARGET, DEFAULT_EV_MIN_CHARGE_POWER_W,
+    DEFAULT_WH_TEMP_TARGET, DEFAULT_WH_TEMP_MIN,
+    DEFAULT_HVAC_HYSTERESIS_K, DEFAULT_HVAC_MIN_OFF_MINUTES,
+    DEFAULT_POOL_SPLIT_SESSIONS,
+    DEFAULT_APPLIANCE_POWER_THRESHOLD_W, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Config Flow (initial setup — 4 steps)
+# ---------------------------------------------------------------------------
+
 class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle the initial config flow (4 steps)."""
+    """Handle the initial config flow."""
 
     VERSION = 1
 
@@ -52,201 +84,270 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
         self._devices: list[dict[str, Any]] = []
         self._current_device: dict[str, Any] = {}
 
-    # ------------------------------------------------------------------
-    # Step 1 — Input sources
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ Step 1 — Sources
     async def async_step_user(self, user_input: dict | None = None):
-        """Step 1: energy source entities."""
-        errors: dict[str, str] = {}
         if user_input is not None:
-            # TODO: validate entities exist in hass
             self._data.update(user_input)
             return await self.async_step_battery()
 
-        schema = vol.Schema({
-            vol.Required(CONF_PV_POWER_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            ),
-            vol.Optional(CONF_GRID_POWER_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            ),
-            vol.Optional(CONF_HOUSE_POWER_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            ),
-            vol.Optional(CONF_TEMPO_COLOR_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            ),
-        })
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema({
+                vol.Required(CONF_PV_POWER_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_GRID_POWER_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_HOUSE_POWER_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_TEMPO_COLOR_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+            }),
+        )
 
-    # ------------------------------------------------------------------
-    # Step 2 — Battery
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ Step 2 — Battery
     async def async_step_battery(self, user_input: dict | None = None):
-        """Step 2: battery configuration (optional)."""
-        errors: dict[str, str] = {}
         if user_input is not None:
             self._data.update(user_input)
             return await self.async_step_devices()
 
-        schema = vol.Schema({
-            vol.Required(CONF_BATTERY_ENABLED, default=False): selector.BooleanSelector(),
-            vol.Optional(CONF_BATTERY_SOC_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            ),
-            vol.Optional(CONF_BATTERY_CHARGE_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["number", "input_number"])
-            ),
-            vol.Optional(CONF_BATTERY_DISCHARGE_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["number", "input_number"])
-            ),
-            vol.Optional(CONF_BATTERY_CAPACITY_KWH, default=5.0): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0.5, max=100, step=0.5, unit_of_measurement="kWh")
-            ),
-            vol.Optional(CONF_BATTERY_SOC_MIN, default=DEFAULT_BATTERY_SOC_MIN): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0, max=50, step=1, unit_of_measurement="%")
-            ),
-            vol.Optional(CONF_BATTERY_SOC_MAX, default=DEFAULT_BATTERY_SOC_MAX): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=50, max=100, step=1, unit_of_measurement="%")
-            ),
-            vol.Optional(CONF_BATTERY_SOC_RESERVE_ROUGE, default=DEFAULT_BATTERY_SOC_RESERVE_ROUGE): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
-            ),
-        })
-        return self.async_show_form(step_id="battery", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="battery",
+            data_schema=_battery_schema(),
+        )
 
-    # ------------------------------------------------------------------
-    # Step 3 — Devices (multi-step sub-flow)
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ Step 3 — Devices list
     async def async_step_devices(self, user_input: dict | None = None):
-        """Step 3: device list — choose to add a device or continue."""
         if user_input is not None:
             if user_input.get("add_device"):
                 return await self.async_step_device_type()
             self._data[CONF_DEVICES] = self._devices
             return await self.async_step_strategy()
 
-        schema = vol.Schema({
-            vol.Required("add_device", default=True): selector.BooleanSelector(),
-        })
-        return self.async_show_form(step_id="devices", data_schema=schema)
+        return self.async_show_form(
+            step_id="devices",
+            data_schema=vol.Schema({
+                vol.Required("add_device", default=bool(not self._devices)): selector.BooleanSelector(),
+            }),
+        )
 
     async def async_step_device_type(self, user_input: dict | None = None):
-        """Step 3a: select device type."""
         if user_input is not None:
-            self._current_device = {CONF_DEVICE_TYPE: user_input[CONF_DEVICE_TYPE]}
             device_type = user_input[CONF_DEVICE_TYPE]
-            if device_type == DEVICE_TYPE_EV:
-                return await self.async_step_device_ev()
-            if device_type == DEVICE_TYPE_WATER_HEATER:
-                return await self.async_step_device_water_heater()
-            if device_type == DEVICE_TYPE_HVAC:
-                return await self.async_step_device_hvac()
-            return await self.async_step_device_appliance()
+            self._current_device = {CONF_DEVICE_TYPE: device_type}
+            return await self._route_device_type(device_type)
 
-        schema = vol.Schema({
-            vol.Required(CONF_DEVICE_TYPE): selector.SelectSelector(
-                selector.SelectSelectorConfig(options=DEVICE_TYPES, translation_key="device_type")
-            ),
-        })
-        return self.async_show_form(step_id="device_type", data_schema=schema)
+        return self.async_show_form(
+            step_id="device_type",
+            data_schema=vol.Schema({
+                vol.Required(CONF_DEVICE_TYPE): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=DEVICE_TYPES, translation_key="device_type"
+                    )
+                ),
+            }),
+        )
 
-    async def async_step_device_common(self, user_input: dict | None = None):
-        """Shared fields for all device types (name, switch, power, priority, schedule)."""
-        if user_input is not None:
-            self._current_device.update(user_input)
-            self._devices.append(self._current_device)
-            self._current_device = {}
-            return await self.async_step_devices()
-
-        schema = vol.Schema({
-            vol.Required(CONF_DEVICE_NAME): selector.TextSelector(),
-            vol.Required(CONF_DEVICE_SWITCH_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
-            ),
-            vol.Required(CONF_DEVICE_POWER_W): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=50, max=20000, step=50, unit_of_measurement="W")
-            ),
-            vol.Optional(CONF_DEVICE_PRIORITY, default=DEFAULT_DEVICE_PRIORITY): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=10, step=1)
-            ),
-            vol.Optional(CONF_DEVICE_MIN_ON_MINUTES, default=DEFAULT_DEVICE_MIN_ON_MINUTES): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0, max=480, step=5, unit_of_measurement="min")
-            ),
-            vol.Optional(CONF_DEVICE_ALLOWED_START, default=DEFAULT_ALLOWED_START): selector.TimeSelector(),
-            vol.Optional(CONF_DEVICE_ALLOWED_END, default=DEFAULT_ALLOWED_END): selector.TimeSelector(),
-        })
-        return self.async_show_form(step_id="device_common", data_schema=schema)
+    # ------------------------------------------------------------------ Type-specific steps
 
     async def async_step_device_ev(self, user_input: dict | None = None):
-        """EV-specific fields."""
         if user_input is not None:
             self._current_device.update(user_input)
             return await self.async_step_device_common()
 
-        schema = vol.Schema({
-            vol.Optional(CONF_EV_SOC_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            ),
-            vol.Optional(CONF_EV_PLUGGED_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["binary_sensor", "sensor"])
-            ),
-            vol.Optional(CONF_EV_SOC_TARGET, default=DEFAULT_EV_SOC_TARGET): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=20, max=100, step=5, unit_of_measurement="%")
-            ),
-        })
-        return self.async_show_form(step_id="device_ev", data_schema=schema)
+        return self.async_show_form(
+            step_id="device_ev",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_EV_SOC_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_EV_PLUGGED_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["binary_sensor", "sensor"])
+                ),
+                vol.Optional(CONF_EV_SOC_TARGET, default=DEFAULT_EV_SOC_TARGET): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=20, max=100, step=5, unit_of_measurement="%")
+                ),
+                vol.Optional(CONF_EV_DEPARTURE_TIME): selector.TimeSelector(),
+                vol.Optional(CONF_EV_MIN_CHARGE_POWER_W, default=DEFAULT_EV_MIN_CHARGE_POWER_W): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=22000, step=100, unit_of_measurement="W")
+                ),
+                vol.Optional(CONF_EV_BATTERY_CAPACITY_WH): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=5000, max=150000, step=1000, unit_of_measurement="Wh")
+                ),
+            }),
+        )
 
     async def async_step_device_water_heater(self, user_input: dict | None = None):
-        """Water heater specific fields."""
         if user_input is not None:
             self._current_device.update(user_input)
             return await self.async_step_device_common()
 
-        schema = vol.Schema({
-            vol.Optional(CONF_WH_TEMP_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            ),
-            vol.Optional(CONF_WH_TEMP_TARGET, default=DEFAULT_WH_TEMP_TARGET): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=40, max=75, step=1, unit_of_measurement="°C")
-            ),
-        })
-        return self.async_show_form(step_id="device_water_heater", data_schema=schema)
+        return self.async_show_form(
+            step_id="device_water_heater",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_WH_TEMP_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_WH_TEMP_TARGET, default=DEFAULT_WH_TEMP_TARGET): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=40, max=75, step=1, unit_of_measurement="°C")
+                ),
+                vol.Optional(CONF_WH_TEMP_MIN, default=DEFAULT_WH_TEMP_MIN): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=40, max=65, step=1, unit_of_measurement="°C")
+                ),
+            }),
+        )
 
     async def async_step_device_hvac(self, user_input: dict | None = None):
-        """HVAC / heat pump specific fields."""
         if user_input is not None:
             self._current_device.update(user_input)
             return await self.async_step_device_common()
 
-        schema = vol.Schema({
-            vol.Optional(CONF_HVAC_TEMP_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            ),
-            vol.Optional(CONF_HVAC_SETPOINT_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["climate", "number", "input_number"])
-            ),
-        })
-        return self.async_show_form(step_id="device_hvac", data_schema=schema)
+        return self.async_show_form(
+            step_id="device_hvac",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_HVAC_TEMP_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_HVAC_SETPOINT_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["climate", "number", "input_number"])
+                ),
+                vol.Optional(CONF_HVAC_MODE, default=HVAC_MODES[0]): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=HVAC_MODES, translation_key="hvac_mode"
+                    )
+                ),
+                vol.Optional(CONF_HVAC_HYSTERESIS_K, default=DEFAULT_HVAC_HYSTERESIS_K): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0.1, max=3.0, step=0.1, unit_of_measurement="°C")
+                ),
+                vol.Optional(CONF_HVAC_MIN_OFF_MINUTES, default=DEFAULT_HVAC_MIN_OFF_MINUTES): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=30, step=1, unit_of_measurement="min")
+                ),
+            }),
+        )
+
+    async def async_step_device_pool(self, user_input: dict | None = None):
+        if user_input is not None:
+            self._current_device.update(user_input)
+            return await self.async_step_device_common()
+
+        return self.async_show_form(
+            step_id="device_pool",
+            data_schema=vol.Schema({
+                vol.Required(CONF_POOL_FILTRATION_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["sensor", "input_number", "number"]
+                    )
+                ),
+                vol.Optional(CONF_POOL_SPLIT_SESSIONS, default=DEFAULT_POOL_SPLIT_SESSIONS): selector.BooleanSelector(),
+            }),
+        )
 
     async def async_step_device_appliance(self, user_input: dict | None = None):
-        """Appliance (washer, dishwasher…) specific fields."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._current_device.update(user_input)
-            return await self.async_step_device_common()
+            if not user_input.get(CONF_APPLIANCE_START_SCRIPT):
+                errors[CONF_APPLIANCE_START_SCRIPT] = "required"
+            if not user_input.get(CONF_APPLIANCE_READY_ENTITY):
+                errors[CONF_APPLIANCE_READY_ENTITY] = "required"
+            if not errors:
+                self._current_device.update(user_input)
+                return await self.async_step_device_common()
 
-        schema = vol.Schema({
-            vol.Optional(CONF_APPLIANCE_PROGRAM_ENTITY): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["select", "input_select"])
-            ),
-        })
-        return self.async_show_form(step_id="device_appliance", data_schema=schema)
+        return self.async_show_form(
+            step_id="device_appliance",
+            data_schema=vol.Schema({
+                vol.Required(CONF_APPLIANCE_READY_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["input_boolean", "binary_sensor"])
+                ),
+                vol.Optional(CONF_APPLIANCE_PREPARE_SCRIPT): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="script")
+                ),
+                vol.Required(CONF_APPLIANCE_START_SCRIPT): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="script")
+                ),
+                vol.Optional(CONF_APPLIANCE_POWER_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(
+                    CONF_APPLIANCE_POWER_THRESHOLD_W,
+                    default=DEFAULT_APPLIANCE_POWER_THRESHOLD_W,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=1, max=200, step=1, unit_of_measurement="W")
+                ),
+                vol.Optional(
+                    CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
+                    default=DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=10, max=480, step=5, unit_of_measurement="min")
+                ),
+                vol.Optional(CONF_DEVICE_DEADLINE): selector.TimeSelector(),
+            }),
+            errors=errors,
+        )
 
-    # ------------------------------------------------------------------
-    # Step 4 — Scoring strategy
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ Step 3c — Common fields
+    async def async_step_device_common(self, user_input: dict | None = None):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            w_sum = (
+                user_input.get(CONF_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_PRIORITY)
+                + user_input.get(CONF_DEVICE_WEIGHT_FIT,      DEFAULT_DEVICE_WEIGHT_FIT)
+                + user_input.get(CONF_DEVICE_WEIGHT_URGENCY,  DEFAULT_DEVICE_WEIGHT_URGENCY)
+            )
+            if abs(w_sum - 1.0) > 0.05:
+                errors["base"] = "device_weights_must_sum_to_one"
+            else:
+                self._current_device.update(user_input)
+                self._devices.append(self._current_device)
+                self._current_device = {}
+                return await self.async_step_devices()
+
+        device_type = self._current_device.get(CONF_DEVICE_TYPE, "")
+        # Appliances don't use a switch entity (scripts only)
+        switch_entity_field = (
+            vol.Optional(CONF_DEVICE_SWITCH_ENTITY)
+            if device_type == DEVICE_TYPE_APPLIANCE
+            else vol.Optional(CONF_DEVICE_SWITCH_ENTITY)
+        )
+
+        return self.async_show_form(
+            step_id="device_common",
+            data_schema=vol.Schema({
+                vol.Required(CONF_DEVICE_NAME): selector.TextSelector(),
+                vol.Optional(CONF_DEVICE_SWITCH_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
+                ),
+                vol.Required(CONF_DEVICE_POWER_W): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=50, max=22000, step=50, unit_of_measurement="W")
+                ),
+                vol.Optional(CONF_DEVICE_PRIORITY, default=DEFAULT_DEVICE_PRIORITY): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=1, max=10, step=1)
+                ),
+                vol.Optional(CONF_DEVICE_MIN_ON_MINUTES, default=DEFAULT_DEVICE_MIN_ON_MINUTES): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=480, step=5, unit_of_measurement="min")
+                ),
+                vol.Optional(CONF_DEVICE_ALLOWED_START, default=DEFAULT_ALLOWED_START): selector.TimeSelector(),
+                vol.Optional(CONF_DEVICE_ALLOWED_END,   default=DEFAULT_ALLOWED_END):   selector.TimeSelector(),
+                vol.Optional(CONF_DEVICE_MUST_RUN_DAILY, default=False): selector.BooleanSelector(),
+                # Dispatch weights (sum must equal 1.0)
+                vol.Optional(CONF_DEVICE_WEIGHT_PRIORITY, default=DEFAULT_DEVICE_WEIGHT_PRIORITY): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
+                ),
+                vol.Optional(CONF_DEVICE_WEIGHT_FIT, default=DEFAULT_DEVICE_WEIGHT_FIT): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
+                ),
+                vol.Optional(CONF_DEVICE_WEIGHT_URGENCY, default=DEFAULT_DEVICE_WEIGHT_URGENCY): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
+                ),
+            }),
+            errors=errors,
+        )
+
+    # ------------------------------------------------------------------ Step 4 — Strategy
     async def async_step_strategy(self, user_input: dict | None = None):
-        """Step 4: scoring weights and general settings."""
         errors: dict[str, str] = {}
         if user_input is not None:
             total = (
@@ -259,47 +360,48 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "weights_must_sum_to_one"
             else:
                 self._data.update(user_input)
-                return self.async_create_entry(title="Energy Optimizer", data=self._data)
+                return self.async_create_entry(title="Helios", data=self._data)
 
-        schema = vol.Schema({
-            vol.Optional(CONF_WEIGHT_PV_SURPLUS, default=DEFAULT_WEIGHT_PV_SURPLUS): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
-            ),
-            vol.Optional(CONF_WEIGHT_TEMPO, default=DEFAULT_WEIGHT_TEMPO): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
-            ),
-            vol.Optional(CONF_WEIGHT_BATTERY_SOC, default=DEFAULT_WEIGHT_BATTERY_SOC): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
-            ),
-            vol.Optional(CONF_WEIGHT_FORECAST, default=DEFAULT_WEIGHT_FORECAST): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
-            ),
-            vol.Optional(CONF_SCAN_INTERVAL_MINUTES, default=DEFAULT_SCAN_INTERVAL): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=60, step=1, unit_of_measurement="min")
-            ),
-            vol.Optional(CONF_MODE, default=MODE_AUTO): selector.SelectSelector(
-                selector.SelectSelectorConfig(options=MODES, translation_key="mode")
-            ),
-        })
-        return self.async_show_form(step_id="strategy", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="strategy",
+            data_schema=_strategy_schema(),
+            errors=errors,
+        )
 
-    # ------------------------------------------------------------------
-    # Options flow entry point
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ Options flow entry
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         return EnergyOptimizerOptionsFlow(config_entry)
 
+    # ------------------------------------------------------------------ Helpers
+    async def _route_device_type(self, device_type: str):
+        if device_type == DEVICE_TYPE_EV:
+            return await self.async_step_device_ev()
+        if device_type == DEVICE_TYPE_WATER_HEATER:
+            return await self.async_step_device_water_heater()
+        if device_type == DEVICE_TYPE_HVAC:
+            return await self.async_step_device_hvac()
+        if device_type == DEVICE_TYPE_POOL:
+            return await self.async_step_device_pool()
+        return await self.async_step_device_appliance()
+
+
+# ---------------------------------------------------------------------------
+# Options Flow
+# ---------------------------------------------------------------------------
 
 class EnergyOptimizerOptionsFlow(OptionsFlow):
-    """Options flow — reconfigure without reinstalling."""
+    """Reconfigure without reinstalling — edits sources, battery and strategy."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._entry = config_entry
 
+    def _current(self, key: str, fallback: Any = None) -> Any:
+        """Return current value from options (priority) or data."""
+        return self._entry.options.get(key, self._entry.data.get(key, fallback))
+
     async def async_step_init(self, user_input: dict | None = None):
-        """Show options menu: which section to edit."""
         if user_input is not None:
             section = user_input.get("section")
             if section == "sources":
@@ -309,28 +411,190 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
             if section == "strategy":
                 return await self.async_step_strategy()
 
-        schema = vol.Schema({
-            vol.Required("section"): selector.SelectSelector(
-                selector.SelectSelectorConfig(options=["sources", "battery", "strategy"])
-            ),
-        })
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required("section"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=["sources", "battery", "strategy"]
+                    )
+                ),
+            }),
+        )
 
     async def async_step_sources(self, user_input: dict | None = None):
-        """Edit source entities."""
         if user_input is not None:
             return self.async_create_entry(data={**self._entry.options, **user_input})
-        # TODO: pre-fill with current values
-        return self.async_show_form(step_id="sources", data_schema=vol.Schema({}))
+
+        return self.async_show_form(
+            step_id="sources",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_PV_POWER_ENTITY,
+                    default=self._current(CONF_PV_POWER_ENTITY),
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+                vol.Optional(
+                    CONF_GRID_POWER_ENTITY,
+                    default=self._current(CONF_GRID_POWER_ENTITY, ""),
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+                vol.Optional(
+                    CONF_HOUSE_POWER_ENTITY,
+                    default=self._current(CONF_HOUSE_POWER_ENTITY, ""),
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+                vol.Optional(
+                    CONF_TEMPO_COLOR_ENTITY,
+                    default=self._current(CONF_TEMPO_COLOR_ENTITY, ""),
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            }),
+        )
 
     async def async_step_battery(self, user_input: dict | None = None):
-        """Edit battery settings."""
         if user_input is not None:
             return self.async_create_entry(data={**self._entry.options, **user_input})
-        return self.async_show_form(step_id="battery", data_schema=vol.Schema({}))
+
+        return self.async_show_form(
+            step_id="battery",
+            data_schema=_battery_schema(defaults={
+                k: self._current(k)
+                for k in (
+                    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY,
+                    CONF_BATTERY_CHARGE_SCRIPT, CONF_BATTERY_AUTOCONSUM_SCRIPT,
+                    CONF_BATTERY_CAPACITY_KWH, CONF_BATTERY_SOC_MIN,
+                    CONF_BATTERY_SOC_MAX, CONF_BATTERY_SOC_RESERVE_ROUGE,
+                    CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
+                )
+                if self._current(k) is not None
+            }),
+        )
 
     async def async_step_strategy(self, user_input: dict | None = None):
-        """Edit scoring weights."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data={**self._entry.options, **user_input})
-        return self.async_show_form(step_id="strategy", data_schema=vol.Schema({}))
+            total = (
+                user_input[CONF_WEIGHT_PV_SURPLUS]
+                + user_input[CONF_WEIGHT_TEMPO]
+                + user_input[CONF_WEIGHT_BATTERY_SOC]
+                + user_input[CONF_WEIGHT_FORECAST]
+            )
+            if abs(total - 1.0) > 0.01:
+                errors["base"] = "weights_must_sum_to_one"
+            else:
+                return self.async_create_entry(data={**self._entry.options, **user_input})
+
+        return self.async_show_form(
+            step_id="strategy",
+            data_schema=_strategy_schema(defaults={
+                k: self._current(k)
+                for k in (
+                    CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
+                    CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
+                    CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
+                )
+                if self._current(k) is not None
+            }),
+            errors=errors,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Shared schema builders (reused by config + options flows)
+# ---------------------------------------------------------------------------
+
+def _battery_schema(defaults: dict | None = None) -> vol.Schema:
+    d = defaults or {}
+
+    def _d(key, fallback):
+        return d.get(key, fallback)
+
+    return vol.Schema({
+        vol.Required(CONF_BATTERY_ENABLED, default=_d(CONF_BATTERY_ENABLED, False)): selector.BooleanSelector(),
+        vol.Optional(CONF_BATTERY_SOC_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        ),
+        vol.Optional(CONF_BATTERY_CHARGE_SCRIPT): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="script")
+        ),
+        vol.Optional(CONF_BATTERY_AUTOCONSUM_SCRIPT): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="script")
+        ),
+        vol.Optional(
+            CONF_BATTERY_CAPACITY_KWH,
+            default=_d(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0.5, max=100, step=0.5, unit_of_measurement="kWh")
+        ),
+        vol.Optional(
+            CONF_BATTERY_MAX_CHARGE_POWER_W,
+            default=_d(CONF_BATTERY_MAX_CHARGE_POWER_W, 0),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=15000, step=100, unit_of_measurement="W")
+        ),
+        vol.Optional(
+            CONF_BATTERY_MAX_DISCHARGE_POWER_W,
+            default=_d(CONF_BATTERY_MAX_DISCHARGE_POWER_W, 0),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=15000, step=100, unit_of_measurement="W")
+        ),
+        vol.Optional(
+            CONF_BATTERY_SOC_MIN,
+            default=_d(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=50, step=1, unit_of_measurement="%")
+        ),
+        vol.Optional(
+            CONF_BATTERY_SOC_MAX,
+            default=_d(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=50, max=100, step=1, unit_of_measurement="%")
+        ),
+        vol.Optional(
+            CONF_BATTERY_SOC_RESERVE_ROUGE,
+            default=_d(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
+        ),
+    })
+
+
+def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
+    d = defaults or {}
+
+    def _d(key, fallback):
+        return d.get(key, fallback)
+
+    return vol.Schema({
+        vol.Optional(
+            CONF_WEIGHT_PV_SURPLUS,
+            default=_d(CONF_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_PV_SURPLUS),
+        ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
+        vol.Optional(
+            CONF_WEIGHT_TEMPO,
+            default=_d(CONF_WEIGHT_TEMPO, DEFAULT_WEIGHT_TEMPO),
+        ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
+        vol.Optional(
+            CONF_WEIGHT_BATTERY_SOC,
+            default=_d(CONF_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_BATTERY_SOC),
+        ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
+        vol.Optional(
+            CONF_WEIGHT_FORECAST,
+            default=_d(CONF_WEIGHT_FORECAST, DEFAULT_WEIGHT_FORECAST),
+        ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
+        vol.Optional(
+            CONF_SCAN_INTERVAL_MINUTES,
+            default=_d(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=1, max=60, step=1, unit_of_measurement="min")
+        ),
+        vol.Optional(
+            CONF_DISPATCH_THRESHOLD,
+            default=_d(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
+        ),
+        vol.Optional(
+            CONF_MODE,
+            default=_d(CONF_MODE, MODE_AUTO),
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=MODES, translation_key="mode")
+        ),
+    })

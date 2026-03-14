@@ -1,94 +1,202 @@
-"""Constants for Energy Optimizer."""
+"""Constants for Helios Energy Optimizer."""
 
 DOMAIN = "helios"
 PLATFORMS = ["sensor", "switch"]
 
+# ---------------------------------------------------------------------------
 # Config entry keys — sources
-CONF_PV_POWER_ENTITY = "pv_power_entity"
-CONF_GRID_POWER_ENTITY = "grid_power_entity"
+# ---------------------------------------------------------------------------
+CONF_PV_POWER_ENTITY    = "pv_power_entity"
+CONF_GRID_POWER_ENTITY  = "grid_power_entity"
 CONF_HOUSE_POWER_ENTITY = "house_power_entity"
 CONF_TEMPO_COLOR_ENTITY = "tempo_color_entity"
 
+# ---------------------------------------------------------------------------
 # Config entry keys — battery
-CONF_BATTERY_ENABLED = "battery_enabled"
-CONF_BATTERY_SOC_ENTITY = "battery_soc_entity"
-CONF_BATTERY_CHARGE_ENTITY = "battery_charge_entity"
-CONF_BATTERY_DISCHARGE_ENTITY = "battery_discharge_entity"
-CONF_BATTERY_CAPACITY_KWH = "battery_capacity_kwh"
-CONF_BATTERY_SOC_MIN = "battery_soc_min"
-CONF_BATTERY_SOC_MAX = "battery_soc_max"
-CONF_BATTERY_SOC_RESERVE_ROUGE = "battery_soc_reserve_rouge"
+# ---------------------------------------------------------------------------
+CONF_BATTERY_ENABLED              = "battery_enabled"
+CONF_BATTERY_SOC_ENTITY           = "battery_soc_entity"
+CONF_BATTERY_CHARGE_SCRIPT        = "battery_charge_script"
+CONF_BATTERY_AUTOCONSUM_SCRIPT    = "battery_autoconsum_script"
+CONF_BATTERY_CAPACITY_KWH         = "battery_capacity_kwh"
+CONF_BATTERY_SOC_MIN              = "battery_soc_min"
+CONF_BATTERY_SOC_MAX              = "battery_soc_max"
+CONF_BATTERY_SOC_RESERVE_ROUGE    = "battery_soc_reserve_rouge"
+CONF_BATTERY_MAX_CHARGE_POWER_W   = "battery_max_charge_power_w"
+CONF_BATTERY_MAX_DISCHARGE_POWER_W = "battery_max_discharge_power_w"
 
-# Config entry keys — devices list
+# Battery actions
+BATTERY_ACTION_FORCED_CHARGE   = "forced_charge"
+BATTERY_ACTION_AUTOCONSOMMATION = "autoconsommation"
+BATTERY_ACTIONS = [BATTERY_ACTION_FORCED_CHARGE, BATTERY_ACTION_AUTOCONSOMMATION]
+
+# ---------------------------------------------------------------------------
+# Config entry keys — device list
+# ---------------------------------------------------------------------------
 CONF_DEVICES = "devices"
 
-# Per-device keys (shared)
-CONF_DEVICE_NAME = "device_name"
-CONF_DEVICE_TYPE = "device_type"
-CONF_DEVICE_SWITCH_ENTITY = "device_switch_entity"
-CONF_DEVICE_POWER_W = "device_power_w"
-CONF_DEVICE_PRIORITY = "device_priority"
+# ---------------------------------------------------------------------------
+# Per-device keys — shared (all types)
+# ---------------------------------------------------------------------------
+CONF_DEVICE_NAME           = "device_name"
+CONF_DEVICE_TYPE           = "device_type"
+CONF_DEVICE_SWITCH_ENTITY  = "device_switch_entity"   # optional for start_only
+CONF_DEVICE_POWER_W        = "device_power_w"          # peak power
+CONF_DEVICE_PRIORITY       = "device_priority"         # 1–10
 CONF_DEVICE_MIN_ON_MINUTES = "device_min_on_minutes"
-CONF_DEVICE_ALLOWED_START = "device_allowed_start"
-CONF_DEVICE_ALLOWED_END = "device_allowed_end"
+CONF_DEVICE_ALLOWED_START  = "device_allowed_start"
+CONF_DEVICE_ALLOWED_END    = "device_allowed_end"
+CONF_DEVICE_INTERRUPTIBLE  = "device_interruptible"    # derived from type, stored explicitly
+CONF_DEVICE_MUST_RUN_DAILY = "device_must_run_daily"
+CONF_DEVICE_DEADLINE       = "device_deadline"         # "HH:MM" finish-by time
 
+# Per-device dispatch weights (must sum to 1.0 — validated in config flow)
+CONF_DEVICE_WEIGHT_PRIORITY = "device_weight_priority"
+CONF_DEVICE_WEIGHT_FIT      = "device_weight_fit"
+CONF_DEVICE_WEIGHT_URGENCY  = "device_weight_urgency"
+
+# ---------------------------------------------------------------------------
 # Per-device keys — EV charger
-CONF_EV_SOC_ENTITY = "ev_soc_entity"
-CONF_EV_SOC_TARGET = "ev_soc_target"
-CONF_EV_PLUGGED_ENTITY = "ev_plugged_entity"
+# ---------------------------------------------------------------------------
+CONF_EV_SOC_ENTITY          = "ev_soc_entity"
+CONF_EV_SOC_TARGET          = "ev_soc_target"
+CONF_EV_PLUGGED_ENTITY      = "ev_plugged_entity"
+CONF_EV_DEPARTURE_TIME      = "ev_departure_time"         # "HH:MM"
+CONF_EV_MIN_CHARGE_POWER_W  = "ev_min_charge_power_w"    # EVSE minimum (usually 6 A)
+CONF_EV_BATTERY_CAPACITY_WH = "ev_battery_capacity_wh"   # optional, for time estimation
 
+# ---------------------------------------------------------------------------
 # Per-device keys — water heater
+# ---------------------------------------------------------------------------
 CONF_WH_TEMP_ENTITY = "wh_temp_entity"
 CONF_WH_TEMP_TARGET = "wh_temp_target"
+CONF_WH_TEMP_MIN    = "wh_temp_min"    # legionella floor → triggers must_run override
 
+# ---------------------------------------------------------------------------
 # Per-device keys — HVAC / heat pump
-CONF_HVAC_TEMP_ENTITY = "hvac_temp_entity"
-CONF_HVAC_SETPOINT_ENTITY = "hvac_setpoint_entity"
+# ---------------------------------------------------------------------------
+CONF_HVAC_TEMP_ENTITY      = "hvac_temp_entity"
+CONF_HVAC_SETPOINT_ENTITY  = "hvac_setpoint_entity"
+CONF_HVAC_MODE             = "hvac_mode"             # "heat" | "cool"
+CONF_HVAC_HYSTERESIS_K     = "hvac_hysteresis_k"    # dead-band in °C
+CONF_HVAC_MIN_OFF_MINUTES  = "hvac_min_off_minutes" # compressor protection
 
+# HVAC modes
+HVAC_MODE_HEAT = "heat"
+HVAC_MODE_COOL = "cool"
+HVAC_MODES = [HVAC_MODE_HEAT, HVAC_MODE_COOL]
+
+# ---------------------------------------------------------------------------
+# Per-device keys — pool
+# ---------------------------------------------------------------------------
+CONF_POOL_FILTRATION_ENTITY = "pool_filtration_entity"  # sensor → required hours today
+CONF_POOL_SPLIT_SESSIONS    = "pool_split_sessions"     # allow multiple sessions per day
+
+# ---------------------------------------------------------------------------
 # Per-device keys — appliance (washer, dishwasher…)
-CONF_APPLIANCE_PROGRAM_ENTITY = "appliance_program_entity"
+# ---------------------------------------------------------------------------
+CONF_APPLIANCE_READY_ENTITY      = "appliance_ready_entity"    # input_boolean
+CONF_APPLIANCE_PREPARE_SCRIPT    = "appliance_prepare_script"  # optional pre-start script
+CONF_APPLIANCE_START_SCRIPT      = "appliance_start_script"    # triggers the cycle
+CONF_APPLIANCE_POWER_ENTITY      = "appliance_power_entity"    # optional — cycle detection
+CONF_APPLIANCE_POWER_THRESHOLD_W = "appliance_power_threshold_w"
+CONF_APPLIANCE_CYCLE_DURATION_MINUTES = "appliance_cycle_duration_minutes"
 
-# Config entry keys — scoring weights
-CONF_WEIGHT_PV_SURPLUS = "weight_pv_surplus"
-CONF_WEIGHT_TEMPO = "weight_tempo"
-CONF_WEIGHT_BATTERY_SOC = "weight_battery_soc"
-CONF_WEIGHT_FORECAST = "weight_forecast"
+# Appliance internal states (not persisted in config)
+APPLIANCE_STATE_IDLE      = "idle"
+APPLIANCE_STATE_READY     = "ready"
+APPLIANCE_STATE_PREPARING = "preparing"
+APPLIANCE_STATE_RUNNING   = "running"
+APPLIANCE_STATE_DONE      = "done"
 
-# Config entry keys — general
+# ---------------------------------------------------------------------------
+# Config entry keys — scoring weights (ScoringEngine)
+# ---------------------------------------------------------------------------
+CONF_WEIGHT_PV_SURPLUS   = "weight_pv_surplus"
+CONF_WEIGHT_TEMPO        = "weight_tempo"
+CONF_WEIGHT_BATTERY_SOC  = "weight_battery_soc"
+CONF_WEIGHT_FORECAST     = "weight_forecast"
+
+# ---------------------------------------------------------------------------
+# Config entry keys — general / strategy
+# ---------------------------------------------------------------------------
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
-CONF_MODE = "mode"
+CONF_MODE                  = "mode"
+CONF_DISPATCH_THRESHOLD    = "dispatch_threshold"  # global_score below which no dispatch
 
+# ---------------------------------------------------------------------------
 # Device types
-DEVICE_TYPE_EV = "ev_charger"
+# ---------------------------------------------------------------------------
+DEVICE_TYPE_EV           = "ev_charger"
 DEVICE_TYPE_WATER_HEATER = "water_heater"
-DEVICE_TYPE_HVAC = "hvac"
-DEVICE_TYPE_APPLIANCE = "appliance"
-DEVICE_TYPES = [DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_HVAC, DEVICE_TYPE_APPLIANCE]
+DEVICE_TYPE_HVAC         = "hvac"
+DEVICE_TYPE_APPLIANCE    = "appliance"
+DEVICE_TYPE_POOL         = "pool"
+DEVICE_TYPES = [
+    DEVICE_TYPE_EV,
+    DEVICE_TYPE_WATER_HEATER,
+    DEVICE_TYPE_HVAC,
+    DEVICE_TYPE_APPLIANCE,
+    DEVICE_TYPE_POOL,
+]
 
+# ---------------------------------------------------------------------------
 # Tempo colors
-TEMPO_BLUE = "blue"
-TEMPO_WHITE = "white"
-TEMPO_RED = "red"
+# ---------------------------------------------------------------------------
+TEMPO_BLUE   = "blue"
+TEMPO_WHITE  = "white"
+TEMPO_RED    = "red"
 TEMPO_COLORS = [TEMPO_BLUE, TEMPO_WHITE, TEMPO_RED]
 
+# ---------------------------------------------------------------------------
 # Operating modes
-MODE_AUTO = "auto"
+# ---------------------------------------------------------------------------
+MODE_AUTO   = "auto"
 MODE_MANUAL = "manual"
-MODE_OFF = "off"
+MODE_OFF    = "off"
 MODES = [MODE_AUTO, MODE_MANUAL, MODE_OFF]
 
+# ---------------------------------------------------------------------------
+# Storage (pool daily run persistence)
+# ---------------------------------------------------------------------------
+STORAGE_KEY     = f"{DOMAIN}_pool_run"
+STORAGE_VERSION = 1
+
+# ---------------------------------------------------------------------------
 # Defaults
-DEFAULT_SCAN_INTERVAL = 5
-DEFAULT_BATTERY_SOC_MIN = 10
-DEFAULT_BATTERY_SOC_MAX = 95
-DEFAULT_BATTERY_SOC_RESERVE_ROUGE = 80
-DEFAULT_WEIGHT_PV_SURPLUS = 0.4
-DEFAULT_WEIGHT_TEMPO = 0.3
-DEFAULT_WEIGHT_BATTERY_SOC = 0.2
-DEFAULT_WEIGHT_FORECAST = 0.1
-DEFAULT_DEVICE_PRIORITY = 5
-DEFAULT_DEVICE_MIN_ON_MINUTES = 30
-DEFAULT_ALLOWED_START = "00:00"
-DEFAULT_ALLOWED_END = "23:59"
-DEFAULT_EV_SOC_TARGET = 80
-DEFAULT_WH_TEMP_TARGET = 55
+# ---------------------------------------------------------------------------
+DEFAULT_SCAN_INTERVAL              = 5      # minutes
+DEFAULT_DISPATCH_THRESHOLD         = 0.3
+
+DEFAULT_BATTERY_SOC_MIN            = 10     # %
+DEFAULT_BATTERY_SOC_MAX            = 95     # %
+DEFAULT_BATTERY_SOC_RESERVE_ROUGE  = 80     # %
+DEFAULT_BATTERY_CAPACITY_KWH       = 5.0
+
+DEFAULT_WEIGHT_PV_SURPLUS          = 0.4
+DEFAULT_WEIGHT_TEMPO               = 0.3
+DEFAULT_WEIGHT_BATTERY_SOC         = 0.2
+DEFAULT_WEIGHT_FORECAST            = 0.1
+
+DEFAULT_DEVICE_PRIORITY            = 5
+DEFAULT_DEVICE_MIN_ON_MINUTES      = 30
+DEFAULT_ALLOWED_START              = "00:00"
+DEFAULT_ALLOWED_END                = "23:59"
+
+DEFAULT_DEVICE_WEIGHT_PRIORITY     = 0.3
+DEFAULT_DEVICE_WEIGHT_FIT          = 0.4
+DEFAULT_DEVICE_WEIGHT_URGENCY      = 0.3
+
+DEFAULT_EV_SOC_TARGET              = 80     # %
+DEFAULT_EV_MIN_CHARGE_POWER_W      = 1380.0 # 6 A × 230 V
+
+DEFAULT_WH_TEMP_TARGET             = 60.0   # °C
+DEFAULT_WH_TEMP_MIN                = 55.0   # °C (legionella threshold)
+
+DEFAULT_HVAC_HYSTERESIS_K          = 0.5    # °C
+DEFAULT_HVAC_MIN_OFF_MINUTES       = 5
+
+DEFAULT_POOL_SPLIT_SESSIONS        = True
+
+DEFAULT_APPLIANCE_POWER_THRESHOLD_W     = 10.0   # W — "cycle ended" detection
+DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES = 120   # min — fallback if no power sensor
