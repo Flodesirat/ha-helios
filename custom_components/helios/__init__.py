@@ -9,9 +9,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN, PLATFORMS
+from .coordinator import EnergyOptimizerCoordinator
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-from .coordinator import EnergyOptimizerCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,10 +23,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Register the Helios Lovelace card as a static resource."""
     try:
         hass.http.register_static_path(_CARD_URL, str(_CARD_PATH), cache_headers=False)
-        _LOGGER.info(
-            "Helios card available at %s — add it as a Lovelace resource (type: module)",
-            _CARD_URL,
-        )
+        _LOGGER.debug("Helios card static path registered at %s", _CARD_URL)
     except Exception:  # noqa: BLE001
         _LOGGER.debug("Could not register Helios card static path (expected in tests)")
     return True
@@ -42,7 +39,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+
+    await _async_register_lovelace_resource(hass)
     return True
+
+
+async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Add helios-card.js to Lovelace resources if not already present."""
+    try:
+        resources = hass.data["lovelace"]["resources"]
+        await resources.async_load()
+
+        for item in resources.async_items():
+            if item.get("url") == _CARD_URL:
+                _LOGGER.debug("Helios card already registered as Lovelace resource")
+                return
+
+        await resources.async_create_item({"res_type": "module", "url": _CARD_URL})
+        _LOGGER.info("Helios card registered as Lovelace resource at %s", _CARD_URL)
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug(
+            "Could not auto-register Helios card as Lovelace resource "
+            "(Lovelace not ready or running in tests)"
+        )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

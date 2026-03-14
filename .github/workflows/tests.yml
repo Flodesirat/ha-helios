@@ -26,9 +26,18 @@ jobs:
           python -m pytest tests/ -v --tb=short \
             --junit-xml=report.xml \
             --cov=custom_components/helios \
+            --cov-fail-under=45 \
             --cov-report=term-missing \
             --cov-report=html:coverage-report \
             --cov-report=xml:coverage.xml
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          flags: unittests
+          fail_ci_if_error: false
 
       - name: Upload test results
         if: always()
