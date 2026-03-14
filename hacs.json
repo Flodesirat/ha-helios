@@ -1,12 +1,3 @@
 {
-  "domain": "helios",
-  "name": "Helios",
-  "version": "0.1.0",
-  "documentation": "https://github.com/Flodesirat/ha-helios",
-  "issue_tracker": "https://github.com/Flodesirat/ha-helios/issues",
-  "requirements": [],
-  "dependencies": [],
-  "codeowners": ["Flodesirat"],
-  "iot_class": "local_polling",
-  "config_flow": true
+  "name": "Helios Energy Optimizer"
 }
