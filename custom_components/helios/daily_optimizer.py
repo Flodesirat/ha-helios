@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant
@@ -285,4 +285,5 @@ async def async_run_daily_optimization(
     }
     coordinator.scoring_engine.update_weights(new_scoring)
     coordinator.dispatch_threshold = best.threshold
+    coordinator.optimizer_last_run = datetime.now(timezone.utc).isoformat()
     _LOGGER.info("Helios optimizer: weights and threshold applied for today")

@@ -61,8 +61,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.tempo_color:     str | None  = None
         self.global_score:    float       = 0.0
         self.battery_action:  str         = BATTERY_ACTION_AUTOCONSOMMATION
-        self.forecast_kwh:    float | None = None
-        self.mode:            str         = entry.data.get(CONF_MODE, MODE_AUTO)
+        self.forecast_kwh:       float | None = None
+        self.mode:               str         = entry.data.get(CONF_MODE, MODE_AUTO)
+        self.optimizer_last_run: str | None  = None   # ISO timestamp set by daily_optimizer
 
         # Daily optimizer — scheduled at 05:00 every morning
         self._unsub_daily_opt = async_track_time_change(

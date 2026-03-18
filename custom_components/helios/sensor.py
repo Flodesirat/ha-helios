@@ -8,22 +8,39 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from homeassistant.util import slugify
+
+from .const import DOMAIN, DEVICE_TYPE_APPLIANCE, APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_READY, APPLIANCE_STATE_PREPARING
 from .coordinator import EnergyOptimizerCoordinator
+
+# Appliance state → published state
+_APPLIANCE_STATE_MAP = {
+    APPLIANCE_STATE_RUNNING:   "en_route",
+    APPLIANCE_STATE_READY:     "en_attente",
+    APPLIANCE_STATE_PREPARING: "en_attente",
+}
+_APPLIANCE_STATE_DEFAULT = "stop"
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: EnergyOptimizerCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([
+    entities = [
         EnergyOptimizerSurplusSensor(coordinator, entry),
         EnergyOptimizerScoreSensor(coordinator, entry),
         EnergyOptimizerBatteryActionSensor(coordinator, entry),
         EnergyOptimizerPVPowerSensor(coordinator, entry),
         EnergyOptimizerGridPowerSensor(coordinator, entry),
         EnergyOptimizerHousePowerSensor(coordinator, entry),
-    ])
+        EnergyOptimizerWeightsSensor(coordinator, entry),
+    ]
+    entities += [
+        ApplianceStateSensor(coordinator, entry, device)
+        for device in coordinator.device_manager.devices
+        if device.device_type == DEVICE_TYPE_APPLIANCE
+    ]
+    async_add_entities(entities)
 
 
 class _BaseEOSensor(CoordinatorEntity, SensorEntity):
@@ -149,3 +166,57 @@ class EnergyOptimizerHousePowerSensor(_BaseEOSensor):
     @property
     def native_value(self) -> float:
         return self.coordinator.house_power_w
+
+
+class EnergyOptimizerWeightsSensor(_BaseEOSensor):
+    """Exposes the scoring weights applied by the daily optimizer.
+
+    State    : dispatch threshold [0..1]
+    Attributes: w_surplus, w_tempo, w_soc, w_forecast, last_optimized (ISO timestamp)
+    """
+
+    _attr_name = "EO optimizer weights"
+    _attr_native_unit_of_measurement = None
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry.entry_id}_optimizer_weights"
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator.dispatch_threshold, 3)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        eng = self.coordinator.scoring_engine
+        return {
+            "w_surplus":      round(eng.w_surplus,  3),
+            "w_tempo":        round(eng.w_tempo,    3),
+            "w_soc":          round(eng.w_soc,      3),
+            "w_forecast":     round(eng.w_forecast, 3),
+            "last_optimized": self.coordinator.optimizer_last_run,
+        }
+
+
+class ApplianceStateSensor(_BaseEOSensor):
+    """Reports the Helios control state of an appliance: stop | en_attente | en_route."""
+
+    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
+        super().__init__(coordinator, entry)
+        self._device = device
+        slug = slugify(device.name)
+        self._attr_name      = f"EO {device.name} état"
+        self._attr_unique_id = f"{entry.entry_id}_appliance_{slug}_state"
+
+    @property
+    def unique_id(self) -> str:
+        return self._attr_unique_id
+
+    @property
+    def native_value(self) -> str:
+        return _APPLIANCE_STATE_MAP.get(self._device.appliance_state, _APPLIANCE_STATE_DEFAULT)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {"internal_state": self._device.appliance_state}

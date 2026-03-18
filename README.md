@@ -97,7 +97,51 @@ objectif = α × taux_autoconsommation + (1 - α) × taux_économie
 | `sensor.helios_house_power` | Sensor | Consommation maison (W) |
 | `sensor.helios_score` | Sensor | Score global [0–1] |
 | `sensor.helios_battery_action` | Sensor | Action batterie : `charge` \| `discharge` \| `reserve` \| `idle` |
+| `sensor.helios_optimizer_weights` | Sensor | Poids du scoring actifs pour la journée (voir ci-dessous) |
 | `switch.helios_auto_mode` | Switch | Active / désactive le pilotage automatique |
+
+#### Détail — `sensor.helios_optimizer_weights`
+
+| Champ | Description |
+|-------|-------------|
+| État | Seuil de dispatch actif `[0..1]` |
+| Attribut `w_surplus` | Poids surplus PV |
+| Attribut `w_tempo` | Poids couleur Tempo |
+| Attribut `w_soc` | Poids SOC batterie |
+| Attribut `w_forecast` | Poids prévision de production |
+| Attribut `last_optimized` | Timestamp ISO de la dernière optimisation (5h du matin) |
+
+Avant la première optimisation, l'entité reflète les poids configurés dans l'étape Strategy. Dès que l'optimiseur tourne à 5h, les valeurs sont mises à jour.
+
+Exemple de carte Lovelace pour suivre les poids du jour :
+
+```yaml
+type: entities
+title: Optimiseur Helios
+entities:
+  - entity: sensor.helios_optimizer_weights
+    name: Seuil de dispatch
+  - type: attribute
+    entity: sensor.helios_optimizer_weights
+    attribute: w_surplus
+    name: Poids surplus PV
+  - type: attribute
+    entity: sensor.helios_optimizer_weights
+    attribute: w_tempo
+    name: Poids Tempo
+  - type: attribute
+    entity: sensor.helios_optimizer_weights
+    attribute: w_soc
+    name: Poids SOC batterie
+  - type: attribute
+    entity: sensor.helios_optimizer_weights
+    attribute: w_forecast
+    name: Poids prévision
+  - type: attribute
+    entity: sensor.helios_optimizer_weights
+    attribute: last_optimized
+    name: Dernière optimisation
+```
 
 ### Carte Lovelace
 
