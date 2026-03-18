@@ -9,7 +9,9 @@ PLATFORMS = ["sensor", "switch"]
 CONF_PV_POWER_ENTITY    = "pv_power_entity"
 CONF_GRID_POWER_ENTITY  = "grid_power_entity"
 CONF_HOUSE_POWER_ENTITY = "house_power_entity"
-CONF_TEMPO_COLOR_ENTITY = "tempo_color_entity"
+CONF_TEMPO_COLOR_ENTITY      = "tempo_color_entity"
+CONF_TEMPO_NEXT_COLOR_ENTITY = "tempo_next_color_entity"  # "couleur du lendemain" pour l'optimiseur 5h
+CONF_FORECAST_ENTITY         = "forecast_entity"
 
 # ---------------------------------------------------------------------------
 # Config entry keys — battery
@@ -123,6 +125,7 @@ CONF_WEIGHT_FORECAST     = "weight_forecast"
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
 CONF_MODE                  = "mode"
 CONF_DISPATCH_THRESHOLD    = "dispatch_threshold"  # global_score below which no dispatch
+CONF_OPTIMIZER_ALPHA       = "optimizer_alpha"     # 0.0 = économies pures, 1.0 = autoconsommation pure
 
 # ---------------------------------------------------------------------------
 # Device types
@@ -167,6 +170,13 @@ STORAGE_VERSION = 1
 # ---------------------------------------------------------------------------
 DEFAULT_SCAN_INTERVAL              = 5      # minutes
 DEFAULT_DISPATCH_THRESHOLD         = 0.3
+DEFAULT_OPTIMIZER_ALPHA            = 0.5    # équilibré autoconsommation / économies
+DEFAULT_PEAK_PV_W                  = 3000.0 # W — used when no real-time data available
+
+# ---------------------------------------------------------------------------
+# Config entry keys — PV peak power (used by daily optimizer)
+# ---------------------------------------------------------------------------
+CONF_PEAK_PV_W = "peak_pv_w"
 
 DEFAULT_BATTERY_SOC_MIN            = 10     # %
 DEFAULT_BATTERY_SOC_MAX            = 95     # %

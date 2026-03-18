@@ -13,7 +13,9 @@ from .const import (
     DOMAIN,
     # Sources
     CONF_PV_POWER_ENTITY, CONF_GRID_POWER_ENTITY,
-    CONF_HOUSE_POWER_ENTITY, CONF_TEMPO_COLOR_ENTITY,
+    CONF_HOUSE_POWER_ENTITY, CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY,
+    CONF_FORECAST_ENTITY,
+    CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W,
     # Battery
     CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY,
     CONF_BATTERY_CHARGE_SCRIPT, CONF_BATTERY_AUTOCONSUM_SCRIPT,
@@ -47,7 +49,7 @@ from .const import (
     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
     CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
     # Strategy
-    CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
+    CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD, CONF_OPTIMIZER_ALPHA,
     # Device / general types and defaults
     DEVICE_TYPES, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER,
     DEVICE_TYPE_HVAC, DEVICE_TYPE_APPLIANCE, DEVICE_TYPE_POOL,
@@ -56,7 +58,7 @@ from .const import (
     DEFAULT_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_CAPACITY_KWH,
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
     DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_FORECAST,
-    DEFAULT_SCAN_INTERVAL, DEFAULT_DISPATCH_THRESHOLD,
+    DEFAULT_SCAN_INTERVAL, DEFAULT_DISPATCH_THRESHOLD, DEFAULT_OPTIMIZER_ALPHA,
     DEFAULT_DEVICE_PRIORITY, DEFAULT_DEVICE_MIN_ON_MINUTES,
     DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
     DEFAULT_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_FIT, DEFAULT_DEVICE_WEIGHT_URGENCY,
@@ -104,6 +106,15 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(CONF_TEMPO_COLOR_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_TEMPO_NEXT_COLOR_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_FORECAST_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_PEAK_PV_W, default=DEFAULT_PEAK_PV_W): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=500, max=30000, step=100, unit_of_measurement="W")
                 ),
             }),
         )
@@ -443,6 +454,20 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                     CONF_TEMPO_COLOR_ENTITY,
                     default=self._current(CONF_TEMPO_COLOR_ENTITY, ""),
                 ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+                vol.Optional(
+                    CONF_TEMPO_NEXT_COLOR_ENTITY,
+                    default=self._current(CONF_TEMPO_NEXT_COLOR_ENTITY, ""),
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+                vol.Optional(
+                    CONF_FORECAST_ENTITY,
+                    default=self._current(CONF_FORECAST_ENTITY, ""),
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+                vol.Optional(
+                    CONF_PEAK_PV_W,
+                    default=self._current(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=500, max=30000, step=100, unit_of_measurement="W")
+                ),
             }),
         )
 
@@ -487,6 +512,7 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
                     CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
                     CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
+                    CONF_OPTIMIZER_ALPHA,
                 )
                 if self._current(k) is not None
             }),
@@ -673,5 +699,11 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
             default=_d(CONF_MODE, MODE_AUTO),
         ): selector.SelectSelector(
             selector.SelectSelectorConfig(options=MODES, translation_key="mode")
+        ),
+        vol.Optional(
+            CONF_OPTIMIZER_ALPHA,
+            default=_d(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
         ),
     })

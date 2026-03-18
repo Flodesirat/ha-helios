@@ -7,23 +7,26 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     DOMAIN,
     CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL,
     CONF_PV_POWER_ENTITY, CONF_GRID_POWER_ENTITY, CONF_HOUSE_POWER_ENTITY,
-    CONF_TEMPO_COLOR_ENTITY,
+    CONF_TEMPO_COLOR_ENTITY, CONF_FORECAST_ENTITY,
     CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY,
     CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
     CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
-    CONF_DEVICES, CONF_MODE, MODE_AUTO, MODE_OFF,
+    CONF_DEVICES, CONF_MODE, CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD,
+    MODE_AUTO, MODE_OFF,
     BATTERY_ACTION_AUTOCONSOMMATION,
 )
 from .scoring_engine import ScoringEngine
 from .battery_strategy import BatteryStrategy
 from .device_manager import DeviceManager
+from .daily_optimizer import async_run_daily_optimization
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,10 +43,13 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=timedelta(minutes=interval),
         )
-        self.scoring_engine   = ScoringEngine(entry.data)
-        self.battery_strategy = BatteryStrategy(entry.data)
+        self.scoring_engine    = ScoringEngine(entry.data)
+        self.battery_strategy  = BatteryStrategy(entry.data)
         devices = entry.options.get(CONF_DEVICES, entry.data.get(CONF_DEVICES, []))
-        self.device_manager   = DeviceManager(hass, devices, entry.data)
+        self.device_manager    = DeviceManager(hass, devices, entry.data)
+        self.dispatch_threshold: float = float(
+            entry.data.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD)
+        )
 
         # Latest computed state — exposed to sensor/switch entities
         self.pv_power_w:      float       = 0.0
@@ -55,7 +61,33 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.tempo_color:     str | None  = None
         self.global_score:    float       = 0.0
         self.battery_action:  str         = BATTERY_ACTION_AUTOCONSOMMATION
+        self.forecast_kwh:    float | None = None
         self.mode:            str         = entry.data.get(CONF_MODE, MODE_AUTO)
+
+        # Daily optimizer — scheduled at 05:00 every morning
+        self._unsub_daily_opt = async_track_time_change(
+            hass,
+            self._async_daily_optimize,
+            hour=5,
+            minute=0,
+            second=0,
+        )
+
+    # ------------------------------------------------------------------
+    # Daily optimizer callback
+    # ------------------------------------------------------------------
+    async def _async_daily_optimize(self, now) -> None:  # noqa: ANN001
+        """Triggered at 05:00 every morning to recompute optimal scoring weights."""
+        try:
+            await async_run_daily_optimization(self.hass, self)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Helios daily optimizer failed: %s", err)
+
+    def async_unload(self) -> None:
+        """Cancel recurring scheduler when the entry is unloaded."""
+        if self._unsub_daily_opt:
+            self._unsub_daily_opt()
+            self._unsub_daily_opt = None
 
     # ------------------------------------------------------------------
     # Main update cycle
@@ -79,8 +111,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             if self.mode == MODE_AUTO:
                 dispatch_input = {
                     **score_input,
-                    "global_score":    self.global_score,
-                    "bat_available_w": self.bat_available_w,
+                    "global_score":       self.global_score,
+                    "bat_available_w":    self.bat_available_w,
+                    "dispatch_threshold": self.dispatch_threshold,
                 }
                 await self.device_manager.async_dispatch(self.hass, dispatch_input)
 
@@ -122,6 +155,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "house_power_w": _float(cfg.get(CONF_HOUSE_POWER_ENTITY)),
             "battery_soc":  _float(cfg.get(CONF_BATTERY_SOC_ENTITY)) if battery_enabled else None,
             "tempo_color":  _str(cfg.get(CONF_TEMPO_COLOR_ENTITY)),
+            "forecast_kwh": _float(cfg.get(CONF_FORECAST_ENTITY)) if cfg.get(CONF_FORECAST_ENTITY) else None,
         }
 
     def _update_state(self, raw: dict[str, Any]) -> None:
@@ -130,6 +164,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.house_power_w = raw["house_power_w"]
         self.battery_soc   = raw["battery_soc"]
         self.tempo_color   = raw["tempo_color"]
+        self.forecast_kwh  = raw["forecast_kwh"]
         # Surplus = PV production − house consumption (floored at 0)
         self.surplus_w     = max(0.0, self.pv_power_w - self.house_power_w)
         # Battery discharge headroom available for device dispatch
@@ -170,6 +205,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "grid_power_w":  self.grid_power_w,
             "battery_soc":   self.battery_soc,
             "tempo_color":   self.tempo_color,
+            "forecast_kwh":  self.forecast_kwh,
         }
 
     def _snapshot(self) -> dict[str, Any]:
@@ -181,6 +217,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "bat_available_w": self.bat_available_w,
             "battery_soc":     self.battery_soc,
             "tempo_color":     self.tempo_color,
+            "forecast_kwh":    self.forecast_kwh,
             "global_score":    self.global_score,
             "battery_action":  self.battery_action,
             "mode":            self.mode,

@@ -33,6 +33,13 @@ class ScoringEngine:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    def update_weights(self, scoring: dict[str, Any]) -> None:
+        """Apply new scoring weights (from daily optimizer)."""
+        self.w_surplus  = scoring.get("weight_pv_surplus",  self.w_surplus)
+        self.w_tempo    = scoring.get("weight_tempo",        self.w_tempo)
+        self.w_soc      = scoring.get("weight_battery_soc",  self.w_soc)
+        self.w_forecast = scoring.get("weight_forecast",     self.w_forecast)
+
     def compute(self, data: dict[str, Any]) -> float:
         """Return global score in [0..1]."""
         s_surplus  = self._score_surplus(data.get("surplus_w", 0.0))
@@ -93,18 +100,32 @@ class ScoringEngine:
         return 0.5
 
     def _score_forecast(self, data: dict[str, Any]) -> float:
-        """Score based on solar forecast for next hours.
-        Good forecast → defer non-urgent loads → lower score.
-        forecast_kwh in data:
-          ≥ 5 kWh expected → 0.3 (wait for sun)
-          0–5 kWh         → linear 0.5→0.3
-          No forecast entity → neutral 0.5.
+        """Score based on remaining solar production forecast for today.
+
+        The entity reports kWh still to be produced for the rest of the day.
+        It can be revised upward when the sky clears (as seen in real data).
+
+        Curve (non-monotone):
+          None / unavailable  → 0.5  neutral
+          0 kWh (sun set)     → 0.5  neutral — surplus scoring takes over
+          0–2 kWh             → 0.5→0.8  urgency: last chance to use PV today
+          2–5 kWh             → 0.8→0.4  sun fading, act now but not panic
+          5–10 kWh            → 0.4→0.2  plenty of sun to come, be patient
+          ≥ 10 kWh            → 0.2  strong defer: wait for production peak
         """
         forecast_kwh = data.get("forecast_kwh")
         if forecast_kwh is None:
             return 0.5
-        # The more sun expected, the less urgent to use devices right now
-        if forecast_kwh >= 5.0:
-            return 0.3
-        # Below 5 kWh: linearly interpolate between 0.5 (no sun) and 0.3 (plenty of sun)
-        return 0.5 - 0.2 * (forecast_kwh / 5.0)
+        if forecast_kwh <= 0.0:
+            return 0.5
+        if forecast_kwh <= 2.0:
+            # Last kWhs of the day → urgency ramp up
+            return 0.5 + 0.3 * (forecast_kwh / 2.0)
+        if forecast_kwh <= 5.0:
+            # Afternoon decline: high urgency → fading
+            return 0.8 - 0.4 * (forecast_kwh - 2.0) / 3.0
+        if forecast_kwh <= 10.0:
+            # Morning/midday: decent sun ahead → defer
+            return 0.4 - 0.2 * (forecast_kwh - 5.0) / 5.0
+        # Very high forecast: strongly defer, wait for production peak
+        return 0.2
