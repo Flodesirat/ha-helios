@@ -816,13 +816,13 @@ def _battery_schema(defaults: dict | None = None) -> vol.Schema:
 
     return vol.Schema({
         vol.Required(CONF_BATTERY_ENABLED, default=_d(CONF_BATTERY_ENABLED, False)): selector.BooleanSelector(),
-        vol.Optional(CONF_BATTERY_SOC_ENTITY): selector.EntitySelector(
+        vol.Optional(CONF_BATTERY_SOC_ENTITY, **({'default': d[CONF_BATTERY_SOC_ENTITY]} if CONF_BATTERY_SOC_ENTITY in d else {})): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor")
         ),
-        vol.Optional(CONF_BATTERY_CHARGE_SCRIPT): selector.EntitySelector(
+        vol.Optional(CONF_BATTERY_CHARGE_SCRIPT, **({'default': d[CONF_BATTERY_CHARGE_SCRIPT]} if CONF_BATTERY_CHARGE_SCRIPT in d else {})): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="script")
         ),
-        vol.Optional(CONF_BATTERY_AUTOCONSUM_SCRIPT): selector.EntitySelector(
+        vol.Optional(CONF_BATTERY_AUTOCONSUM_SCRIPT, **({'default': d[CONF_BATTERY_AUTOCONSUM_SCRIPT]} if CONF_BATTERY_AUTOCONSUM_SCRIPT in d else {})): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="script")
         ),
         vol.Optional(
