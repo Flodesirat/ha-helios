@@ -107,7 +107,7 @@ def cloud_from_forecast(forecast_kwh: float, theoretical_kwh: float) -> str:
 def ha_devices_to_sim(devices_config: list[dict]) -> list:
     """Convert HA config-entry device dicts to SimDevice objects for the simulation."""
     # Import here to avoid circular dependency at module load time
-    from simulation.devices import SimDevice  # type: ignore[import]
+    from .simulation.devices import SimDevice
 
     def _t(v: str, default: str) -> float:
         """Parse 'HH:MM' time string to decimal hours, or return default."""
@@ -229,8 +229,8 @@ async def async_run_daily_optimization(
     # ---- Run the optimizer in the executor (CPU-bound grid search) ----
     def _run_optimization():
         try:
-            from simulation.engine import SimConfig  # type: ignore[import]
-            from simulation.optimizer import optimize  # type: ignore[import]
+            from .simulation.engine import SimConfig
+            from .simulation.optimizer import optimize
         except ImportError as exc:
             _LOGGER.error("Helios optimizer: simulation module not available: %s", exc)
             return None
