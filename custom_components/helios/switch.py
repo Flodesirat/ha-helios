@@ -96,7 +96,6 @@ class PoolForceSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs) -> None:
         duration_s = self._device.pool_force_duration_h * 3600
         self._device.pool_force_until = time.time() + duration_s
-        # Apply immediately to the physical switch
         if self._device.switch_entity:
             await self.hass.services.async_call(
                 "homeassistant", "turn_on",
@@ -105,10 +104,10 @@ class PoolForceSwitch(CoordinatorEntity, SwitchEntity):
             )
         self._device.is_on = True
         self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs) -> None:
         self._device.pool_force_until = None
-        # Block the optimizer from re-enabling the pump for the selected duration
         self._device.pool_inhibit_until = time.time() + self._device.pool_force_duration_h * 3600
         if self._device.switch_entity:
             await self.hass.services.async_call(
@@ -118,6 +117,7 @@ class PoolForceSwitch(CoordinatorEntity, SwitchEntity):
             )
         self._device.is_on = False
         self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
 
 class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):

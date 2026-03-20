@@ -478,9 +478,10 @@ class DeviceManager:
         hass: HomeAssistant,
         score_input: dict[str, Any],
     ) -> None:
-        global_score:   float = score_input.get("global_score",   0.0)
-        surplus_w:      float = score_input.get("surplus_w",      0.0)
-        bat_available_w: float = score_input.get("bat_available_w", 0.0)
+        global_score:       float = score_input.get("global_score",       0.0)
+        surplus_w:          float = score_input.get("surplus_w",          0.0)
+        bat_available_w:    float = score_input.get("bat_available_w",    0.0)
+        dispatch_threshold: float = score_input.get("dispatch_threshold", self._dispatch_threshold)
         today  = date.today()
         now    = datetime.now().time()
         now_ts = time_mod.time()
@@ -534,7 +535,7 @@ class DeviceManager:
         must_run = {d for d in self.devices if d.must_run_now(hass) and _helios_manages(d)}
 
         # ---- Gate: skip normal dispatch if global score too low ----
-        if global_score < self._dispatch_threshold and not must_run:
+        if global_score < dispatch_threshold and not must_run:
             for device in self.devices:
                 if device.device_type == DEVICE_TYPE_APPLIANCE:
                     continue  # appliance state machine runs regardless
