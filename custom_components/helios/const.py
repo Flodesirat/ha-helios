@@ -1,7 +1,7 @@
 """Constants for Helios Energy Optimizer."""
 
 DOMAIN = "helios"
-PLATFORMS = ["sensor", "switch", "binary_sensor"]
+PLATFORMS = ["sensor", "switch", "binary_sensor", "select"]
 
 # ---------------------------------------------------------------------------
 # Config entry keys — sources

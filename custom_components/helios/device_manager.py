@@ -124,10 +124,16 @@ class ManagedDevice:
         self.is_on: bool                      = False
         self.turned_on_at: float | None       = None  # epoch seconds
         self.turned_off_at: float | None      = None
+        self.manual_mode: bool                = False  # True → Helios hands off entirely
 
         # Pool — daily run tracking (persisted externally)
         self.pool_daily_run_minutes: float    = 0.0
         self.pool_last_date: date | None      = None
+
+        # Pool — force mode (set by PoolForceSwitch entity)
+        self.pool_force_until: float | None    = None   # epoch seconds — forced ON
+        self.pool_inhibit_until: float | None  = None   # epoch seconds — forced OFF (optimizer blocked)
+        self.pool_force_duration_h: float      = 2.0    # currently selected duration
 
         # Appliance state machine
         self.appliance_state: str             = APPLIANCE_STATE_IDLE
@@ -475,28 +481,65 @@ class DeviceManager:
         global_score:   float = score_input.get("global_score",   0.0)
         surplus_w:      float = score_input.get("surplus_w",      0.0)
         bat_available_w: float = score_input.get("bat_available_w", 0.0)
-        today = date.today()
-        now   = datetime.now().time()
+        today  = date.today()
+        now    = datetime.now().time()
+        now_ts = time_mod.time()
 
-        # ---- Update pool run counters ----
+        # ---- Update pool run counters (always, including during force mode) ----
         pool_changed = False
         for device in self.devices:
-            if device.device_type == DEVICE_TYPE_POOL:
-                before = device.pool_daily_run_minutes
-                device.update_pool_run_time(self._scan_interval, today)
-                if device.pool_daily_run_minutes != before:
-                    pool_changed = True
+            if device.device_type != DEVICE_TYPE_POOL or device.manual_mode:
+                continue
+            before = device.pool_daily_run_minutes
+            device.update_pool_run_time(self._scan_interval, today)
+            if device.pool_daily_run_minutes != before:
+                pool_changed = True
         if pool_changed:
             await self._async_save_pool_data()
 
-        # ---- Collect must-run overrides ----
-        must_run = {d for d in self.devices if d.must_run_now(hass)}
+        # ---- Pool force ON: maintain / expire ----
+        for device in self.devices:
+            if device.device_type != DEVICE_TYPE_POOL or device.pool_force_until is None or device.manual_mode:
+                continue
+            if now_ts < device.pool_force_until:
+                if not device.is_on:
+                    await self._async_set_switch(hass, device, True)
+            else:
+                device.pool_force_until = None
+                _LOGGER.info("Pool '%s': force mode expired", device.name)
+
+        # ---- Pool inhibit: ensure off / expire ----
+        for device in self.devices:
+            if device.device_type != DEVICE_TYPE_POOL or device.pool_inhibit_until is None or device.manual_mode:
+                continue
+            if now_ts < device.pool_inhibit_until:
+                if device.is_on:
+                    await self._async_set_switch(hass, device, False)
+            else:
+                device.pool_inhibit_until = None
+                _LOGGER.info("Pool '%s': inhibit mode expired", device.name)
+
+        def _helios_manages(device: ManagedDevice) -> bool:
+            """False if Helios must not touch this device (manual mode, or pool locked)."""
+            if device.manual_mode:
+                return False
+            if device.device_type == DEVICE_TYPE_POOL:
+                if device.pool_force_until is not None and now_ts < device.pool_force_until:
+                    return False
+                if device.pool_inhibit_until is not None and now_ts < device.pool_inhibit_until:
+                    return False
+            return True
+
+        # ---- Collect must-run overrides (skip devices Helios doesn't manage) ----
+        must_run = {d for d in self.devices if d.must_run_now(hass) and _helios_manages(d)}
 
         # ---- Gate: skip normal dispatch if global score too low ----
         if global_score < self._dispatch_threshold and not must_run:
             for device in self.devices:
                 if device.device_type == DEVICE_TYPE_APPLIANCE:
                     continue  # appliance state machine runs regardless
+                if not _helios_manages(device):
+                    continue  # manual / force / inhibit — hands off
                 if device.is_on and device.interruptible and self._min_on_elapsed(device):
                     await self._async_set_switch(hass, device, False)
             return
@@ -505,6 +548,10 @@ class DeviceManager:
         scored: list[tuple[float, ManagedDevice]] = []
 
         for device in self.devices:
+            # Devices not under Helios control are skipped entirely
+            if not _helios_manages(device):
+                continue
+
             # Appliance state machine is handled separately
             if device.device_type == DEVICE_TYPE_APPLIANCE:
                 await self._async_handle_appliance(

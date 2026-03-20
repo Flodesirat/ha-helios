@@ -1,6 +1,8 @@
 """Sensor entities exposed by Energy Optimizer."""
 from __future__ import annotations
 
+import time as _time
+
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfPower, PERCENTAGE
@@ -10,7 +12,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from homeassistant.util import slugify
 
-from .const import DOMAIN, DEVICE_TYPE_APPLIANCE, APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_READY, APPLIANCE_STATE_PREPARING
+from .const import (
+    DOMAIN,
+    DEVICE_TYPE_APPLIANCE, APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_READY, APPLIANCE_STATE_PREPARING,
+    DEVICE_TYPE_POOL,
+)
 from .coordinator import EnergyOptimizerCoordinator
 
 # Appliance state → published state
@@ -40,6 +46,11 @@ async def async_setup_entry(
         for device in coordinator.device_manager.devices
         if device.device_type == DEVICE_TYPE_APPLIANCE
     ]
+    for device in coordinator.device_manager.devices:
+        if device.device_type == DEVICE_TYPE_POOL:
+            entities.append(PoolFiltrationRequiredSensor(coordinator, entry, device))
+            entities.append(PoolFiltrationDoneSensor(coordinator, entry, device))
+            entities.append(PoolForceRemainingSensor(coordinator, entry, device))
     async_add_entities(entities)
 
 
@@ -220,3 +231,76 @@ class ApplianceStateSensor(_BaseEOSensor):
     @property
     def extra_state_attributes(self) -> dict:
         return {"internal_state": self._device.appliance_state}
+
+
+class _BasePoolSensor(_BaseEOSensor):
+    """Base class for pool filtration sensors."""
+
+    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
+        super().__init__(coordinator, entry)
+        self._device = device
+        self._slug   = slugify(device.name)
+
+    _attr_native_unit_of_measurement = "min"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def unique_id(self) -> str:
+        return self._attr_unique_id  # set by subclass
+
+
+class PoolFiltrationRequiredSensor(_BasePoolSensor):
+    """Total filtration time required today (from the configured entity), in minutes."""
+
+    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
+        super().__init__(coordinator, entry, device)
+        self._attr_name      = f"EO {device.name} filtration requise"
+        self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_required"
+
+    @property
+    def native_value(self) -> float | None:
+        entity_id = self._device.pool_filtration_entity
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in ("unavailable", "unknown"):
+            return None
+        try:
+            return round(float(state.state) * 60, 1)  # hours → minutes
+        except ValueError:
+            return None
+
+
+class PoolFiltrationDoneSensor(_BasePoolSensor):
+    """Filtration time already completed today, in minutes."""
+
+    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
+        super().__init__(coordinator, entry, device)
+        self._attr_name      = f"EO {device.name} filtration journée"
+        self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_done"
+
+    @property
+    def native_value(self) -> float:
+        return round(self._device.pool_daily_run_minutes, 1)
+
+
+class PoolForceRemainingSensor(_BasePoolSensor):
+    """Minutes remaining in pool force mode (0 when not active)."""
+
+    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
+        super().__init__(coordinator, entry, device)
+        self._attr_name      = f"EO {device.name} forçage restant"
+        self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_force_remaining"
+
+    @property
+    def native_value(self) -> float:
+        fu = self._device.pool_force_until
+        if fu is None:
+            return 0.0
+        return round(max(0.0, (fu - _time.time()) / 60), 1)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        iu = self._device.pool_inhibit_until
+        inhibit_remaining = 0.0 if iu is None else round(max(0.0, (iu - _time.time()) / 60), 1)
+        return {"inhibit_remaining_min": inhibit_remaining}
