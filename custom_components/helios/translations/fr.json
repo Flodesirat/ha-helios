@@ -1,0 +1,345 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sources d'énergie",
+        "description": "Configurez les entités de mesure de puissance.",
+        "data": {
+          "pv_power_entity": "Entité production PV (W)",
+          "grid_power_entity": "Entité puissance réseau (W)",
+          "house_power_entity": "Entité consommation maison (W)",
+          "tempo_color_entity": "Entité couleur Tempo du jour",
+          "tempo_next_color_entity": "Entité couleur Tempo du lendemain",
+          "forecast_entity": "Entité prévision production PV (kWh)",
+          "peak_pv_w": "Puissance crête PV installée (W)"
+        },
+        "data_description": {
+          "tempo_next_color_entity": "Utilisé par l'optimiseur à 5h pour connaître la couleur du jour qui commence.",
+          "forecast_entity": "Production prévue pour la journée, utilisée pour ajuster les poids.",
+          "peak_pv_w": "Puissance totale des panneaux en conditions optimales."
+        }
+      },
+      "battery": {
+        "title": "Batterie",
+        "description": "Laissez 'Batterie activée' décoché si vous n'avez pas de batterie.",
+        "data": {
+          "battery_enabled": "Batterie activée",
+          "battery_soc_entity": "Entité SOC batterie (%)",
+          "battery_charge_script": "Script de charge forcée",
+          "battery_autoconsum_script": "Script d'autoconsommation",
+          "battery_capacity_kwh": "Capacité batterie (kWh)",
+          "battery_soc_min": "SOC minimum (%)",
+          "battery_soc_max": "SOC maximum (%)",
+          "battery_soc_reserve_rouge": "SOC de réserve jours rouges (%)",
+          "battery_max_charge_power_w": "Puissance max de charge (W)",
+          "battery_max_discharge_power_w": "Puissance max de décharge (W)",
+          "weight_pv_surplus": "Poids surplus PV",
+          "weight_tempo": "Poids Tempo",
+          "weight_battery_soc": "Poids SOC batterie",
+          "weight_forecast": "Poids prévision"
+        }
+      },
+      "devices": {
+        "title": "Appareils",
+        "description": "Ajoutez vos appareils pilotables. Vous pourrez en ajouter d'autres plus tard.",
+        "data": {
+          "add_device": "Ajouter un appareil"
+        }
+      },
+      "device_type": {
+        "title": "Type d'appareil",
+        "data": {
+          "device_type": "Type d'appareil"
+        }
+      },
+      "device_ev": {
+        "title": "Chargeur VE",
+        "data": {
+          "ev_soc_entity": "Entité SOC véhicule (%)",
+          "ev_plugged_entity": "Entité véhicule branché",
+          "ev_soc_target": "SOC cible (%)",
+          "ev_departure_time": "Heure de départ (HH:MM)",
+          "ev_min_charge_power_w": "Puissance minimale de charge (W)",
+          "ev_battery_capacity_wh": "Capacité batterie véhicule (Wh)"
+        }
+      },
+      "device_water_heater": {
+        "title": "Chauffe-eau",
+        "data": {
+          "wh_temp_entity": "Entité température (°C)",
+          "wh_temp_target": "Température cible (°C)",
+          "wh_temp_min": "Température minimale légionellose (°C)"
+        }
+      },
+      "device_hvac": {
+        "title": "Climatisation / Pompe à chaleur",
+        "data": {
+          "hvac_temp_entity": "Entité température ambiante (°C)",
+          "hvac_setpoint_entity": "Entité consigne de température (°C)",
+          "hvac_mode": "Mode",
+          "hvac_hysteresis_k": "Hystérésis (°C)",
+          "hvac_min_off_minutes": "Durée minimale d'arrêt (min)"
+        }
+      },
+      "device_pool": {
+        "title": "Piscine",
+        "data": {
+          "pool_filtration_entity": "Entité heures de filtration requises (h)",
+          "pool_split_sessions": "Autoriser plusieurs sessions par jour"
+        }
+      },
+      "device_appliance": {
+        "title": "Électroménager",
+        "data": {
+          "appliance_ready_entity": "Entité prêt à démarrer (input_boolean)",
+          "appliance_prepare_script": "Script de préparation (optionnel)",
+          "appliance_start_script": "Script de démarrage",
+          "appliance_power_entity": "Entité puissance (détection fin de cycle)",
+          "appliance_power_threshold_w": "Seuil de fin de cycle (W)",
+          "appliance_cycle_duration_minutes": "Durée du cycle (min)"
+        }
+      },
+      "device_common": {
+        "title": "Paramètres communs",
+        "data": {
+          "device_name": "Nom de l'appareil",
+          "device_switch_entity": "Entité interrupteur",
+          "device_power_w": "Puissance nominale (W)",
+          "device_priority": "Priorité (1 = faible, 10 = haute)",
+          "device_min_on_minutes": "Durée minimale d'allumage (min)",
+          "device_allowed_start": "Début de plage horaire (HH:MM)",
+          "device_allowed_end": "Fin de plage horaire (HH:MM)",
+          "device_must_run_daily": "Doit tourner chaque jour",
+          "device_deadline": "Heure limite de fin (HH:MM)",
+          "device_weight_priority": "Poids priorité",
+          "device_weight_fit": "Poids adéquation surplus",
+          "device_weight_urgency": "Poids urgence"
+        }
+      },
+      "strategy": {
+        "title": "Stratégie",
+        "description": "Les quatre poids doivent sommer à 1,0.",
+        "data": {
+          "weight_pv_surplus": "Poids surplus PV",
+          "weight_tempo": "Poids Tempo",
+          "weight_battery_soc": "Poids SOC batterie",
+          "weight_forecast": "Poids prévision",
+          "scan_interval_minutes": "Intervalle de mise à jour (min)",
+          "mode": "Mode de fonctionnement",
+          "dispatch_threshold": "Seuil de déclenchement",
+          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)"
+        },
+        "data_description": {
+          "dispatch_threshold": "Score global minimum pour piloter les appareils (0–1).",
+          "optimizer_alpha": "Équilibre entre minimiser la facture et maximiser l'autoconsommation."
+        }
+      }
+    },
+    "error": {
+      "weights_must_sum_to_one": "Les poids doivent sommer à 1,0.",
+      "device_weights_must_sum_to_one": "Les poids par appareil doivent sommer à 1,0."
+    },
+    "abort": {
+      "already_configured": "Cette intégration est déjà configurée."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Helios — Reconfiguration",
+        "data": {
+          "section": "Section à modifier"
+        }
+      },
+      "sources": {
+        "title": "Sources d'énergie",
+        "data": {
+          "pv_power_entity": "Entité production PV (W)",
+          "grid_power_entity": "Entité puissance réseau (W)",
+          "house_power_entity": "Entité consommation maison (W)",
+          "tempo_color_entity": "Entité couleur Tempo du jour",
+          "tempo_next_color_entity": "Entité couleur Tempo du lendemain",
+          "forecast_entity": "Entité prévision production PV (kWh)",
+          "peak_pv_w": "Puissance crête PV installée (W)"
+        }
+      },
+      "battery": {
+        "title": "Batterie",
+        "data": {
+          "battery_enabled": "Batterie activée",
+          "battery_soc_entity": "Entité SOC batterie (%)",
+          "battery_charge_script": "Script de charge forcée",
+          "battery_autoconsum_script": "Script d'autoconsommation",
+          "battery_capacity_kwh": "Capacité batterie (kWh)",
+          "battery_soc_min": "SOC minimum (%)",
+          "battery_soc_max": "SOC maximum (%)",
+          "battery_soc_reserve_rouge": "SOC de réserve jours rouges (%)",
+          "battery_max_charge_power_w": "Puissance max de charge (W)",
+          "battery_max_discharge_power_w": "Puissance max de décharge (W)"
+        }
+      },
+      "strategy": {
+        "title": "Stratégie",
+        "data": {
+          "weight_pv_surplus": "Poids surplus PV",
+          "weight_tempo": "Poids Tempo",
+          "weight_battery_soc": "Poids SOC batterie",
+          "weight_forecast": "Poids prévision",
+          "scan_interval_minutes": "Intervalle de mise à jour (min)",
+          "mode": "Mode de fonctionnement",
+          "dispatch_threshold": "Seuil de déclenchement",
+          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)"
+        }
+      },
+      "devices_select": {
+        "title": "Gestion des appareils",
+        "data": {
+          "device": "Appareil à modifier"
+        }
+      },
+      "opt_device_action": {
+        "title": "Action",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "opt_device_type": {
+        "title": "Type d'appareil",
+        "data": {
+          "device_type": "Type d'appareil"
+        }
+      },
+      "opt_device_ev": {
+        "title": "Chargeur VE",
+        "data": {
+          "ev_soc_entity": "Entité SOC véhicule (%)",
+          "ev_plugged_entity": "Entité véhicule branché",
+          "ev_soc_target": "SOC cible (%)",
+          "ev_departure_time": "Heure de départ (HH:MM)",
+          "ev_min_charge_power_w": "Puissance minimale de charge (W)",
+          "ev_battery_capacity_wh": "Capacité batterie véhicule (Wh)"
+        }
+      },
+      "opt_device_water_heater": {
+        "title": "Chauffe-eau",
+        "data": {
+          "wh_temp_entity": "Entité température (°C)",
+          "wh_temp_target": "Température cible (°C)",
+          "wh_temp_min": "Température minimale légionellose (°C)"
+        }
+      },
+      "opt_device_hvac": {
+        "title": "Climatisation / Pompe à chaleur",
+        "data": {
+          "hvac_temp_entity": "Entité température ambiante (°C)",
+          "hvac_setpoint_entity": "Entité consigne de température (°C)",
+          "hvac_mode": "Mode",
+          "hvac_hysteresis_k": "Hystérésis (°C)",
+          "hvac_min_off_minutes": "Durée minimale d'arrêt (min)"
+        }
+      },
+      "opt_device_pool": {
+        "title": "Piscine",
+        "data": {
+          "pool_filtration_entity": "Entité heures de filtration requises (h)",
+          "pool_split_sessions": "Autoriser plusieurs sessions par jour"
+        }
+      },
+      "opt_device_appliance": {
+        "title": "Électroménager",
+        "data": {
+          "appliance_ready_entity": "Entité prêt à démarrer (input_boolean)",
+          "appliance_prepare_script": "Script de préparation (optionnel)",
+          "appliance_start_script": "Script de démarrage",
+          "appliance_power_entity": "Entité puissance (détection fin de cycle)",
+          "appliance_power_threshold_w": "Seuil de fin de cycle (W)",
+          "appliance_cycle_duration_minutes": "Durée du cycle (min)"
+        }
+      },
+      "opt_device_common": {
+        "title": "Paramètres communs",
+        "data": {
+          "device_name": "Nom de l'appareil",
+          "device_switch_entity": "Entité interrupteur",
+          "device_power_w": "Puissance nominale (W)",
+          "device_priority": "Priorité (1 = faible, 10 = haute)",
+          "device_min_on_minutes": "Durée minimale d'allumage (min)",
+          "device_allowed_start": "Début de plage horaire (HH:MM)",
+          "device_allowed_end": "Fin de plage horaire (HH:MM)",
+          "device_must_run_daily": "Doit tourner chaque jour",
+          "device_deadline": "Heure limite de fin (HH:MM)",
+          "device_weight_priority": "Poids priorité",
+          "device_weight_fit": "Poids adéquation surplus",
+          "device_weight_urgency": "Poids urgence"
+        }
+      }
+    },
+    "error": {
+      "weights_must_sum_to_one": "Les poids doivent sommer à 1,0.",
+      "device_weights_must_sum_to_one": "Les poids par appareil doivent sommer à 1,0."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "eo_pv_surplus": {
+        "name": "Surplus PV"
+      },
+      "eo_global_score": {
+        "name": "Score global"
+      },
+      "eo_battery_action": {
+        "name": "Action batterie",
+        "state": {
+          "forced_charge": "Charge forcée",
+          "autoconsommation": "Autoconsommation",
+          "reserve": "Réserve",
+          "idle": "Inactif"
+        }
+      },
+      "eo_pv_power": {
+        "name": "Production PV"
+      },
+      "eo_grid_power": {
+        "name": "Puissance réseau"
+      },
+      "eo_house_power": {
+        "name": "Consommation maison"
+      },
+      "eo_optimizer_weights": {
+        "name": "Poids optimiseur"
+      }
+    },
+    "binary_sensor": {
+      "eo_device": {
+        "name": "Appareil {name}",
+        "state": {
+          "on": "Piloté ON",
+          "off": "Piloté OFF"
+        }
+      }
+    },
+    "switch": {
+      "eo_auto_mode": {
+        "name": "Mode automatique"
+      },
+      "eo_pool_force": {
+        "name": "Forçage filtration {name}"
+      },
+      "eo_device_manual": {
+        "name": "Mode manuel {name}"
+      }
+    },
+    "select": {
+      "eo_pool_force_duration": {
+        "name": "Durée forçage {name}",
+        "state": {
+          "1h": "1 heure",
+          "2h": "2 heures",
+          "4h": "4 heures",
+          "12h": "12 heures",
+          "24h": "24 heures"
+        }
+      }
+    }
+  }
+}
