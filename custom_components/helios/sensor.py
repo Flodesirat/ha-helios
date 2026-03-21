@@ -40,6 +40,7 @@ async def async_setup_entry(
         EnergyOptimizerGridPowerSensor(coordinator, entry),
         EnergyOptimizerHousePowerSensor(coordinator, entry),
         EnergyOptimizerWeightsSensor(coordinator, entry),
+        EnergyOptimizerBatterySocLevelSensor(coordinator, entry),
     ]
     entities += [
         ApplianceStateSensor(coordinator, entry, device)
@@ -208,6 +209,40 @@ class EnergyOptimizerWeightsSensor(_BaseEOSensor):
             "w_forecast":     round(eng.w_forecast, 3),
             "last_optimized": self.coordinator.optimizer_last_run,
         }
+
+
+def _soc_level_label(soc: float | None) -> str | None:
+    if soc is None:
+        return None
+    if soc <= 20:
+        return "Réserve"
+    if soc <= 50:
+        return "Basse"
+    if soc <= 75:
+        return "Optimale"
+    if soc <= 90:
+        return "Haute"
+    if soc <= 95:
+        return "Très haute"
+    return "Pleine"
+
+
+class EnergyOptimizerBatterySocLevelSensor(_BaseEOSensor):
+    """Reports a textual label for the battery SOC level."""
+
+    _attr_name = "EO battery SOC level"
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry.entry_id}_battery_soc_level"
+
+    @property
+    def native_value(self) -> str | None:
+        return _soc_level_label(self.coordinator.battery_soc)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {"battery_soc": self.coordinator.battery_soc}
 
 
 class ApplianceStateSensor(_BaseEOSensor):

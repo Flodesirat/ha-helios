@@ -485,10 +485,21 @@ class DeviceManager:
         hass: HomeAssistant,
         score_input: dict[str, Any],
     ) -> None:
-        global_score:       float = score_input.get("global_score",       0.0)
-        surplus_w:          float = score_input.get("surplus_w",          0.0)
-        bat_available_w:    float = score_input.get("bat_available_w",    0.0)
-        dispatch_threshold: float = score_input.get("dispatch_threshold", self._dispatch_threshold)
+        global_score:       float       = score_input.get("global_score",       0.0)
+        surplus_w:          float       = score_input.get("surplus_w",          0.0)
+        bat_available_w:    float       = score_input.get("bat_available_w",    0.0)
+        dispatch_threshold: float       = score_input.get("dispatch_threshold", self._dispatch_threshold)
+        battery_soc:        float | None = score_input.get("battery_soc")
+        configured_allowance_w: float   = float(score_input.get("grid_allowance_w", 250.0))
+
+        # Mode "Pleine" (SOC ≥ 96 %) : autoriser un léger tirage réseau pour
+        # décharger la batterie avant qu'elle atteigne 100 % et perde en efficacité.
+        grid_allowance_w: float = configured_allowance_w if (battery_soc is not None and battery_soc >= 96.0) else 0.0
+        if grid_allowance_w:
+            _LOGGER.info(
+                "Dispatch: SOC=%.0f%% (Pleine) — tolérance réseau +%.0fW activée",
+                battery_soc, grid_allowance_w,
+            )
         today  = date.today()
         now    = datetime.now().time()
         now_ts = time_mod.time()
@@ -590,7 +601,7 @@ class DeviceManager:
 
         # ---- Greedy allocation (highest score first) ----
         scored.sort(key=lambda x: x[0], reverse=True)
-        remaining = surplus_w + bat_available_w
+        remaining = surplus_w + bat_available_w + grid_allowance_w
 
         for score, device in scored:
             fit = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)

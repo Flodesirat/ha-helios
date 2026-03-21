@@ -78,26 +78,29 @@ class ScoringEngine:
         return mapping.get(color, 0.5)
 
     def _score_soc(self, soc: float | None) -> float:
-        """Map battery SOC to [0..1].
-        Trapezoid bell:
-          0–15 %  → 0.0        (too low, conserve battery)
-          15–40 % → ramp 0→1.0
-          40–60 % → 1.0        (sweet spot: use devices freely)
-          60–85 % → ramp 1→0.5
-          85–100% → 0.5        (battery full, no urgency)
-        None → neutral 0.5.
+        """Map battery SOC to [0..1] based on operational zones.
+
+        Réserve   (0–20 %)  → 0.0          coupure des charges non critiques
+        Basse     (20–50 %) → 0.0–0.15     dispatch uniquement si surplus réseau
+        Optimale  (50–75 %) → 0.15–1.0     zone de confort, usage normal
+        Haute     (75–90 %) → 1.0–0.65     stockage suffisant pour la nuit
+        Très haute(90–95 %) → 0.65–0.9     opportunité gros consommateurs
+        Pleine    (95–100%) → 1.0          excédent total, décharger au max
+        None → neutre 0.5.
         """
         if soc is None:
             return 0.5
-        if soc <= 15:
+        if soc <= 20:
             return 0.0
-        if soc <= 40:
-            return (soc - 15) / 25.0
-        if soc <= 60:
-            return 1.0
-        if soc <= 85:
-            return 1.0 - 0.5 * (soc - 60) / 25.0
-        return 0.5
+        if soc <= 50:
+            return 0.15 * (soc - 20) / 30.0
+        if soc <= 75:
+            return 0.15 + 0.85 * (soc - 50) / 25.0
+        if soc <= 90:
+            return 1.0 - 0.35 * (soc - 75) / 15.0
+        if soc <= 95:
+            return 0.65 + 0.25 * (soc - 90) / 5.0
+        return 1.0
 
     def _score_forecast(self, data: dict[str, Any]) -> float:
         """Score based on remaining solar production forecast for today.

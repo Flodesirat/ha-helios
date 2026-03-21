@@ -125,6 +125,7 @@ CONF_WEIGHT_FORECAST     = "weight_forecast"
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
 CONF_MODE                  = "mode"
 CONF_DISPATCH_THRESHOLD    = "dispatch_threshold"  # global_score below which no dispatch
+CONF_GRID_ALLOWANCE_W      = "grid_allowance_w"    # W autorisés depuis le réseau en mode Pleine (SOC ≥ 96 %)
 CONF_OPTIMIZER_ALPHA       = "optimizer_alpha"     # 0.0 = économies pures, 1.0 = autoconsommation pure
 
 # ---------------------------------------------------------------------------
@@ -170,6 +171,7 @@ STORAGE_VERSION = 1
 # ---------------------------------------------------------------------------
 DEFAULT_SCAN_INTERVAL              = 5      # minutes
 DEFAULT_DISPATCH_THRESHOLD         = 0.3
+DEFAULT_GRID_ALLOWANCE_W           = 250    # W
 DEFAULT_OPTIMIZER_ALPHA            = 0.5    # équilibré autoconsommation / économies
 DEFAULT_PEAK_PV_W                  = 3000.0 # W — used when no real-time data available
 

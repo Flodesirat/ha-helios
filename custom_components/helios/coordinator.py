@@ -20,6 +20,7 @@ from .const import (
     CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     CONF_DEVICES, CONF_MODE, CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD,
+    CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W,
     MODE_AUTO, MODE_OFF,
     BATTERY_ACTION_AUTOCONSOMMATION,
 )
@@ -49,6 +50,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.device_manager    = DeviceManager(hass, devices, entry.data)
         self.dispatch_threshold: float = float(
             entry.data.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD)
+        )
+        self.grid_allowance_w: float = float(
+            entry.data.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W)
         )
 
         # Latest computed state — exposed to sensor/switch entities
@@ -115,6 +119,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                     "global_score":       self.global_score,
                     "bat_available_w":    self.bat_available_w,
                     "dispatch_threshold": self.dispatch_threshold,
+                    "grid_allowance_w":   self.grid_allowance_w,
                 }
                 await self.device_manager.async_dispatch(self.hass, dispatch_input)
 
