@@ -188,7 +188,7 @@ class TestDispatchThreshold_FromScoreInput:
         device = _make_device()
         device.is_on = True
         device.pool_last_date = date.today()
-        device.pool_daily_run_minutes = 0.0
+        device.pool_daily_run_minutes = 300.0  # quota already met → must_run_now=False
 
         # Manager initialised with a LOW threshold (0.1)
         # score_input provides a HIGH threshold (0.9) → gate should fire and turn device off
@@ -238,7 +238,7 @@ class TestDispatchThreshold_FromScoreInput:
         device = _make_device()
         device.is_on = True
         device.pool_last_date = date.today()
-        device.pool_daily_run_minutes = 0.0
+        device.pool_daily_run_minutes = 300.0  # quota already met → must_run_now=False
 
         # init threshold 0.9, score 0.5 → gate fires → device off
         mgr = _make_manager([device], init_threshold=0.9)
@@ -284,7 +284,7 @@ class TestDispatchThreshold_FromScoreInput:
         device = _make_device()
         device.is_on = True
         device.pool_last_date = date.today()
-        device.pool_daily_run_minutes = 0.0
+        device.pool_daily_run_minutes = 300.0  # quota already met → must_run_now=False
 
         # Optimizer raised the threshold to 0.7 (stored on coordinator)
         optimizer_threshold = 0.7
@@ -304,3 +304,5 @@ class TestDispatchThreshold_FromScoreInput:
         assert device.is_on is False, (
             "After optimizer raises threshold to 0.7, score 0.5 must trigger the gate"
         )
+
+

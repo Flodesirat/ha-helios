@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
-from .const import DOMAIN, MODE_AUTO, MODE_OFF, DEVICE_TYPE_POOL
+from .const import DOMAIN, MODE_AUTO, MODE_OFF, DEVICE_TYPE_POOL, DEVICE_TYPE_EV
 from .coordinator import EnergyOptimizerCoordinator
 from .device_manager import ManagedDevice
 
@@ -28,6 +28,11 @@ async def async_setup_entry(
     entities += [
         DeviceManualSwitch(coordinator, entry, device)
         for device in coordinator.device_manager.devices
+    ]
+    entities += [
+        EVPluggedSwitch(coordinator, entry, device)
+        for device in coordinator.device_manager.devices
+        if device.device_type == DEVICE_TYPE_EV and not device.ev_plugged_entity
     ]
     async_add_entities(entities)
 
@@ -153,4 +158,40 @@ class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         self._device.manual_mode = False
+        self.async_write_ha_state()
+
+
+class EVPluggedSwitch(CoordinatorEntity, SwitchEntity):
+    """Manual 'EV plugged in' indicator — used when no external plugged entity is configured."""
+
+    def __init__(
+        self,
+        coordinator: EnergyOptimizerCoordinator,
+        entry: ConfigEntry,
+        device: ManagedDevice,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry  = entry
+        self._device = device
+        slug = slugify(device.name)
+        self._attr_name      = f"EO {device.name} branché"
+        self._attr_unique_id = f"{entry.entry_id}_ev_{slug}_plugged"
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": "Energy Optimizer",
+        }
+
+    @property
+    def is_on(self) -> bool:
+        return self._device.ev_plugged_manual
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self._device.ev_plugged_manual = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self._device.ev_plugged_manual = False
         self.async_write_ha_state()

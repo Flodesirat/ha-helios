@@ -130,6 +130,9 @@ class ManagedDevice:
         self.pool_daily_run_minutes: float    = 0.0
         self.pool_last_date: date | None      = None
 
+        # EV — manual plugged state (used when no ev_plugged_entity is configured)
+        self.ev_plugged_manual: bool           = False
+
         # Pool — force mode (set by PoolForceSwitch entity)
         self.pool_force_until: float | None    = None   # epoch seconds — forced ON
         self.pool_inhibit_until: float | None  = None   # epoch seconds — forced OFF (optimizer blocked)
@@ -163,7 +166,11 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     def is_satisfied(self, hass: HomeAssistant) -> bool:
         if self.device_type == DEVICE_TYPE_EV:
-            if not self._state_bool(hass, self.ev_plugged_entity, fallback=True):
+            if self.ev_plugged_entity:
+                plugged = self._state_bool(hass, self.ev_plugged_entity, fallback=True)
+            else:
+                plugged = self.ev_plugged_manual
+            if not plugged:
                 return True  # car not plugged → nothing to do
             return self._state_float(hass, self.ev_soc_entity) >= self.ev_soc_target
 

@@ -231,9 +231,19 @@ async def async_run_daily_optimization(
         try:
             from .simulation.engine import SimConfig
             from .simulation.optimizer import optimize
+            from .simulation.profiles import load_base_load_from_json
         except ImportError as exc:
             _LOGGER.error("Helios optimizer: simulation module not available: %s", exc)
             return None
+
+        import pathlib
+        _base_load_path = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
+        try:
+            base_load_fn = load_base_load_from_json(str(_base_load_path))
+            _LOGGER.debug("Helios optimizer: using base_load.json from %s", _base_load_path)
+        except Exception as exc:
+            base_load_fn = None
+            _LOGGER.warning("Helios optimizer: could not load base_load.json (%s), using default profile", exc)
 
         sim_cfg = SimConfig(
             season=season,
@@ -248,6 +258,7 @@ async def async_run_daily_optimization(
             bat_soc_min=bat_soc_min,
             bat_soc_max=bat_soc_max,
             forecast_noise=0.0,   # deterministic at 5am (forecast already known)
+            base_load_fn=base_load_fn,
         )
 
         def _devices_fn():

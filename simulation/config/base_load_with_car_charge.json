@@ -1,0 +1,14 @@
+{
+  "_comment": "Consommation de fond de la maison (sans appareils pilotés). Chaque segment définit une plage horaire avec interpolation linéaire entre w_start et w_end.",
+  "segments": [
+    {"from": 0.0,  "to": 2.0,  "w_start": 600,  "w_end": 600},
+    {"from": 2.0,  "to": 7.0,  "w_start": 250,  "w_end": 250},
+    {"from": 7.0,  "to": 12.0,  "w_start": 250,  "w_end": 900},
+    {"from": 12.0,  "to": 14.0,  "w_start": 900, "w_end": 700},
+    {"from": 14.0,  "to": 15.0, "w_start": 300,  "w_end": 300},
+    {"from": 15.0, "to": 16.0, "w_start": 700,  "w_end": 700},
+    {"from": 16.0, "to": 19.0, "w_start": 350, "w_end": 350},
+    {"from": 19.0, "to": 20.0, "w_start": 1200, "w_end": 1200},
+    {"from": 20.0, "to": 24.0, "w_start": 550, "w_end": 550}
+  ]
+}
