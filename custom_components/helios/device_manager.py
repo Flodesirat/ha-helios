@@ -56,6 +56,10 @@ _LOGGER = logging.getLogger(__name__)
 # How long (seconds) power must stay below threshold to confirm cycle ended
 _APPLIANCE_LOW_POWER_CONFIRM_S = 180
 
+# Pool must_run: only force filtration in the last N hours of the day.
+# Before this window the day is still open — solar may yet provide the needed energy.
+_POOL_MUST_RUN_WINDOW_H = 8  # hours before midnight (default: fires after 16:00)
+
 
 class ManagedDevice:
     """Represents one controllable device with its full configuration."""
@@ -202,14 +206,17 @@ class ManagedDevice:
             return self._state_float(hass, self.wh_temp_entity) < self.wh_temp_min
 
         if self.device_type == DEVICE_TYPE_POOL:
-            # Not enough time left today to meet the filtration quota
+            # Only considered in the last _POOL_MUST_RUN_WINDOW_H hours of the day.
+            # Earlier, solar production may still cover the deficit naturally.
+            now      = datetime.now()
+            midnight = datetime.combine(now.date() + timedelta(days=1), time(0, 0))
+            minutes_left = (midnight - now).total_seconds() / 60
+            if minutes_left > _POOL_MUST_RUN_WINDOW_H * 60:
+                return False
             required_m = self._pool_required_minutes(hass)
             deficit_m  = max(0.0, required_m - self.pool_daily_run_minutes)
             if deficit_m <= 0:
                 return False
-            now      = datetime.now()
-            midnight = datetime.combine(now.date() + timedelta(days=1), time(0, 0))
-            minutes_left = (midnight - now).total_seconds() / 60
             return deficit_m >= minutes_left
 
         return False
@@ -551,6 +558,20 @@ class DeviceManager:
 
         # ---- Collect must-run overrides (skip devices Helios doesn't manage) ----
         must_run = {d for d in self.devices if d.must_run_now(hass) and _helios_manages(d)}
+
+        # ---- Réserve zone (SOC ≤ 20 %): suppress non-safety overrides ----
+        # In this zone the battery is critically low.  The water heater legionella
+        # protection is a genuine safety override (health risk); pool filtration is
+        # not — its urgency is already reflected in urgency_modifier().
+        if battery_soc is not None and battery_soc <= 20.0 and must_run:
+            suppressed = {d for d in must_run if d.device_type != DEVICE_TYPE_WATER_HEATER}
+            if suppressed:
+                _LOGGER.warning(
+                    "Dispatch: SOC=%.0f%% (Réserve) — must_run supprimé pour: %s",
+                    battery_soc,
+                    ", ".join(d.name for d in suppressed),
+                )
+            must_run -= suppressed
 
         # ---- Gate: skip normal dispatch if global score too low ----
         if global_score < dispatch_threshold and not must_run:
