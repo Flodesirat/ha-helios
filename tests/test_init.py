@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.helios.const import DOMAIN, PLATFORMS
+from custom_components.helios.const import DOMAIN, PLATFORMS, CONF_FORECAST_ENTITY
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +123,73 @@ async def test_unload_entry_succeeds(
     assert result is True, "async_unload_entry returned False"
     assert config_entry.entry_id not in hass.data.get(DOMAIN, {}), (
         "Coordinator still present in hass.data after unload"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Forecast entity — options-flow override
+# ---------------------------------------------------------------------------
+
+async def test_forecast_kwh_read_from_options(
+    hass: HomeAssistant,
+    minimal_entry_data: dict,
+):
+    """forecast_kwh must be populated when CONF_FORECAST_ENTITY lives in entry.options.
+
+    Regression test: the coordinator was reading only entry.data, so a forecast
+    entity configured (or reconfigured) via the options flow was silently ignored,
+    causing forecast_kwh = None in diagnostics.
+    """
+    hass.states.async_set("sensor.forecast_pv", "8.5")
+
+    # Simulate: initial setup without forecast, then options-flow adds it
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=minimal_entry_data,          # no forecast entity in data
+        options={CONF_FORECAST_ENTITY: "sensor.forecast_pv"},  # set via options flow
+        title="Helios Forecast Test",
+        entry_id="test_forecast_options",
+    )
+    await _setup(hass, entry)
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.forecast_kwh == pytest.approx(8.5), (
+        f"forecast_kwh should be 8.5 (from options), got {coordinator.forecast_kwh}"
+    )
+
+
+async def test_forecast_kwh_read_from_data(
+    hass: HomeAssistant,
+    minimal_entry_data: dict,
+):
+    """forecast_kwh must be populated when CONF_FORECAST_ENTITY lives in entry.data."""
+    hass.states.async_set("sensor.forecast_pv", "5.2")
+
+    data = {**minimal_entry_data, CONF_FORECAST_ENTITY: "sensor.forecast_pv"}
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=data,
+        title="Helios Forecast Data Test",
+        entry_id="test_forecast_data",
+    )
+    await _setup(hass, entry)
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.forecast_kwh == pytest.approx(5.2), (
+        f"forecast_kwh should be 5.2 (from data), got {coordinator.forecast_kwh}"
+    )
+
+
+async def test_forecast_kwh_none_when_not_configured(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+):
+    """forecast_kwh must be None when no forecast entity is configured at all."""
+    await _setup(hass, config_entry)
+
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+    assert coordinator.forecast_kwh is None, (
+        f"forecast_kwh should be None when not configured, got {coordinator.forecast_kwh}"
     )
 
 

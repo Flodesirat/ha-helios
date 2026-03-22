@@ -39,26 +39,37 @@ _LOGGER = logging.getLogger(__name__)
 class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     """Central coordinator: reads sensors → scores → decisions → actions."""
 
+    @property
+    def _cfg(self) -> dict:
+        """Effective config: entry.data merged with entry.options (options win).
+
+        The initial config flow writes to entry.data; the options flow writes to
+        entry.options.  Always reading the merged dict ensures reconfigured values
+        are picked up without requiring a full reinstall.
+        """
+        return {**self.entry.data, **self.entry.options}
+
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.entry = entry
-        interval = entry.data.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL)
+        cfg = {**entry.data, **entry.options}
+        interval = cfg.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL)
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=timedelta(minutes=interval),
         )
-        self.scoring_engine    = ScoringEngine(entry.data)
-        self.battery_strategy  = BatteryStrategy(entry.data)
-        devices = entry.options.get(CONF_DEVICES, entry.data.get(CONF_DEVICES, []))
-        self.device_manager    = DeviceManager(hass, devices, entry.data)
-        ema_alpha = float(entry.data.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA))
+        self.scoring_engine    = ScoringEngine(cfg)
+        self.battery_strategy  = BatteryStrategy(cfg)
+        devices = cfg.get(CONF_DEVICES, [])
+        self.device_manager    = DeviceManager(hass, devices, cfg)
+        ema_alpha = float(cfg.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA))
         self.consumption_learner = ConsumptionLearner(hass, entry.entry_id, alpha=ema_alpha)
         self.dispatch_threshold: float = float(
-            entry.data.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD)
+            cfg.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD)
         )
         self.grid_allowance_w: float = float(
-            entry.data.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W)
+            cfg.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W)
         )
 
         # Latest computed state — exposed to sensor/switch entities
@@ -72,7 +83,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.global_score:    float       = 0.0
         self.battery_action:  str         = BATTERY_ACTION_AUTOCONSOMMATION
         self.forecast_kwh:       float | None = None
-        self.mode:               str         = entry.data.get(CONF_MODE, MODE_AUTO)
+        self.mode:               str         = cfg.get(CONF_MODE, MODE_AUTO)
         self.optimizer_last_run: str | None  = None   # ISO timestamp set by daily_optimizer
         self.optimizer_context:          dict              = {}
         self.optimizer_top20:            list[dict]        = []
@@ -119,7 +130,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             score_input = self._build_score_input()
             self.global_score = self.scoring_engine.compute(score_input)
 
-            if self.entry.data.get(CONF_BATTERY_ENABLED):
+            if self._cfg.get(CONF_BATTERY_ENABLED):
                 self.battery_action = self.battery_strategy.decide(score_input)
                 await self.battery_strategy.async_apply(self.hass, self.battery_action)
 
@@ -163,7 +174,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                 return None
             return s.state
 
-        cfg = self.entry.data
+        cfg = self._cfg
         battery_enabled = cfg.get(CONF_BATTERY_ENABLED, False)
 
         return {
@@ -203,7 +214,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         Based on usable SOC above the reserve threshold, capped by the
         inverter's configured max discharge power.
         """
-        cfg = self.entry.data
+        cfg = self._cfg
         if not cfg.get(CONF_BATTERY_ENABLED):
             return 0.0
         soc = self.battery_soc
