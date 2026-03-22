@@ -276,7 +276,7 @@ class TestDispatchThresholdApplication:
         # (bypasses the grid search; optimize is imported inside the closure)
         hass = MagicMock()
         hass.states.get.return_value = None
-        hass.async_add_executor_job = AsyncMock(return_value=[fake_result])
+        hass.async_add_executor_job = AsyncMock(return_value=([fake_result], []))
 
         await async_run_daily_optimization(hass, coordinator)
 

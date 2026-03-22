@@ -58,7 +58,7 @@ def _make_hass(forecast_state=None, tempo_state=None):
         return None
 
     hass.states.get.side_effect = _states_get
-    hass.async_add_executor_job = AsyncMock(return_value=[_fake_result()])
+    hass.async_add_executor_job = AsyncMock(return_value=([_fake_result()], []))
     return hass
 
 
@@ -145,9 +145,10 @@ class TestWeightApplicationEndToEnd:
 
         coordinator = _make_coordinator(scoring_engine=real_engine)
         hass = _make_hass()
-        hass.async_add_executor_job = AsyncMock(return_value=[
-            _fake_result(w_surplus=0.7, w_tempo=0.1, w_soc=0.1, w_forecast=0.1, threshold=0.15)
-        ])
+        hass.async_add_executor_job = AsyncMock(return_value=(
+            [_fake_result(w_surplus=0.7, w_tempo=0.1, w_soc=0.1, w_forecast=0.1, threshold=0.15)],
+            [],
+        ))
 
         await async_run_daily_optimization(hass, coordinator)
 
@@ -161,9 +162,10 @@ class TestWeightApplicationEndToEnd:
         """dispatch_threshold on the coordinator must be updated."""
         coordinator = _make_coordinator()
         hass = _make_hass()
-        hass.async_add_executor_job = AsyncMock(return_value=[
-            _fake_result(threshold=0.42)
-        ])
+        hass.async_add_executor_job = AsyncMock(return_value=(
+            [_fake_result(threshold=0.42)],
+            [],
+        ))
 
         await async_run_daily_optimization(hass, coordinator)
 
@@ -195,9 +197,10 @@ class TestWeightApplicationEndToEnd:
 
         coordinator = _make_coordinator(scoring_engine=real_engine)
         hass = _make_hass()
-        hass.async_add_executor_job = AsyncMock(return_value=[
-            _fake_result(w_surplus=0.1, w_tempo=0.1, w_soc=0.7, w_forecast=0.1)
-        ])
+        hass.async_add_executor_job = AsyncMock(return_value=(
+            [_fake_result(w_surplus=0.1, w_tempo=0.1, w_soc=0.7, w_forecast=0.1)],
+            [],
+        ))
 
         await async_run_daily_optimization(hass, coordinator)
 
@@ -250,7 +253,7 @@ class TestDailyOptimizerInputs:
         async def _capture_job(fn):
             result = fn()
             captured["sim_cfg"] = result
-            return [_fake_result()]
+            return ([_fake_result()], [])
 
         hass.async_add_executor_job = _capture_job
 
@@ -297,7 +300,7 @@ class TestDailyOptimizerInputs:
 
         def _capture(fn):
             sim_cfgs.append(fn())
-            return [_fake_result()]
+            return ([_fake_result()], [])
 
         hass.async_add_executor_job = AsyncMock(side_effect=_capture)
 

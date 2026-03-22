@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time as time_mod
+from collections import deque
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -446,6 +447,8 @@ class DeviceManager:
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._scan_interval: float = float(config.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL))
         self._dispatch_threshold: float = float(config.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD))
+        # Decision log — rolling 24 h, max 500 entries
+        self.decision_log: deque[dict] = deque(maxlen=500)
 
     # ------------------------------------------------------------------
     # Startup — restore persisted pool run data
@@ -498,6 +501,15 @@ class DeviceManager:
         dispatch_threshold: float       = score_input.get("dispatch_threshold", self._dispatch_threshold)
         battery_soc:        float | None = score_input.get("battery_soc")
         configured_allowance_w: float   = float(score_input.get("grid_allowance_w", 250.0))
+        pv_power_w:         float       = score_input.get("pv_power_w",         0.0)
+        house_power_w:      float       = score_input.get("house_power_w",      0.0)
+
+        # Base context injected into every decision log entry
+        _base_ctx: dict = {
+            "battery_soc": battery_soc,
+            "pv_w":        round(pv_power_w),
+            "house_w":     round(house_power_w),
+        }
 
         # Mode "Pleine" (SOC ≥ 96 %) : autoriser un léger tirage réseau pour
         # décharger la batterie avant qu'elle atteigne 100 % et perde en efficacité.
@@ -529,7 +541,7 @@ class DeviceManager:
                 continue
             if now_ts < device.pool_force_until:
                 if not device.is_on:
-                    await self._async_set_switch(hass, device, True)
+                    await self._async_set_switch(hass, device, True, reason="force_mode", context=_base_ctx)
             else:
                 device.pool_force_until = None
                 _LOGGER.info("Pool '%s': force mode expired", device.name)
@@ -540,7 +552,7 @@ class DeviceManager:
                 continue
             if now_ts < device.pool_inhibit_until:
                 if device.is_on:
-                    await self._async_set_switch(hass, device, False)
+                    await self._async_set_switch(hass, device, False, reason="inhibit_mode", context=_base_ctx)
             else:
                 device.pool_inhibit_until = None
                 _LOGGER.info("Pool '%s': inhibit mode expired", device.name)
@@ -581,7 +593,7 @@ class DeviceManager:
                 if not _helios_manages(device):
                     continue  # manual / force / inhibit — hands off
                 if device.is_on and device.interruptible and self._min_on_elapsed(device):
-                    await self._async_set_switch(hass, device, False)
+                    await self._async_set_switch(hass, device, False, reason="score_too_low", context=_base_ctx)
             return
 
         # ---- Score all eligible devices ----
@@ -602,19 +614,19 @@ class DeviceManager:
             # Outside allowed window → turn off
             if not device.is_in_allowed_window(now):
                 if device.is_on and device.interruptible and self._min_on_elapsed(device):
-                    await self._async_set_switch(hass, device, False)
+                    await self._async_set_switch(hass, device, False, reason="outside_window", context=_base_ctx)
                 continue
 
             # Must-run override → force on immediately
             if device in must_run:
                 if not device.is_on:
-                    await self._async_set_switch(hass, device, True)
+                    await self._async_set_switch(hass, device, True, reason="must_run", context=_base_ctx)
                 continue
 
             # Already satisfied → turn off
             if device.is_satisfied(hass):
                 if device.is_on and device.interruptible and self._min_on_elapsed(device):
-                    await self._async_set_switch(hass, device, False)
+                    await self._async_set_switch(hass, device, False, reason="satisfied", context=_base_ctx)
                 continue
 
             score = device.effective_score(hass, surplus_w, bat_available_w)
@@ -630,16 +642,34 @@ class DeviceManager:
             # Skip if fit is negligible (would import too much from grid)
             if fit < 0.1:
                 if device.is_on and device.interruptible and self._min_on_elapsed(device):
-                    await self._async_set_switch(hass, device, False)
+                    await self._async_set_switch(hass, device, False, reason="fit_negligible", context=_base_ctx)
                 continue
 
             if device.power_w <= remaining:
                 remaining -= device.power_w
                 if not device.is_on:
-                    await self._async_set_switch(hass, device, True)
+                    await self._async_set_switch(
+                        hass, device, True,
+                        reason="dispatch",
+                        context={
+                            **_base_ctx,
+                            "global_score":    round(global_score, 3),
+                            "surplus_w":       round(surplus_w),
+                            "bat_available_w": round(bat_available_w),
+                            "fit":             round(fit, 3),
+                        },
+                    )
             else:
                 if device.is_on and device.interruptible and self._min_on_elapsed(device):
-                    await self._async_set_switch(hass, device, False)
+                    await self._async_set_switch(
+                        hass, device, False,
+                        reason="no_budget",
+                        context={
+                            **_base_ctx,
+                            "power_w":     device.power_w,
+                            "remaining_w": round(remaining),
+                        },
+                    )
 
     # ------------------------------------------------------------------
     # Appliance state machine
@@ -747,7 +777,18 @@ class DeviceManager:
         hass: HomeAssistant,
         device: ManagedDevice,
         on: bool,
+        reason: str = "",
+        context: dict | None = None,
     ) -> None:
+        entry: dict = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "device": device.name,
+            "action": "on" if on else "off",
+            "reason": reason or "unknown",
+        }
+        if context:
+            entry.update(context)
+        self.decision_log.append(entry)
         if device.switch_entity:
             await hass.services.async_call(
                 "homeassistant",

@@ -68,6 +68,10 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.forecast_kwh:       float | None = None
         self.mode:               str         = entry.data.get(CONF_MODE, MODE_AUTO)
         self.optimizer_last_run: str | None  = None   # ISO timestamp set by daily_optimizer
+        self.optimizer_context:          dict              = {}
+        self.optimizer_top20:            list[dict]        = []
+        self.optimizer_chosen:           dict              = {}
+        self.optimizer_chosen_schedule:  list[dict]        = []
 
         # Daily optimizer — scheduled at 05:00 every morning
         self._unsub_daily_opt = async_track_time_change(
@@ -120,6 +124,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                     "bat_available_w":    self.bat_available_w,
                     "dispatch_threshold": self.dispatch_threshold,
                     "grid_allowance_w":   self.grid_allowance_w,
+                    "house_power_w":      self.house_power_w,
                 }
                 await self.device_manager.async_dispatch(self.hass, dispatch_input)
 

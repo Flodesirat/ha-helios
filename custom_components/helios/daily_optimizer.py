@@ -226,10 +226,10 @@ async def async_run_daily_optimization(
     # ---- Device list from HA config ----
     devices_config = cfg.get(CONF_DEVICES, [])
 
-    # ---- Run the optimizer in the executor (CPU-bound grid search) ----
+    # ---- Run optimization + capture schedule in executor ----
     def _run_optimization():
         try:
-            from .simulation.engine import SimConfig
+            from .simulation.engine import SimConfig, run as sim_run
             from .simulation.optimizer import optimize
             from .simulation.profiles import load_base_load_from_json
         except ImportError as exc:
@@ -240,7 +240,6 @@ async def async_run_daily_optimization(
         _base_load_path = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
         try:
             base_load_fn = load_base_load_from_json(str(_base_load_path))
-            _LOGGER.debug("Helios optimizer: using base_load.json from %s", _base_load_path)
         except Exception as exc:
             base_load_fn = None
             _LOGGER.warning("Helios optimizer: could not load base_load.json (%s), using default profile", exc)
@@ -257,7 +256,7 @@ async def async_run_daily_optimization(
             bat_max_discharge_w=bat_max_discharge_w,
             bat_soc_min=bat_soc_min,
             bat_soc_max=bat_soc_max,
-            forecast_noise=0.0,   # deterministic at 5am (forecast already known)
+            forecast_noise=0.0,
             base_load_fn=base_load_fn,
         )
 
@@ -265,20 +264,67 @@ async def async_run_daily_optimization(
             return ha_devices_to_sim(devices_config)
 
         objective_alpha = float(cfg.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA))
-        return optimize(
+        results = optimize(
             sim_cfg,
             _devices_fn,
             objective_alpha=objective_alpha,
             n_runs=1,
             progress=False,
         )
+        if not results:
+            return None
 
-    results = await hass.async_add_executor_job(_run_optimization)
+        # Re-run simulation with chosen config to capture the hourly schedule
+        from dataclasses import replace as _replace
+        best = results[0]
+        best_cfg = _replace(
+            sim_cfg,
+            scoring={
+                "weight_pv_surplus":  best.w_surplus,
+                "weight_tempo":       best.w_tempo,
+                "weight_battery_soc": best.w_soc,
+                "weight_forecast":    best.w_forecast,
+            },
+            dispatch_threshold=best.threshold,
+        )
+        sim_result = sim_run(best_cfg, _devices_fn())
 
-    if not results:
+        # Aggregate 5-min steps into 24 hourly entries
+        steps_per_hour = 12
+        hourly: list[dict] = []
+        for h in range(24):
+            s_slice = sim_result.steps[h * steps_per_hour:(h + 1) * steps_per_hour]
+            if not s_slice:
+                continue
+            active: set[str] = set()
+            bat_counts: dict[str, int] = {}
+            for s in s_slice:
+                active.update(s.active_devices)
+                bat_counts[s.bat_action] = bat_counts.get(s.bat_action, 0) + 1
+            dominant_bat = max(bat_counts, key=bat_counts.get)
+            n = len(s_slice)
+            hourly.append({
+                "hour": f"{h:02d}:00",
+                "pv_w":      round(sum(s.pv_w for s in s_slice) / n),
+                "base_w":    round(sum(s.base_w for s in s_slice) / n),
+                "devices_w": round(sum(s.devices_w for s in s_slice) / n),
+                "surplus_w": round(sum(s.surplus_w for s in s_slice) / n),
+                "grid_w":    round(sum(s.grid_w for s in s_slice) / n),
+                "bat_soc":   round(sum(s.bat_soc for s in s_slice) / n, 1),
+                "bat_action": dominant_bat,
+                "score":     round(sum(s.score for s in s_slice) / n, 3),
+                "active_devices": sorted(active),
+            })
+
+        return results, hourly
+
+    payload = await hass.async_add_executor_job(_run_optimization)
+
+    if not payload:
         _LOGGER.warning("Helios optimizer: no results — keeping previous weights")
         return
 
+    results, hourly_schedule = payload
     best = results[0]
     _LOGGER.info(
         "Helios optimizer: best config — surplus=%.0f%% tempo=%.0f%% soc=%.0f%% "
@@ -297,4 +343,43 @@ async def async_run_daily_optimization(
     coordinator.scoring_engine.update_weights(new_scoring)
     coordinator.dispatch_threshold = best.threshold
     coordinator.optimizer_last_run = datetime.now(timezone.utc).isoformat()
-    _LOGGER.info("Helios optimizer: weights and threshold applied for today")
+
+    # ---- Store diagnostics data ----
+    coordinator.optimizer_context = {
+        "season": season,
+        "cloud": cloud,
+        "tempo": tempo_color,
+        "bat_soc_start": bat_soc_start,
+        "forecast_kwh": forecast_kwh,
+        "peak_pv_w": peak_pv_w,
+        "objective_alpha": float(cfg.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA)),
+    }
+    coordinator.optimizer_chosen = {
+        "rank": 1,
+        "w_surplus":      round(best.w_surplus, 3),
+        "w_tempo":        round(best.w_tempo, 3),
+        "w_soc":          round(best.w_soc, 3),
+        "w_forecast":     round(best.w_forecast, 3),
+        "threshold":      round(best.threshold, 3),
+        "autoconsumption": round(best.autoconsumption, 4),
+        "savings_rate":   round(best.savings_rate, 4),
+        "cost_eur":       round(best.cost_eur, 4),
+        "objective":      round(best.objective, 4),
+    }
+    coordinator.optimizer_top20 = [
+        {
+            "rank":          i + 1,
+            "w_surplus":     round(r.w_surplus, 3),
+            "w_tempo":       round(r.w_tempo, 3),
+            "w_soc":         round(r.w_soc, 3),
+            "w_forecast":    round(r.w_forecast, 3),
+            "threshold":     round(r.threshold, 3),
+            "autoconsumption": round(r.autoconsumption, 4),
+            "savings_rate":  round(r.savings_rate, 4),
+            "cost_eur":      round(r.cost_eur, 4),
+            "objective":     round(r.objective, 4),
+        }
+        for i, r in enumerate(results[:20])
+    ]
+    coordinator.optimizer_chosen_schedule = hourly_schedule
+    _LOGGER.info("Helios optimizer: weights, threshold, and diagnostics applied for today")

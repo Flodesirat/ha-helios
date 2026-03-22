@@ -1,0 +1,491 @@
+"""Tests for the diagnostics module.
+
+Covers:
+- Full diagnostics payload structure and key presence
+- Correct values from coordinator / device_manager / scoring_engine
+- Robustness when optional data is absent (no optimizer run yet, empty
+  decision log, no battery, no devices)
+"""
+from __future__ import annotations
+
+from collections import deque
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from custom_components.helios.diagnostics import async_get_config_entry_diagnostics
+from custom_components.helios.const import (
+    DOMAIN,
+    DEVICE_TYPE_POOL, DEVICE_TYPE_WATER_HEATER,
+    CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
+    CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
+)
+from custom_components.helios.device_manager import ManagedDevice
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_scoring_engine(
+    w_surplus=0.4, w_tempo=0.3, w_soc=0.2, w_forecast=0.1
+):
+    eng = MagicMock()
+    eng.w_surplus  = w_surplus
+    eng.w_tempo    = w_tempo
+    eng.w_soc      = w_soc
+    eng.w_forecast = w_forecast
+    return eng
+
+
+def _make_device_manager(devices=None, log_entries=None):
+    dm = MagicMock()
+    dm.devices     = devices or []
+    dm.decision_log = deque(log_entries or [], maxlen=500)
+    return dm
+
+
+def _make_coordinator(
+    *,
+    devices=None,
+    log_entries=None,
+    battery_soc=None,
+    optimizer_top20=None,
+    optimizer_chosen=None,
+    optimizer_chosen_schedule=None,
+    optimizer_context=None,
+    optimizer_last_run=None,
+):
+    coordinator = MagicMock()
+
+    # Scoring engine
+    coordinator.scoring_engine = _make_scoring_engine()
+
+    # Device manager
+    coordinator.device_manager = _make_device_manager(
+        devices=devices,
+        log_entries=log_entries,
+    )
+
+    # Coordinator state
+    coordinator.mode              = "auto"
+    coordinator.global_score      = 0.72
+    coordinator.dispatch_threshold = 0.30
+    coordinator.surplus_w         = 1200.0
+    coordinator.pv_power_w        = 2500.0
+    coordinator.grid_power_w      = -300.0
+    coordinator.house_power_w     = 1000.0
+    coordinator.bat_available_w   = 800.0
+    coordinator.battery_soc       = battery_soc
+    coordinator.battery_action    = "idle"
+    coordinator.tempo_color       = "blue"
+    coordinator.forecast_kwh      = 8.5
+    coordinator.grid_allowance_w  = 250.0
+
+    # Optimizer diagnostics fields
+    coordinator.optimizer_last_run         = optimizer_last_run
+    coordinator.optimizer_context          = optimizer_context or {}
+    coordinator.optimizer_chosen           = optimizer_chosen or {}
+    coordinator.optimizer_top20            = optimizer_top20 or []
+    coordinator.optimizer_chosen_schedule  = optimizer_chosen_schedule or []
+
+    return coordinator
+
+
+def _make_hass(coordinator):
+    entry = MagicMock()
+    entry.entry_id = "test_entry"
+
+    hass = MagicMock()
+    hass.data = {DOMAIN: {"test_entry": coordinator}}
+    return hass, entry
+
+
+# ---------------------------------------------------------------------------
+# Top-level structure
+# ---------------------------------------------------------------------------
+
+class TestDiagnosticsStructure:
+    """The returned dict must always contain the three expected top-level keys."""
+
+    @pytest.mark.asyncio
+    async def test_top_level_keys_present(self):
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert set(result.keys()) == {"current_state", "optimizer", "decision_log"}
+
+    @pytest.mark.asyncio
+    async def test_current_state_keys(self):
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+        cs = result["current_state"]
+
+        for key in (
+            "mode", "global_score", "dispatch_threshold",
+            "surplus_w", "pv_power_w", "grid_power_w", "house_power_w",
+            "bat_available_w", "battery_soc", "battery_action",
+            "tempo_color", "forecast_kwh", "grid_allowance_w",
+            "scoring_weights", "devices",
+        ):
+            assert key in cs, f"missing key: {key}"
+
+    @pytest.mark.asyncio
+    async def test_optimizer_keys(self):
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+        opt = result["optimizer"]
+
+        for key in ("last_run", "context", "chosen", "top20", "chosen_schedule"):
+            assert key in opt, f"missing optimizer key: {key}"
+
+    @pytest.mark.asyncio
+    async def test_scoring_weights_keys(self):
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+        weights = result["current_state"]["scoring_weights"]
+
+        assert set(weights.keys()) == {"surplus", "tempo", "soc", "forecast"}
+
+
+# ---------------------------------------------------------------------------
+# Current state values
+# ---------------------------------------------------------------------------
+
+class TestCurrentStateValues:
+
+    @pytest.mark.asyncio
+    async def test_scalar_values_forwarded(self):
+        coordinator = _make_coordinator(battery_soc=72.5)
+        hass, entry = _make_hass(coordinator)
+
+        cs = (await async_get_config_entry_diagnostics(hass, entry))["current_state"]
+
+        assert cs["mode"]               == "auto"
+        assert cs["global_score"]       == 0.72
+        assert cs["surplus_w"]          == 1200.0
+        assert cs["pv_power_w"]         == 2500.0
+        assert cs["house_power_w"]      == 1000.0
+        assert cs["battery_soc"]        == 72.5
+        assert cs["tempo_color"]        == "blue"
+        assert cs["grid_allowance_w"]   == 250.0
+
+    @pytest.mark.asyncio
+    async def test_scoring_weights_values(self):
+        coordinator = _make_coordinator()
+        coordinator.scoring_engine = _make_scoring_engine(
+            w_surplus=0.5, w_tempo=0.2, w_soc=0.2, w_forecast=0.1
+        )
+        hass, entry = _make_hass(coordinator)
+
+        weights = (await async_get_config_entry_diagnostics(hass, entry))[
+            "current_state"
+        ]["scoring_weights"]
+
+        assert weights["surplus"]  == 0.5
+        assert weights["tempo"]    == 0.2
+        assert weights["soc"]      == 0.2
+        assert weights["forecast"] == 0.1
+
+    @pytest.mark.asyncio
+    async def test_battery_soc_none(self):
+        """battery_soc must be serialisable even when None (no battery configured)."""
+        coordinator = _make_coordinator(battery_soc=None)
+        hass, entry = _make_hass(coordinator)
+
+        cs = (await async_get_config_entry_diagnostics(hass, entry))["current_state"]
+
+        assert cs["battery_soc"] is None
+
+
+# ---------------------------------------------------------------------------
+# Devices list
+# ---------------------------------------------------------------------------
+
+class TestDevicesList:
+
+    def _pool_device(self, name="Piscine"):
+        return ManagedDevice({
+            CONF_DEVICE_NAME:          name,
+            CONF_DEVICE_TYPE:          DEVICE_TYPE_POOL,
+            CONF_DEVICE_SWITCH_ENTITY: "switch.pompe",
+            CONF_DEVICE_POWER_W:       300,
+            CONF_DEVICE_PRIORITY:      5,
+        })
+
+    @pytest.mark.asyncio
+    async def test_no_devices(self):
+        coordinator = _make_coordinator(devices=[])
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert result["current_state"]["devices"] == []
+
+    @pytest.mark.asyncio
+    async def test_device_fields(self):
+        device = self._pool_device("Piscine")
+        device.is_on       = True
+        device.manual_mode = False
+
+        coordinator = _make_coordinator(devices=[device])
+        hass, entry = _make_hass(coordinator)
+
+        devices = (await async_get_config_entry_diagnostics(hass, entry))[
+            "current_state"
+        ]["devices"]
+
+        assert len(devices) == 1
+        d = devices[0]
+        assert d["name"]        == "Piscine"
+        assert d["type"]        == DEVICE_TYPE_POOL
+        assert d["is_on"]       is True
+        assert d["manual_mode"] is False
+        assert d["priority"]    == 5
+        assert d["power_w"]     == 300.0
+
+    @pytest.mark.asyncio
+    async def test_multiple_devices(self):
+        d1 = self._pool_device("Piscine")
+        d2 = ManagedDevice({
+            CONF_DEVICE_NAME:          "Chauffe-eau",
+            CONF_DEVICE_TYPE:          DEVICE_TYPE_WATER_HEATER,
+            CONF_DEVICE_SWITCH_ENTITY: "switch.cwe",
+            CONF_DEVICE_POWER_W:       2000,
+            CONF_DEVICE_PRIORITY:      8,
+        })
+
+        coordinator = _make_coordinator(devices=[d1, d2])
+        hass, entry = _make_hass(coordinator)
+
+        devices = (await async_get_config_entry_diagnostics(hass, entry))[
+            "current_state"
+        ]["devices"]
+
+        assert len(devices) == 2
+        assert {d["name"] for d in devices} == {"Piscine", "Chauffe-eau"}
+
+
+# ---------------------------------------------------------------------------
+# Optimizer section
+# ---------------------------------------------------------------------------
+
+class TestOptimizerSection:
+
+    @pytest.mark.asyncio
+    async def test_optimizer_empty_before_first_run(self):
+        """Before the first daily optimization, all optimizer fields must be
+        present but empty / None — no KeyError or AttributeError."""
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        opt = (await async_get_config_entry_diagnostics(hass, entry))["optimizer"]
+
+        assert opt["last_run"]         is None
+        assert opt["context"]          == {}
+        assert opt["chosen"]           == {}
+        assert opt["top20"]            == []
+        assert opt["chosen_schedule"]  == []
+
+    @pytest.mark.asyncio
+    async def test_optimizer_top20_forwarded(self):
+        top20 = [
+            {"rank": i + 1, "objective": round(0.9 - i * 0.01, 2)}
+            for i in range(20)
+        ]
+        coordinator = _make_coordinator(
+            optimizer_top20=top20,
+            optimizer_last_run="2026-03-22T05:00:00+00:00",
+        )
+        hass, entry = _make_hass(coordinator)
+
+        opt = (await async_get_config_entry_diagnostics(hass, entry))["optimizer"]
+
+        assert len(opt["top20"]) == 20
+        assert opt["top20"][0]["rank"] == 1
+        assert opt["top20"][0]["objective"] == 0.9
+
+    @pytest.mark.asyncio
+    async def test_optimizer_chosen_schedule_forwarded(self):
+        schedule = [
+            {"hour": f"{h:02d}:00", "pv_w": h * 100, "active_devices": []}
+            for h in range(24)
+        ]
+        coordinator = _make_coordinator(optimizer_chosen_schedule=schedule)
+        hass, entry = _make_hass(coordinator)
+
+        opt = (await async_get_config_entry_diagnostics(hass, entry))["optimizer"]
+
+        assert len(opt["chosen_schedule"]) == 24
+        assert opt["chosen_schedule"][12]["hour"] == "12:00"
+
+    @pytest.mark.asyncio
+    async def test_optimizer_context_forwarded(self):
+        ctx = {
+            "season": "spring", "cloud": "clear", "tempo": "blue",
+            "bat_soc_start": 85.0, "forecast_kwh": 12.0, "peak_pv_w": 5000,
+        }
+        coordinator = _make_coordinator(optimizer_context=ctx)
+        hass, entry = _make_hass(coordinator)
+
+        opt = (await async_get_config_entry_diagnostics(hass, entry))["optimizer"]
+
+        assert opt["context"]["season"]  == "spring"
+        assert opt["context"]["tempo"]   == "blue"
+        assert opt["context"]["peak_pv_w"] == 5000
+
+
+# ---------------------------------------------------------------------------
+# Decision log
+# ---------------------------------------------------------------------------
+
+class TestDecisionLog:
+
+    @pytest.mark.asyncio
+    async def test_empty_log(self):
+        coordinator = _make_coordinator(log_entries=[])
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert result["decision_log"] == []
+
+    @pytest.mark.asyncio
+    async def test_log_entries_forwarded(self):
+        entries = [
+            {
+                "ts": "2026-03-22T08:30:00",
+                "device": "Piscine",
+                "action": "on",
+                "reason": "dispatch",
+                "battery_soc": 72.5,
+                "pv_w": 2400,
+                "house_w": 850,
+                "global_score": 0.81,
+                "surplus_w": 1550,
+                "bat_available_w": 600,
+                "fit": 0.92,
+            },
+            {
+                "ts": "2026-03-22T09:00:00",
+                "device": "Piscine",
+                "action": "off",
+                "reason": "satisfied",
+                "battery_soc": 74.0,
+                "pv_w": 2600,
+                "house_w": 900,
+            },
+        ]
+        coordinator = _make_coordinator(log_entries=entries)
+        hass, entry = _make_hass(coordinator)
+
+        log = (await async_get_config_entry_diagnostics(hass, entry))["decision_log"]
+
+        assert len(log) == 2
+        assert log[0]["device"] == "Piscine"
+        assert log[0]["action"] == "on"
+        assert log[0]["battery_soc"] == 72.5
+        assert log[0]["pv_w"] == 2400
+        assert log[0]["house_w"] == 850
+        assert log[1]["reason"] == "satisfied"
+
+    @pytest.mark.asyncio
+    async def test_log_is_a_list_not_deque(self):
+        """decision_log must be serialisable (list, not deque)."""
+        entries = [{"ts": "2026-03-22T10:00:00", "device": "X", "action": "on", "reason": "dispatch"}]
+        coordinator = _make_coordinator(log_entries=entries)
+        hass, entry = _make_hass(coordinator)
+
+        log = (await async_get_config_entry_diagnostics(hass, entry))["decision_log"]
+
+        assert isinstance(log, list)
+
+    @pytest.mark.asyncio
+    async def test_log_with_missing_optional_fields(self):
+        """Log entries with only the mandatory fields must not cause errors."""
+        entries = [
+            {"ts": "2026-03-22T10:00:00", "device": "Piscine", "action": "on", "reason": "must_run"},
+        ]
+        coordinator = _make_coordinator(log_entries=entries)
+        hass, entry = _make_hass(coordinator)
+
+        log = (await async_get_config_entry_diagnostics(hass, entry))["decision_log"]
+
+        assert log[0]["reason"] == "must_run"
+        # Optional fields absent — no KeyError
+        assert "global_score" not in log[0]
+        assert "fit" not in log[0]
+
+
+# ---------------------------------------------------------------------------
+# Robustness — missing / None entities
+# ---------------------------------------------------------------------------
+
+class TestRobustness:
+
+    @pytest.mark.asyncio
+    async def test_no_battery(self):
+        """Integration without battery: battery_soc is None, no crash."""
+        coordinator = _make_coordinator(battery_soc=None)
+        coordinator.bat_available_w = 0.0
+        coordinator.battery_action  = "idle"
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert result["current_state"]["battery_soc"] is None
+        assert result["current_state"]["bat_available_w"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_no_forecast(self):
+        """Integration without forecast entity: forecast_kwh is None, no crash."""
+        coordinator = _make_coordinator()
+        coordinator.forecast_kwh = None
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert result["current_state"]["forecast_kwh"] is None
+
+    @pytest.mark.asyncio
+    async def test_no_tempo(self):
+        """Integration without Tempo entity: tempo_color is None, no crash."""
+        coordinator = _make_coordinator()
+        coordinator.tempo_color = None
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert result["current_state"]["tempo_color"] is None
+
+    @pytest.mark.asyncio
+    async def test_result_is_json_serialisable(self):
+        """The entire payload must be JSON-serialisable (no deque, no MagicMock)."""
+        import json
+
+        schedule = [{"hour": f"{h:02d}:00", "pv_w": 0, "active_devices": []} for h in range(24)]
+        top20    = [{"rank": 1, "objective": 0.85}]
+        entries  = [{"ts": "2026-03-22T08:00:00", "device": "X", "action": "on", "reason": "dispatch"}]
+
+        coordinator = _make_coordinator(
+            battery_soc=55.0,
+            optimizer_top20=top20,
+            optimizer_chosen_schedule=schedule,
+            optimizer_last_run="2026-03-22T05:00:00+00:00",
+            log_entries=entries,
+        )
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+
+        # Must not raise
+        serialised = json.dumps(result)
+        assert len(serialised) > 0

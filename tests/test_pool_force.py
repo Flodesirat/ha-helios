@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -46,6 +47,7 @@ def _make_manager(devices=None, scan_interval=5) -> DeviceManager:
     mgr._store = store
     mgr._scan_interval = scan_interval
     mgr._dispatch_threshold = 0.3
+    mgr.decision_log = deque(maxlen=500)
     return mgr
 
 
