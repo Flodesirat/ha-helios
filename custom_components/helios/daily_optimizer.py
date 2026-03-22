@@ -28,6 +28,9 @@ from .const import (
     CONF_FORECAST_ENTITY,
     CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W,
     CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA,
+    CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE,
+    CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS,
+    CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA,
     TEMPO_COLORS,
     CONF_DEVICE_NAME, CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
     CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
@@ -263,12 +266,17 @@ async def async_run_daily_optimization(
         def _devices_fn():
             return ha_devices_to_sim(devices_config)
 
-        objective_alpha = float(cfg.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA))
+        objective_alpha  = float(cfg.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA))
+        base_load_noise  = float(cfg.get(CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE))
+        optimizer_n_runs = int(cfg.get(CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS))
+        risk_lambda      = float(cfg.get(CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA))
         results = optimize(
             sim_cfg,
             _devices_fn,
             objective_alpha=objective_alpha,
-            n_runs=1,
+            n_runs=optimizer_n_runs,
+            risk_lambda=risk_lambda,
+            base_load_noise=base_load_noise,
             progress=False,
         )
         if not results:
@@ -365,6 +373,8 @@ async def async_run_daily_optimization(
         "savings_rate":   round(best.savings_rate, 4),
         "cost_eur":       round(best.cost_eur, 4),
         "objective":      round(best.objective, 4),
+        "obj_mean":       round(best.obj_mean, 4),
+        "obj_std":        round(best.obj_std, 4),
     }
     coordinator.optimizer_top20 = [
         {
@@ -378,6 +388,8 @@ async def async_run_daily_optimization(
             "savings_rate":  round(r.savings_rate, 4),
             "cost_eur":      round(r.cost_eur, 4),
             "objective":     round(r.objective, 4),
+            "obj_mean":      round(r.obj_mean, 4),
+            "obj_std":       round(r.obj_std, 4),
         }
         for i, r in enumerate(results[:20])
     ]

@@ -127,6 +127,9 @@ CONF_MODE                  = "mode"
 CONF_DISPATCH_THRESHOLD    = "dispatch_threshold"  # global_score below which no dispatch
 CONF_GRID_ALLOWANCE_W      = "grid_allowance_w"    # W autorisés depuis le réseau en mode Pleine (SOC ≥ 96 %)
 CONF_OPTIMIZER_ALPHA       = "optimizer_alpha"     # 0.0 = économies pures, 1.0 = autoconsommation pure
+CONF_BASE_LOAD_NOISE       = "base_load_noise"     # std-dev du bruit multiplicatif journalier sur la charge
+CONF_OPTIMIZER_N_RUNS      = "optimizer_n_runs"    # nombre de tirages Monte Carlo par combinaison
+CONF_RISK_LAMBDA           = "risk_lambda"         # coefficient de pénalité sur l'écart-type de l'objectif
 
 # ---------------------------------------------------------------------------
 # Device types
@@ -173,6 +176,9 @@ DEFAULT_SCAN_INTERVAL              = 5      # minutes
 DEFAULT_DISPATCH_THRESHOLD         = 0.3
 DEFAULT_GRID_ALLOWANCE_W           = 250    # W
 DEFAULT_OPTIMIZER_ALPHA            = 0.5    # équilibré autoconsommation / économies
+DEFAULT_BASE_LOAD_NOISE            = 0.20   # ±20 % de bruit journalier sur la charge domestique
+DEFAULT_OPTIMIZER_N_RUNS           = 5      # 5 tirages Monte Carlo par combinaison de poids
+DEFAULT_RISK_LAMBDA                = 0.5    # obj = mean − 0.5 × std  (risque modéré)
 DEFAULT_PEAK_PV_W                  = 3000.0 # W — used when no real-time data available
 
 # ---------------------------------------------------------------------------

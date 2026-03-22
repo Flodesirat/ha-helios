@@ -225,7 +225,8 @@ class SimConfig:
     bat_efficiency: float = 0.75       # round-trip efficiency (0–1)
     bat_discharge_start: float = 6.0   # hour before which battery never discharges
     dispatch_threshold: float = 0.30
-    forecast_noise: float = 0.15   # std-dev of forecast error (0=perfect, 0.15=±15%)
+    forecast_noise: float = 0.15    # std-dev of forecast error (0=perfect, 0.15=±15%)
+    base_load_noise: float = 0.0   # day-level multiplicative Gaussian noise on base load
     base_load_fn: Callable[[float], float] | None = None
     tariff: Tariff = field(default_factory=Tariff)
     scoring: dict = field(default_factory=lambda: {
@@ -291,13 +292,20 @@ def run(cfg: SimConfig, devices: list[SimDevice] | None = None) -> SimResult:
         error = max(0.4, min(1.6, error))   # clamp to ±60%
         _forecast_table = [v * error for v in _forecast_table]
 
+    # Apply a day-level random multiplicative error on base load.
+    # Models uncertainty in household consumption profile (presence, behaviour…).
+    _bl_mult = 1.0
+    if cfg.base_load_noise > 0.0:
+        _bl_mult = random.gauss(1.0, cfg.base_load_noise)
+        _bl_mult = max(0.5, min(1.8, _bl_mult))
+
     e_pv = e_load = e_self = e_import = e_export = cost = cost_no_pv = 0.0
     steps: list[StepResult] = []
 
     for i in range(STEPS_PER_DAY):
         hour = i * step_h
         pv_w = pv_power_w(hour, cfg.season, cfg.cloud, cfg.peak_pv_w)
-        base_w = _base_load(hour)
+        base_w = _base_load(hour) * _bl_mult
         t_color = tempo_color(hour, cfg.tempo)
 
         # ---- Battery: estimate discharge available for dispatch ----
