@@ -3,11 +3,11 @@
   "segments": [
     {"from": 0.0,  "to": 2.0,  "w_start": 400,  "w_end": 400},
     {"from": 2.0,  "to": 5.5,  "w_start": 250,  "w_end": 250},
-    {"from": 5.5,  "to": 7.0,  "w_start": 250,  "w_end": 1000},
-    {"from": 7.0,  "to": 9.0,  "w_start": 1000, "w_end": 1000},
-    {"from": 9.0,  "to": 17.0, "w_start": 450,  "w_end": 450},
-    {"from": 17.0, "to": 18.5, "w_start": 450,  "w_end": 1100},
-    {"from": 18.5, "to": 22.0, "w_start": 1100, "w_end": 1100},
-    {"from": 22.0, "to": 24.0, "w_start": 1100, "w_end": 400}
+    {"from": 5.5,  "to": 7.0,  "w_start": 250,  "w_end": 500},
+    {"from": 7.0,  "to": 11.5,  "w_start": 500, "w_end": 450},
+    {"from": 11.5,  "to": 12.5,  "w_start": 2000, "w_end": 2000},
+    {"from": 12.5,  "to": 18.5, "w_start": 450,  "w_end": 450},
+    {"from": 18.5, "to": 21.0, "w_start": 1100, "w_end": 1100},
+    {"from": 21.0, "to": 24.0, "w_start": 400, "w_end": 400}
   ]
 }

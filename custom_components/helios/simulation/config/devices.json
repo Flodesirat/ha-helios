@@ -45,15 +45,5 @@
     "priority": 4,
     "min_on_minutes": 45,
     "run_quota_h": 0.75
-  },
-  {
-    "_comment": "Clim inverter 2000W max — puissance moyenne avec modulation. Quota à ajuster selon saison.",
-    "name": "Clim",
-    "power_w": 1200,
-    "allowed_start": 11.0,
-    "allowed_end": 20.0,
-    "priority": 6,
-    "min_on_minutes": 15,
-    "run_quota_h": 4.0
   }
 ]
