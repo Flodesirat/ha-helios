@@ -340,6 +340,11 @@
           "24h": "24 hours"
         }
       }
+    },
+    "button": {
+      "force_optimization": {
+        "name": "Run optimization"
+      }
     }
   }
 }

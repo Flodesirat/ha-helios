@@ -340,6 +340,11 @@
           "24h": "24 heures"
         }
       }
+    },
+    "button": {
+      "force_optimization": {
+        "name": "Lancer l'optimisation"
+      }
     }
   }
 }
