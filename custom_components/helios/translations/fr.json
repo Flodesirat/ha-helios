@@ -349,6 +349,9 @@
     "sensor": {
       "eo_base_load_profile": {
         "name": "Charge de fond apprise"
+      },
+      "eo_device_power": {
+        "name": "Puissance {name}"
       }
     }
   }

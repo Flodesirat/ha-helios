@@ -44,12 +44,10 @@ async def async_setup_entry(
         EnergyOptimizerBatterySocLevelSensor(coordinator, entry),
     ]
     entities.append(EnergyOptimizerBaseLoadSensor(coordinator, entry))
-    entities += [
-        ApplianceStateSensor(coordinator, entry, device)
-        for device in coordinator.device_manager.devices
-        if device.device_type == DEVICE_TYPE_APPLIANCE
-    ]
     for device in coordinator.device_manager.devices:
+        entities.append(DevicePowerSensor(coordinator, entry, device))
+        if device.device_type == DEVICE_TYPE_APPLIANCE:
+            entities.append(ApplianceStateSensor(coordinator, entry, device))
         if device.device_type == DEVICE_TYPE_POOL:
             entities.append(PoolFiltrationRequiredSensor(coordinator, entry, device))
             entities.append(PoolFiltrationDoneSensor(coordinator, entry, device))
@@ -290,6 +288,39 @@ class EnergyOptimizerBaseLoadSensor(_BaseEOSensor):
         return {
             "sample_count": learner.sample_count,
             "hourly_w": hourly_w,
+        }
+
+
+class DevicePowerSensor(_BaseEOSensor):
+    """Reports the current power draw of a Helios-controlled device.
+
+    Returns device.power_w when the device is ON (controlled by Helios or manually),
+    0.0 otherwise.  This lets users build a total-devices power sum in HA and
+    helps evaluate the real base load (house_power − sum_of_devices).
+    """
+
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
+        super().__init__(coordinator, entry)
+        self._device = device
+        slug = slugify(device.name)
+        self._attr_unique_id = f"{entry.entry_id}_device_{slug}_power"
+        self._attr_translation_key = "eo_device_power"
+        self._attr_translation_placeholders = {"name": device.name}
+
+    @property
+    def native_value(self) -> float:
+        return float(self._device.power_w) if self._device.is_on else 0.0
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "rated_power_w": self._device.power_w,
+            "is_on": self._device.is_on,
+            "manual_mode": self._device.manual_mode,
         }
 
 
