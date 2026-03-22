@@ -362,7 +362,13 @@ def run(cfg: SimConfig, devices: list[SimDevice] | None = None) -> SimResult:
         # ---- Energy accumulators ----
         e_pv   += pv_w * step_h / 1000
         e_load += total_load_w * step_h / 1000
-        e_self += min(pv_w, total_load_w) * step_h / 1000
+        # Direct self-consumption: PV covering loads without going through the battery.
+        direct_self_w = min(pv_w, total_load_w)
+        # Battery self-consumption: PV that charges the battery is self-consumed, but
+        # only the energy that survives the round-trip (η at charge, η at discharge)
+        # counts as useful. The rest (1 − η²) is wasted as heat.
+        bat_self_w = bat_w * (cfg.bat_efficiency ** 2) if bat_action == "charge" else 0.0
+        e_self += (direct_self_w + bat_self_w) * step_h / 1000
         step_price = cfg.tariff.price(hour, cfg.tempo)
         if grid_w > 0:
             kwh_imported = grid_w * step_h / 1000
