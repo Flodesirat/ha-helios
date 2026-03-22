@@ -170,7 +170,10 @@ entities:
 
 ## Simulation
 
-Le répertoire `simulation/` permet de tester et d'optimiser les paramètres de l'intégration hors de Home Assistant, sur une journée complète simulée.
+Le moteur de simulation permet de tester et d'optimiser les paramètres de l'intégration hors de Home Assistant, sur une journée complète simulée.
+
+Le code de simulation est situé **exclusivement** dans `custom_components/helios/simulation/`.
+Le script `sim.py` à la racine du dépôt sert de point d'entrée unique pour le développement.
 
 ### Prérequis
 
@@ -182,35 +185,57 @@ pip install -r requirements-test.txt
 
 ### Utilisation rapide
 
+Toutes les commandes se lancent **depuis la racine du dépôt** avec `python sim.py` :
+
 ```bash
 # Journée d'été ensoleillée (paramètres par défaut)
-python simulation/run.py
+python sim.py
 
 # Journée d'hiver nuageuse, jour Tempo rouge, mode verbeux
-python simulation/run.py --season winter --cloud cloudy --tempo red -v
+python sim.py --season winter --cloud cloudy --tempo red -v
 
 # Comparer toutes les saisons × conditions météo
-python simulation/run.py --compare
+python sim.py --compare
 
 # Optimiser les paramètres du scoring
-python simulation/run.py --optimize
+python sim.py --optimize
+
+
+# Optimiser complete avec résultat optimisé
+python sim.py --cloud clear --season spring --peak-pv 2800 --tempo blue --bat-soc 20 --bat-capacity 4.2 --bat-charge-max 1200 --bat-discharge-max 1200 --bat-efficiency 0.95 --bat-discharge-start 6 -v --devices custom_components/helios/simulation/config/devices.json --base-load custom_components/helios/simulation/config/base_load.json --optimize --opt-alpha 0.5 --opt-top 20 --opt-runs 10 --base-load-noise 0.20
+python sim.py -v \
+    --season spring \
+    --peak-pv 2800 \
+    --bat-soc 20 \
+    --bat-capacity 4.2 \
+    --bat-charge-max 1200 \
+    --bat-discharge-max 1200 \
+    --bat-efficiency 0.95 \
+    --devices custom_components/helios/simulation/config/devices.json \
+    --base-load custom_components/helios/simulation/config/base_load.json \
+    --weight-surplus 0.6 \
+    --weight-tempo 0.1 \
+    --weight-soc 0.2 \
+    --weight-forecast 0.1 \
+    --threshold 0.6
 ```
 
 ### Fichiers de configuration
 
-Tous les paramètres métier sont dans `simulation/config/` :
+Tous les paramètres métier sont dans `custom_components/helios/simulation/config/` :
 
 | Fichier | Contenu |
 |---------|---------|
 | `devices.json` | Liste des appareils pilotés (puissance, fenêtre horaire, quotas) |
 | `base_load.json` | Consommation de fond de la maison (segments horaires) |
+| `base_load_with_car_charge.json` | Profil alternatif avec charge VE nocturne |
 | `tariff.json` | Tarifs EDF Tempo HC/HP par couleur (€/kWh) |
 
 ```bash
-python simulation/run.py \
-  --devices simulation/config/devices.json \
-  --base-load simulation/config/base_load.json \
-  --tariff simulation/config/tariff.json
+python sim.py \
+  --devices custom_components/helios/simulation/config/devices.json \
+  --base-load custom_components/helios/simulation/config/base_load.json \
+  --tariff custom_components/helios/simulation/config/tariff.json
 ```
 
 #### Format `devices.json`
@@ -342,10 +367,10 @@ Pour rejouer une simulation avec les poids trouvés par `--optimize` :
 
 ```bash
 # 1. Optimiser et noter la configuration optimale
-python simulation/run.py --optimize --opt-top 1
+python sim.py --optimize --opt-top 1
 
 # 2. Rejouer avec ces poids
-python simulation/run.py \
+python sim.py \
   --weight-surplus 0.5 --weight-tempo 0.2 \
   --weight-soc 0.2 --weight-forecast 0.1 \
   --threshold 0.30 -v
@@ -356,7 +381,7 @@ python simulation/run.py \
 Compare toutes les combinaisons saison × météo en une seule commande :
 
 ```bash
-python simulation/run.py --compare
+python sim.py --compare
 ```
 
 ```
@@ -369,29 +394,41 @@ python simulation/run.py --compare
 ### Mode optimisation
 
 Recherche par grille les poids du scoring et le seuil de dispatch qui maximisent
-l'objectif combiné :
+l'objectif **ajusté au risque** :
 
 ```
-objectif = α × autoconsommation + (1-α) × taux_économie
+objectif = E[α × autoconsommation + (1-α) × taux_économie] − λ × écart-type
 ```
+
+Le terme `−λ × std` pénalise les configurations fragiles (bonnes en moyenne mais
+très variables selon la consommation du jour). C'est l'équivalent d'un ratio de Sharpe.
 
 ```bash
-# Équilibré autoconsommation / économies (α=0.5)
-python simulation/run.py --optimize
+# Équilibré autoconsommation / économies (α=0.5), déterministe
+python sim.py --optimize
 
 # Priorité économies sur jour rouge
-python simulation/run.py --optimize --opt-alpha 0.0 --tempo red
+python sim.py --optimize --opt-alpha 0.0 --tempo red
 
-# Hiver nuageux, moyenner 10 runs pour lisser le bruit
-python simulation/run.py --optimize --season winter --cloud partly_cloudy \
-  --opt-runs 10 --opt-top 5
+# Monte Carlo : 10 runs avec bruit de consommation ±20%, pénalité risque λ=0.5
+python sim.py --optimize --season winter --cloud partly_cloudy \
+  --opt-runs 10 --base-load-noise 0.20 --opt-risk-lambda 0.5 --opt-top 5
+
+# Très conservateur (λ=2) : favorise la stabilité sur la performance moyenne
+python sim.py --optimize --opt-runs 20 --base-load-noise 0.20 --opt-risk-lambda 2.0
 ```
 
 | Option | Défaut | Description |
 |--------|--------|-------------|
 | `--opt-alpha 0-1` | `0.5` | `1.0` = autoconsommation pure, `0.0` = économies pures |
-| `--opt-runs N` | `1` | Runs moyennés par configuration |
+| `--opt-runs N` | `1` | Tirages Monte Carlo par configuration (estimation de variance) |
+| `--opt-risk-lambda 0-2` | `0.5` | Pénalité sur l'écart-type (`0`=pure moyenne, `2`=très conservateur) |
+| `--base-load-noise 0-1` | `0.0` | Bruit multiplicatif journalier sur la charge de fond (σ) |
 | `--opt-top N` | `10` | Nombre de résultats affichés |
+
+La colonne **Obj** affiche l'objectif ajusté au risque (`mean − λ×std`), **Moy** la
+moyenne des runs, **Std** l'écart-type. Avec `--opt-runs 1` (déterministe), Std = 0 et
+Obj = Moy.
 
 La configuration optimale est affichée directement copiable vers `SimConfig` ou
 `custom_components/helios/scoring_engine.py`.
@@ -399,7 +436,7 @@ La configuration optimale est affichée directement copiable vers `SimConfig` ou
 ### Sortie verbose (`-v`)
 
 ```bash
-python simulation/run.py -v
+python sim.py -v
 ```
 
 ```

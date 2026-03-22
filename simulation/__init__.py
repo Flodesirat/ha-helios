@@ -1,1 +1,0 @@
-"Helios day simulation package."

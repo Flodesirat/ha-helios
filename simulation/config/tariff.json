@@ -1,8 +1,0 @@
-{
-  "_comment": "Tarifs EDF Tempo TTC en vigueur au 03/03/2026. HC = 22h–6h, HP = 6h–22h.",
-  "hc_start": 22.0,
-  "hc_end": 6.0,
-  "blue":  { "hc": 0.1325, "hp": 0.1612 },
-  "white": { "hc": 0.1499, "hp": 0.1871 },
-  "red":   { "hc": 0.1575, "hp": 0.7060 }
-}
