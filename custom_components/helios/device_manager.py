@@ -132,8 +132,10 @@ class ManagedDevice:
         self.manual_mode: bool                = False  # True → Helios hands off entirely
 
         # Pool — daily run tracking (persisted externally)
-        self.pool_daily_run_minutes: float    = 0.0
-        self.pool_last_date: date | None      = None
+        self.pool_daily_run_minutes: float       = 0.0
+        self.pool_last_date: date | None         = None
+        # Snapshot of required filtration minutes taken at 05:00 — stable all day
+        self.pool_required_minutes_today: float | None = None
 
         # EV — manual plugged state (used when no ev_plugged_entity is configured)
         self.ev_plugged_manual: bool           = False
@@ -339,10 +341,31 @@ class ManagedDevice:
         if self.pool_last_date != today:
             self.pool_daily_run_minutes = 0.0
             self.pool_last_date = today
+            self.pool_required_minutes_today = None  # re-captured at 05:00
         if self.is_on:
             self.pool_daily_run_minutes += scan_interval_minutes
 
-    def _pool_required_minutes(self, hass: HomeAssistant) -> float:
+    def try_capture_pool_required(self, hass: HomeAssistant, current_hour: int) -> None:
+        """Snapshot the required filtration minutes once at 05:00 (or on restart if already ≥ 05:00).
+
+        Reading the entity live would cause ON/OFF oscillations as the pool
+        temperature—and thus the required hours—evolves during the day.
+        """
+        if self.pool_required_minutes_today is not None:
+            return  # already captured today
+        if current_hour < 5:
+            return  # wait until 05:00
+        raw = self._pool_required_minutes_live(hass)
+        if raw <= 0.0:
+            return  # entity not ready yet — try again next cycle
+        self.pool_required_minutes_today = raw
+        _LOGGER.info(
+            "Pool '%s': captured daily required filtration = %.1f min at %02d:xx",
+            self.name, raw, current_hour,
+        )
+
+    def _pool_required_minutes_live(self, hass: HomeAssistant) -> float:
+        """Read the filtration entity directly (only used for the 05:00 snapshot)."""
         if not self.pool_filtration_entity:
             return 0.0
         state = hass.states.get(self.pool_filtration_entity)
@@ -352,6 +375,14 @@ class ManagedDevice:
             return float(state.state) * 60.0  # hours → minutes
         except ValueError:
             return 0.0
+
+    def _pool_required_minutes(self, hass: HomeAssistant) -> float:
+        """Return the stable daily snapshot, or live value if snapshot not yet taken."""
+        if self.pool_required_minutes_today is not None:
+            return self.pool_required_minutes_today
+        # Before 05:00 or entity unavailable at 05:00: use live value so the
+        # force-mode path still works, but dispatch won't run (score = 0 at night).
+        return self._pool_required_minutes_live(hass)
 
     # ------------------------------------------------------------------
     # Deadline / departure urgency helper
@@ -530,6 +561,7 @@ class DeviceManager:
                 continue
             before = device.pool_daily_run_minutes
             device.update_pool_run_time(self._scan_interval, today)
+            device.try_capture_pool_required(hass, now.hour)
             if device.pool_daily_run_minutes != before:
                 pool_changed = True
         if pool_changed:

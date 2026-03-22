@@ -342,6 +342,11 @@ class PoolFiltrationRequiredSensor(_BasePoolSensor):
 
     @property
     def native_value(self) -> float | None:
+        # Prefer the 05:00 snapshot — that's what the optimizer actually uses.
+        snapshot = self._device.pool_required_minutes_today
+        if snapshot is not None:
+            return round(snapshot, 1)
+        # Before 05:00: fall back to live value for display only.
         entity_id = self._device.pool_filtration_entity
         if not entity_id:
             return None
@@ -352,6 +357,10 @@ class PoolFiltrationRequiredSensor(_BasePoolSensor):
             return round(float(state.state) * 60, 1)  # hours → minutes
         except ValueError:
             return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {"snapshot_taken": self._device.pool_required_minutes_today is not None}
 
 
 class PoolFiltrationDoneSensor(_BasePoolSensor):
