@@ -130,6 +130,7 @@ CONF_OPTIMIZER_ALPHA       = "optimizer_alpha"     # 0.0 = économies pures, 1.0
 CONF_BASE_LOAD_NOISE       = "base_load_noise"     # std-dev du bruit multiplicatif journalier sur la charge
 CONF_OPTIMIZER_N_RUNS      = "optimizer_n_runs"    # nombre de tirages Monte Carlo par combinaison
 CONF_RISK_LAMBDA           = "risk_lambda"         # coefficient de pénalité sur l'écart-type de l'objectif
+CONF_EMA_ALPHA             = "ema_alpha"           # facteur d'apprentissage EMA de la charge de fond
 
 # ---------------------------------------------------------------------------
 # Device types
@@ -179,6 +180,7 @@ DEFAULT_OPTIMIZER_ALPHA            = 0.5    # équilibré autoconsommation / éc
 DEFAULT_BASE_LOAD_NOISE            = 0.20   # ±20 % de bruit journalier sur la charge domestique
 DEFAULT_OPTIMIZER_N_RUNS           = 5      # 5 tirages Monte Carlo par combinaison de poids
 DEFAULT_RISK_LAMBDA                = 0.5    # obj = mean − 0.5 × std  (risque modéré)
+DEFAULT_EMA_ALPHA                  = 0.05   # convergence lente (~1 semaine) pour stabilité
 DEFAULT_PEAK_PV_W                  = 3000.0 # W — used when no real-time data available
 
 # ---------------------------------------------------------------------------

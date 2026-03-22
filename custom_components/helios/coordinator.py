@@ -10,6 +10,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from homeassistant.util import dt as dt_util
+
 from .const import (
     DOMAIN,
     CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL,
@@ -21,11 +23,13 @@ from .const import (
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     CONF_DEVICES, CONF_MODE, CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD,
     CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W,
+    CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA,
     MODE_AUTO, MODE_OFF,
     BATTERY_ACTION_AUTOCONSOMMATION,
 )
 from .scoring_engine import ScoringEngine
 from .battery_strategy import BatteryStrategy
+from .consumption_learner import ConsumptionLearner
 from .device_manager import DeviceManager
 from .daily_optimizer import async_run_daily_optimization
 
@@ -48,6 +52,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.battery_strategy  = BatteryStrategy(entry.data)
         devices = entry.options.get(CONF_DEVICES, entry.data.get(CONF_DEVICES, []))
         self.device_manager    = DeviceManager(hass, devices, entry.data)
+        ema_alpha = float(entry.data.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA))
+        self.consumption_learner = ConsumptionLearner(hass, entry.entry_id, alpha=ema_alpha)
         self.dispatch_threshold: float = float(
             entry.data.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD)
         )
@@ -180,6 +186,16 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.surplus_w     = max(0.0, self.pv_power_w - self.house_power_w)
         # Battery discharge headroom available for device dispatch
         self.bat_available_w = self._compute_bat_available_w()
+
+        # EMA update: net base load = house_w − currently-active Helios devices
+        helios_devices_w = sum(
+            d.power_w for d in self.device_manager.devices if d.is_on
+        )
+        net_base_w = self.house_power_w - helios_devices_w
+        now = dt_util.now()
+        slot = (now.hour * 60 + now.minute) // 5
+        self.consumption_learner.update(slot, net_base_w)
+        self.consumption_learner.schedule_save()
 
     def _compute_bat_available_w(self) -> float:
         """Estimate how much power the battery can contribute to device loads.

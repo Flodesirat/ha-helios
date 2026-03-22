@@ -31,6 +31,9 @@ def _fake_result(**overrides) -> OptResult:
 
 
 def _make_coordinator(scoring_engine=None):
+    from custom_components.helios.consumption_learner import ConsumptionLearner
+    from unittest.mock import AsyncMock as _AsyncMock
+
     coordinator = MagicMock()
     coordinator.entry.data = {
         CONF_PEAK_PV_W:       3000.0,
@@ -40,6 +43,18 @@ def _make_coordinator(scoring_engine=None):
     }
     coordinator.dispatch_threshold = DEFAULT_DISPATCH_THRESHOLD
     coordinator.scoring_engine = scoring_engine or MagicMock()
+
+    # Build a real (but storage-less) ConsumptionLearner so as_base_load_fn() works
+    learner = ConsumptionLearner.__new__(ConsumptionLearner)
+    learner._alpha = 0.05
+    learner._profile = [300.0] * 288
+    learner._sample_count = 1
+    store = MagicMock()
+    store.async_load = _AsyncMock(return_value=None)
+    store.async_delay_save = MagicMock()
+    learner._store = store
+    coordinator.consumption_learner = learner
+
     return coordinator
 
 

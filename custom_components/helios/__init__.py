@@ -31,10 +31,24 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+def _load_base_load_fallback():
+    """Return a fallback base_load_fn loaded from the bundled base_load.json."""
+    import pathlib
+    from .simulation.profiles import load_base_load_from_json
+    path = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
+    try:
+        return load_base_load_from_json(str(path))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Energy Optimizer from a config entry."""
     coordinator = EnergyOptimizerCoordinator(hass, entry)
     await coordinator.device_manager.async_setup()
+    await coordinator.consumption_learner.async_load(
+        fallback_fn=_load_base_load_fallback()
+    )
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator

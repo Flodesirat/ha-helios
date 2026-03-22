@@ -239,13 +239,24 @@ async def async_run_daily_optimization(
             _LOGGER.error("Helios optimizer: simulation module not available: %s", exc)
             return None
 
-        import pathlib
-        _base_load_path = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
-        try:
-            base_load_fn = load_base_load_from_json(str(_base_load_path))
-        except Exception as exc:
-            base_load_fn = None
-            _LOGGER.warning("Helios optimizer: could not load base_load.json (%s), using default profile", exc)
+        # Use the EMA-learned profile when available; fall back to static base_load.json
+        learner = coordinator.consumption_learner
+        if learner.profile is not None:
+            base_load_fn = learner.as_base_load_fn()
+            _LOGGER.debug(
+                "Helios optimizer: using EMA base load profile (samples=%d)",
+                learner.sample_count,
+            )
+        else:
+            import pathlib
+            _base_load_path = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
+            try:
+                base_load_fn = load_base_load_from_json(str(_base_load_path))
+            except Exception as exc:
+                base_load_fn = None
+                _LOGGER.warning(
+                    "Helios optimizer: could not load base_load.json (%s), using default profile", exc
+                )
 
         sim_cfg = SimConfig(
             season=season,
@@ -361,6 +372,7 @@ async def async_run_daily_optimization(
         "forecast_kwh": forecast_kwh,
         "peak_pv_w": peak_pv_w,
         "objective_alpha": float(cfg.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA)),
+        "ema_sample_count": coordinator.consumption_learner.sample_count,
     }
     coordinator.optimizer_chosen = {
         "rank": 1,
