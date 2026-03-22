@@ -345,6 +345,11 @@
       "force_optimization": {
         "name": "Lancer l'optimisation"
       }
+    },
+    "sensor": {
+      "eo_base_load_profile": {
+        "name": "Charge de fond apprise"
+      }
     }
   }
 }

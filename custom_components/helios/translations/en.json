@@ -345,6 +345,11 @@
       "force_optimization": {
         "name": "Run optimization"
       }
+    },
+    "sensor": {
+      "eo_base_load_profile": {
+        "name": "Learned base load"
+      }
     }
   }
 }

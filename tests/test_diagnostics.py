@@ -13,7 +13,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from unittest.mock import MagicMock as _MagicMock
+
 from custom_components.helios.diagnostics import async_get_config_entry_diagnostics
+from custom_components.helios.consumption_learner import ConsumptionLearner, SLOTS
 from custom_components.helios.const import (
     DOMAIN,
     DEVICE_TYPE_POOL, DEVICE_TYPE_WATER_HEATER,
@@ -45,6 +48,17 @@ def _make_device_manager(devices=None, log_entries=None):
     return dm
 
 
+def _make_learner(profile: list[float] | None = None, sample_count: int = 0):
+    """Build a minimal ConsumptionLearner without real HA storage."""
+    learner = ConsumptionLearner.__new__(ConsumptionLearner)
+    learner._alpha = 0.05
+    learner._profile = profile
+    learner._sample_count = sample_count
+    store = _MagicMock()
+    learner._store = store
+    return learner
+
+
 def _make_coordinator(
     *,
     devices=None,
@@ -55,6 +69,8 @@ def _make_coordinator(
     optimizer_chosen_schedule=None,
     optimizer_context=None,
     optimizer_last_run=None,
+    ema_profile: list[float] | None = None,
+    ema_sample_count: int = 0,
 ):
     coordinator = MagicMock()
 
@@ -89,6 +105,12 @@ def _make_coordinator(
     coordinator.optimizer_top20            = optimizer_top20 or []
     coordinator.optimizer_chosen_schedule  = optimizer_chosen_schedule or []
 
+    # EMA learner
+    coordinator.consumption_learner = _make_learner(
+        profile=ema_profile if ema_profile is not None else [300.0] * SLOTS,
+        sample_count=ema_sample_count,
+    )
+
     return coordinator
 
 
@@ -115,7 +137,7 @@ class TestDiagnosticsStructure:
 
         result = await async_get_config_entry_diagnostics(hass, entry)
 
-        assert set(result.keys()) == {"current_state", "optimizer", "decision_log"}
+        assert set(result.keys()) == {"current_state", "optimizer", "base_load_profile", "decision_log"}
 
     @pytest.mark.asyncio
     async def test_current_state_keys(self):
@@ -346,6 +368,73 @@ class TestOptimizerSection:
 # ---------------------------------------------------------------------------
 # Decision log
 # ---------------------------------------------------------------------------
+
+class TestBaseLoadProfile:
+
+    @pytest.mark.asyncio
+    async def test_base_load_profile_keys(self):
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+        blp = result["base_load_profile"]
+
+        assert "sample_count" in blp
+        assert "hourly_w" in blp
+        assert "profile_288" in blp
+
+    @pytest.mark.asyncio
+    async def test_hourly_w_has_24_entries(self):
+        coordinator = _make_coordinator(ema_profile=[400.0] * SLOTS, ema_sample_count=10)
+        hass, entry = _make_hass(coordinator)
+
+        blp = (await async_get_config_entry_diagnostics(hass, entry))["base_load_profile"]
+
+        assert len(blp["hourly_w"]) == 24
+        assert blp["hourly_w"][0]["hour"] == "00:00"
+        assert blp["hourly_w"][23]["hour"] == "23:00"
+
+    @pytest.mark.asyncio
+    async def test_hourly_w_values_are_correct(self):
+        """All slots at 600 W → every hourly average must be 600 W."""
+        coordinator = _make_coordinator(ema_profile=[600.0] * SLOTS)
+        hass, entry = _make_hass(coordinator)
+
+        blp = (await async_get_config_entry_diagnostics(hass, entry))["base_load_profile"]
+
+        assert all(entry["w"] == 600.0 for entry in blp["hourly_w"])
+
+    @pytest.mark.asyncio
+    async def test_profile_288_length(self):
+        coordinator = _make_coordinator(ema_profile=[300.0] * SLOTS)
+        hass, entry = _make_hass(coordinator)
+
+        blp = (await async_get_config_entry_diagnostics(hass, entry))["base_load_profile"]
+
+        assert len(blp["profile_288"]) == SLOTS
+
+    @pytest.mark.asyncio
+    async def test_sample_count_forwarded(self):
+        coordinator = _make_coordinator(ema_sample_count=42)
+        hass, entry = _make_hass(coordinator)
+
+        blp = (await async_get_config_entry_diagnostics(hass, entry))["base_load_profile"]
+
+        assert blp["sample_count"] == 42
+
+    @pytest.mark.asyncio
+    async def test_profile_none_returns_empty(self):
+        """If learner has no profile yet, diagnostics must not crash."""
+        coordinator = _make_coordinator()
+        coordinator.consumption_learner = _make_learner(profile=None, sample_count=0)
+        hass, entry = _make_hass(coordinator)
+
+        blp = (await async_get_config_entry_diagnostics(hass, entry))["base_load_profile"]
+
+        assert blp["sample_count"] == 0
+        assert blp["hourly_w"] == []
+        assert blp["profile_288"] == []
+
 
 class TestDecisionLog:
 

@@ -58,8 +58,27 @@ async def async_get_config_entry_diagnostics(
         "chosen_schedule": coordinator.optimizer_chosen_schedule,
     }
 
+    learner = coordinator.consumption_learner
+    profile = learner.profile  # snapshot — list[float] | None
+    if profile is not None:
+        # 24 hourly averages (mean of the 12 slots per hour)
+        hourly_w = [
+            round(sum(profile[h * 12:(h + 1) * 12]) / 12, 1)
+            for h in range(24)
+        ]
+        base_load_profile = {
+            "sample_count": learner.sample_count,
+            "hourly_w": [
+                {"hour": f"{h:02d}:00", "w": hourly_w[h]} for h in range(24)
+            ],
+            "profile_288": [round(v, 1) for v in profile],
+        }
+    else:
+        base_load_profile = {"sample_count": 0, "hourly_w": [], "profile_288": []}
+
     return {
-        "current_state":  current_state,
-        "optimizer":      optimizer,
-        "decision_log":   list(dm.decision_log),
+        "current_state":     current_state,
+        "optimizer":         optimizer,
+        "base_load_profile": base_load_profile,
+        "decision_log":      list(dm.decision_log),
     }

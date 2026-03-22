@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time as _time
+from datetime import datetime
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
@@ -42,6 +43,7 @@ async def async_setup_entry(
         EnergyOptimizerWeightsSensor(coordinator, entry),
         EnergyOptimizerBatterySocLevelSensor(coordinator, entry),
     ]
+    entities.append(EnergyOptimizerBaseLoadSensor(coordinator, entry))
     entities += [
         ApplianceStateSensor(coordinator, entry, device)
         for device in coordinator.device_manager.devices
@@ -243,6 +245,52 @@ class EnergyOptimizerBatterySocLevelSensor(_BaseEOSensor):
     @property
     def extra_state_attributes(self) -> dict:
         return {"battery_soc": self.coordinator.battery_soc}
+
+
+class EnergyOptimizerBaseLoadSensor(_BaseEOSensor):
+    """Exposes the EMA-learned base load profile.
+
+    State    : current slot's learned base load value in W.
+    Attributes:
+        sample_count  — total EMA updates received since last cold start.
+        hourly_w      — list of 24 dicts {"hour": "HH:00", "w": float}
+                        (mean of the 12 five-minute slots per hour).
+                        Ready to feed an ApexCharts card.
+    """
+
+    _attr_translation_key = "eo_base_load_profile"
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry.entry_id}_base_load_profile"
+
+    @property
+    def native_value(self) -> float | None:
+        profile = self.coordinator.consumption_learner.profile
+        if profile is None:
+            return None
+        now = datetime.now()
+        slot = (now.hour * 60 + now.minute) // 5
+        return round(profile[slot % 288], 1)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        learner = self.coordinator.consumption_learner
+        profile = learner.profile
+        if profile is None:
+            return {"sample_count": 0, "hourly_w": []}
+        hourly_w = [
+            {"hour": f"{h:02d}:00", "w": round(sum(profile[h * 12:(h + 1) * 12]) / 12, 1)}
+            for h in range(24)
+        ]
+        return {
+            "sample_count": learner.sample_count,
+            "hourly_w": hourly_w,
+        }
 
 
 class ApplianceStateSensor(_BaseEOSensor):
