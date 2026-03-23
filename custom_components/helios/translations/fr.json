@@ -68,7 +68,7 @@
         "data": {
           "wh_temp_entity": "Entité température (°C)",
           "wh_temp_target": "Température cible (°C)",
-          "wh_temp_min": "Température minimale légionellose (°C)",
+          "wh_temp_min": "Seuil de déclenchement d'urgence (°C)",
           "wh_temp_min_entity": "Entité température minimale heures creuses (°C)"
         }
       },
@@ -236,7 +236,7 @@
         "data": {
           "wh_temp_entity": "Entité température (°C)",
           "wh_temp_target": "Température cible (°C)",
-          "wh_temp_min": "Température minimale légionellose (°C)",
+          "wh_temp_min": "Seuil de déclenchement d'urgence (°C)",
           "wh_temp_min_entity": "Entité température minimale heures creuses (°C)"
         }
       },

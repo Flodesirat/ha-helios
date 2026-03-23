@@ -68,7 +68,7 @@
         "data": {
           "wh_temp_entity": "Temperature entity (°C)",
           "wh_temp_target": "Target temperature (°C)",
-          "wh_temp_min": "Legionella minimum temperature (°C)",
+          "wh_temp_min": "Emergency trigger threshold (°C)",
           "wh_temp_min_entity": "Off-peak minimum temperature entity (°C)"
         }
       },
@@ -236,7 +236,7 @@
         "data": {
           "wh_temp_entity": "Temperature entity (°C)",
           "wh_temp_target": "Target temperature (°C)",
-          "wh_temp_min": "Legionella minimum temperature (°C)",
+          "wh_temp_min": "Emergency trigger threshold (°C)",
           "wh_temp_min_entity": "Off-peak minimum temperature entity (°C)"
         }
       },
