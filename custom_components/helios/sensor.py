@@ -76,8 +76,8 @@ class _BaseEOSensor(CoordinatorEntity, SensorEntity):
 class EnergyOptimizerSurplusSensor(_BaseEOSensor):
     """Reports available PV surplus in Watts."""
 
-    _attr_name = "EO PV surplus"
-    _attr_unique_id_suffix = "surplus_pv"
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_pv_surplus"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -94,7 +94,8 @@ class EnergyOptimizerSurplusSensor(_BaseEOSensor):
 class EnergyOptimizerScoreSensor(_BaseEOSensor):
     """Reports the global optimization score [0..1]."""
 
-    _attr_name = "EO global score"
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_global_score"
     _attr_native_unit_of_measurement = None
     _attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -118,7 +119,8 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
 class EnergyOptimizerBatteryActionSensor(_BaseEOSensor):
     """Reports current battery action: charge | discharge | reserve | idle."""
 
-    _attr_name = "EO battery action"
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_battery_action"
 
     @property
     def unique_id(self) -> str:
@@ -132,7 +134,8 @@ class EnergyOptimizerBatteryActionSensor(_BaseEOSensor):
 class EnergyOptimizerPVPowerSensor(_BaseEOSensor):
     """Reports total PV production in Watts."""
 
-    _attr_name = "EO PV power"
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_pv_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -149,7 +152,8 @@ class EnergyOptimizerPVPowerSensor(_BaseEOSensor):
 class EnergyOptimizerGridPowerSensor(_BaseEOSensor):
     """Reports grid power in Watts (positive = import, negative = export)."""
 
-    _attr_name = "EO grid power"
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_grid_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -166,7 +170,8 @@ class EnergyOptimizerGridPowerSensor(_BaseEOSensor):
 class EnergyOptimizerHousePowerSensor(_BaseEOSensor):
     """Reports total house consumption in Watts."""
 
-    _attr_name = "EO house power"
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_house_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -187,7 +192,8 @@ class EnergyOptimizerWeightsSensor(_BaseEOSensor):
     Attributes: w_surplus, w_tempo, w_soc, w_forecast, last_optimized (ISO timestamp)
     """
 
-    _attr_name = "EO optimizer weights"
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_optimizer_weights"
     _attr_native_unit_of_measurement = None
     _attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -230,7 +236,8 @@ def _soc_level_label(soc: float | None) -> str | None:
 class EnergyOptimizerBatterySocLevelSensor(_BaseEOSensor):
     """Reports a textual label for the battery SOC level."""
 
-    _attr_name = "EO battery SOC level"
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_battery_soc_level"
 
     @property
     def unique_id(self) -> str:
@@ -331,7 +338,8 @@ class ApplianceStateSensor(_BaseEOSensor):
         super().__init__(coordinator, entry)
         self._device = device
         slug = slugify(device.name)
-        self._attr_name      = f"EO {device.name} état"
+        self._attr_translation_key = "eo_appliance_state"
+        self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_appliance_{slug}_state"
 
     @property
@@ -368,7 +376,8 @@ class PoolFiltrationRequiredSensor(_BasePoolSensor):
 
     def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
         super().__init__(coordinator, entry, device)
-        self._attr_name      = f"EO {device.name} filtration requise"
+        self._attr_translation_key = "eo_pool_filtration_required"
+        self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_required"
 
     @property
@@ -399,7 +408,8 @@ class PoolFiltrationDoneSensor(_BasePoolSensor):
 
     def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
         super().__init__(coordinator, entry, device)
-        self._attr_name      = f"EO {device.name} filtration journée"
+        self._attr_translation_key = "eo_pool_filtration_done"
+        self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_done"
 
     @property
@@ -412,7 +422,8 @@ class PoolForceRemainingSensor(_BasePoolSensor):
 
     def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
         super().__init__(coordinator, entry, device)
-        self._attr_name      = f"EO {device.name} forçage restant"
+        self._attr_translation_key = "eo_pool_force_remaining"
+        self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_force_remaining"
 
     @property

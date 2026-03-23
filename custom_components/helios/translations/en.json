@@ -296,6 +296,9 @@
           "idle": "Idle"
         }
       },
+      "eo_battery_soc_level": {
+        "name": "Battery SOC level"
+      },
       "eo_pv_power": {
         "name": "PV power"
       },
@@ -307,6 +310,24 @@
       },
       "eo_optimizer_weights": {
         "name": "Optimizer weights"
+      },
+      "eo_device_power": {
+        "name": "{name} power"
+      },
+      "eo_appliance_state": {
+        "name": "{name} state"
+      },
+      "eo_pool_filtration_required": {
+        "name": "{name} required filtration"
+      },
+      "eo_pool_filtration_done": {
+        "name": "{name} daily filtration"
+      },
+      "eo_pool_force_remaining": {
+        "name": "{name} force remaining"
+      },
+      "eo_base_load_profile": {
+        "name": "Learned base load"
       }
     },
     "binary_sensor": {
@@ -344,14 +365,6 @@
     "button": {
       "force_optimization": {
         "name": "Run optimization"
-      }
-    },
-    "sensor": {
-      "eo_base_load_profile": {
-        "name": "Learned base load"
-      },
-      "eo_device_power": {
-        "name": "{name} power"
       }
     }
   }
