@@ -23,6 +23,7 @@ from .const import (
     # EV
     CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
     CONF_EV_DEPARTURE_TIME, CONF_EV_MIN_CHARGE_POWER_W, CONF_EV_BATTERY_CAPACITY_WH,
+    CONF_EV_CHARGE_START_SCRIPT, CONF_EV_CHARGE_STOP_SCRIPT,
     # Water heater
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN, CONF_WH_TEMP_MIN_ENTITY,
     # HVAC
@@ -132,6 +133,8 @@ class ManagedDevice:
         self.ev_battery_capacity_wh: float | None = (
             float(config[CONF_EV_BATTERY_CAPACITY_WH]) if config.get(CONF_EV_BATTERY_CAPACITY_WH) else None
         )
+        self.ev_charge_start_script: str | None = config.get(CONF_EV_CHARGE_START_SCRIPT)
+        self.ev_charge_stop_script: str | None  = config.get(CONF_EV_CHARGE_STOP_SCRIPT)
 
         # ---- Water heater ----
         self.wh_temp_entity: str | None     = config.get(CONF_WH_TEMP_ENTITY)
@@ -908,7 +911,22 @@ class DeviceManager:
         if context:
             entry.update(context)
         self.decision_log.append(entry)
-        if device.switch_entity:
+        if device.device_type == DEVICE_TYPE_EV:
+            script = device.ev_charge_start_script if on else device.ev_charge_stop_script
+            if script:
+                await hass.services.async_call(
+                    "script", "turn_on",
+                    {"entity_id": script},
+                    blocking=False,
+                )
+            elif device.switch_entity:
+                await hass.services.async_call(
+                    "homeassistant",
+                    "turn_on" if on else "turn_off",
+                    {"entity_id": device.switch_entity},
+                    blocking=False,
+                )
+        elif device.switch_entity:
             await hass.services.async_call(
                 "homeassistant",
                 "turn_on" if on else "turn_off",

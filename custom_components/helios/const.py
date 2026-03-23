@@ -67,6 +67,8 @@ CONF_EV_PLUGGED_ENTITY      = "ev_plugged_entity"
 CONF_EV_DEPARTURE_TIME      = "ev_departure_time"         # "HH:MM"
 CONF_EV_MIN_CHARGE_POWER_W  = "ev_min_charge_power_w"    # EVSE minimum (usually 6 A)
 CONF_EV_BATTERY_CAPACITY_WH = "ev_battery_capacity_wh"   # optional, for time estimation
+CONF_EV_CHARGE_START_SCRIPT = "ev_charge_start_script"
+CONF_EV_CHARGE_STOP_SCRIPT  = "ev_charge_stop_script"
 
 # ---------------------------------------------------------------------------
 # Per-device keys — water heater

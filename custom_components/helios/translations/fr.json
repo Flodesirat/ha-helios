@@ -61,7 +61,9 @@
           "ev_soc_target": "SOC cible (%)",
           "ev_departure_time": "Heure de départ (HH:MM)",
           "ev_min_charge_power_w": "Puissance minimale de charge (W)",
-          "ev_battery_capacity_wh": "Capacité batterie véhicule (Wh)"
+          "ev_battery_capacity_wh": "Capacité batterie véhicule (Wh)",
+          "ev_charge_start_script": "Script de démarrage de charge",
+          "ev_charge_stop_script": "Script d'arrêt de charge"
         }
       },
       "device_water_heater": {
@@ -230,7 +232,9 @@
           "ev_soc_target": "SOC cible (%)",
           "ev_departure_time": "Heure de départ (HH:MM)",
           "ev_min_charge_power_w": "Puissance minimale de charge (W)",
-          "ev_battery_capacity_wh": "Capacité batterie véhicule (Wh)"
+          "ev_battery_capacity_wh": "Capacité batterie véhicule (Wh)",
+          "ev_charge_start_script": "Script de démarrage de charge",
+          "ev_charge_stop_script": "Script d'arrêt de charge"
         }
       },
       "opt_device_water_heater": {

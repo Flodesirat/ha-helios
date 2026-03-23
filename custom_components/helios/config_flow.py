@@ -33,6 +33,7 @@ from .const import (
     # EV
     CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
     CONF_EV_DEPARTURE_TIME, CONF_EV_MIN_CHARGE_POWER_W, CONF_EV_BATTERY_CAPACITY_WH,
+    CONF_EV_CHARGE_START_SCRIPT, CONF_EV_CHARGE_STOP_SCRIPT,
     # Water heater
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN, CONF_WH_TEMP_MIN_ENTITY,
     # HVAC
@@ -191,6 +192,12 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(CONF_EV_BATTERY_CAPACITY_WH): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=5000, max=150000, step=1000, unit_of_measurement="Wh")
+                ),
+                vol.Optional(CONF_EV_CHARGE_START_SCRIPT): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="script")
+                ),
+                vol.Optional(CONF_EV_CHARGE_STOP_SCRIPT): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="script")
                 ),
             }),
         )
@@ -656,6 +663,12 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 ),
                 vol.Optional(CONF_EV_BATTERY_CAPACITY_WH, **_opt_default(cd, CONF_EV_BATTERY_CAPACITY_WH)): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=5000, max=150000, step=1000, unit_of_measurement="Wh")
+                ),
+                vol.Optional(CONF_EV_CHARGE_START_SCRIPT, **_opt_default(cd, CONF_EV_CHARGE_START_SCRIPT)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="script")
+                ),
+                vol.Optional(CONF_EV_CHARGE_STOP_SCRIPT, **_opt_default(cd, CONF_EV_CHARGE_STOP_SCRIPT)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="script")
                 ),
             }),
         )
