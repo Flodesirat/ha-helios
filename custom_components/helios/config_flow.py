@@ -204,7 +204,7 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="device_water_heater",
             data_schema=vol.Schema({
                 vol.Optional(CONF_WH_TEMP_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                    selector.EntitySelectorConfig(domain=["sensor", "input_number"])
                 ),
                 vol.Optional(CONF_WH_TEMP_TARGET, default=DEFAULT_WH_TEMP_TARGET): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=40, max=75, step=1, unit_of_measurement="°C")
@@ -213,7 +213,7 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                     selector.NumberSelectorConfig(min=10, max=65, step=1, unit_of_measurement="°C")
                 ),
                 vol.Optional(CONF_WH_TEMP_MIN_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                    selector.EntitySelectorConfig(domain=["sensor", "input_number"])
                 ),
             }),
         )
@@ -670,7 +670,7 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
             step_id="opt_device_water_heater",
             data_schema=vol.Schema({
                 vol.Optional(CONF_WH_TEMP_ENTITY, **_opt_default(cd, CONF_WH_TEMP_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                    selector.EntitySelectorConfig(domain=["sensor", "input_number"])
                 ),
                 vol.Optional(CONF_WH_TEMP_TARGET, default=cd.get(CONF_WH_TEMP_TARGET, DEFAULT_WH_TEMP_TARGET)): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=40, max=75, step=1, unit_of_measurement="°C")
@@ -679,7 +679,7 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                     selector.NumberSelectorConfig(min=10, max=65, step=1, unit_of_measurement="°C")
                 ),
                 vol.Optional(CONF_WH_TEMP_MIN_ENTITY, **_opt_default(cd, CONF_WH_TEMP_MIN_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                    selector.EntitySelectorConfig(domain=["sensor", "input_number"])
                 ),
             }),
         )
