@@ -66,9 +66,9 @@ class _BaseEOSensor(CoordinatorEntity, SensorEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Energy Optimizer",
+            "name": "Helios",
             "manufacturer": "Community",
-            "model": "Energy Optimizer",
+            "model": "Helios",
             "entry_type": "service",
         }
 
@@ -306,6 +306,7 @@ class DevicePowerSensor(_BaseEOSensor):
     helps evaluate the real base load (house_power − sum_of_devices).
     """
 
+    _attr_has_entity_name = True
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -333,6 +334,8 @@ class DevicePowerSensor(_BaseEOSensor):
 
 class ApplianceStateSensor(_BaseEOSensor):
     """Reports the Helios control state of an appliance: stop | en_attente | en_route."""
+
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
         super().__init__(coordinator, entry)
@@ -363,6 +366,7 @@ class _BasePoolSensor(_BaseEOSensor):
         self._device = device
         self._slug   = slugify(device.name)
 
+    _attr_has_entity_name = True
     _attr_native_unit_of_measurement = "min"
     _attr_state_class = SensorStateClass.MEASUREMENT
 

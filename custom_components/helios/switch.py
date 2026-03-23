@@ -40,7 +40,8 @@ async def async_setup_entry(
 class EnergyOptimizerModeSwitch(CoordinatorEntity, SwitchEntity):
     """Master on/off switch — toggles between AUTO and OFF mode."""
 
-    _attr_name = "EO auto mode"
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_auto_mode"
 
     def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
@@ -66,7 +67,7 @@ class EnergyOptimizerModeSwitch(CoordinatorEntity, SwitchEntity):
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Energy Optimizer",
+            "name": "Helios",
         }
 
 
@@ -83,14 +84,16 @@ class PoolForceSwitch(CoordinatorEntity, SwitchEntity):
         self._entry  = entry
         self._device = device
         slug = slugify(device.name)
-        self._attr_name      = f"EO {device.name} forçage"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "eo_pool_force"
+        self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{slug}_force"
 
     @property
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Energy Optimizer",
+            "name": "Helios",
         }
 
     @property
@@ -138,14 +141,16 @@ class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
         self._entry  = entry
         self._device = device
         slug = slugify(device.name)
-        self._attr_name      = f"EO {device.name} manuel"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "eo_device_manual"
+        self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_device_{slug}_manual"
 
     @property
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Energy Optimizer",
+            "name": "Helios",
         }
 
     @property
@@ -174,14 +179,16 @@ class EVPluggedSwitch(CoordinatorEntity, SwitchEntity):
         self._entry  = entry
         self._device = device
         slug = slugify(device.name)
-        self._attr_name      = f"EO {device.name} branché"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "eo_ev_plugged"
+        self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_ev_{slug}_plugged"
 
     @property
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Energy Optimizer",
+            "name": "Helios",
         }
 
     @property

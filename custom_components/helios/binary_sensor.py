@@ -48,15 +48,17 @@ class DeviceControlSensor(CoordinatorEntity, BinarySensorEntity):
         self._device  = device
         slug          = slugify(device.name)
         self._attr_unique_id = f"{entry.entry_id}_device_{slug}"
-        self._attr_name      = f"EO {device.name}"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "eo_device"
+        self._attr_translation_placeholders = {"name": device.name}
 
     @property
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Energy Optimizer",
+            "name": "Helios",
             "manufacturer": "Community",
-            "model": "Energy Optimizer",
+            "model": "Helios",
             "entry_type": "service",
         }
 

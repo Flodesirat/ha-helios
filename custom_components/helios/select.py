@@ -48,16 +48,18 @@ class PoolForceDurationSelect(CoordinatorEntity, SelectEntity):
         self._entry  = entry
         self._device = device
         slug = slugify(device.name)
-        self._attr_name      = f"EO {device.name} durée forçage"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "eo_pool_force_duration"
+        self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{slug}_force_duration"
 
     @property
     def device_info(self):
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Energy Optimizer",
+            "name": "Helios",
             "manufacturer": "Community",
-            "model": "Energy Optimizer",
+            "model": "Helios",
             "entry_type": "service",
         }
 
