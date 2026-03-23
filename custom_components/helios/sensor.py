@@ -42,6 +42,7 @@ async def async_setup_entry(
         EnergyOptimizerHousePowerSensor(coordinator, entry),
         EnergyOptimizerWeightsSensor(coordinator, entry),
         EnergyOptimizerBatterySocLevelSensor(coordinator, entry),
+        EnergyOptimizerBatteryPowerSensor(coordinator, entry),
     ]
     entities.append(EnergyOptimizerBaseLoadSensor(coordinator, entry))
     for device in coordinator.device_manager.devices:
@@ -231,6 +232,24 @@ def _soc_level_label(soc: float | None) -> str | None:
     if soc <= 95:
         return "Très haute"
     return "Pleine"
+
+
+class EnergyOptimizerBatteryPowerSensor(_BaseEOSensor):
+    """Reports current battery power in W. Negative = charging, positive = discharging."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_battery_power"
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry.entry_id}_battery_power"
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.battery_power_w
 
 
 class EnergyOptimizerBatterySocLevelSensor(_BaseEOSensor):

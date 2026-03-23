@@ -26,6 +26,7 @@ CONF_BATTERY_SOC_MAX              = "battery_soc_max"
 CONF_BATTERY_SOC_RESERVE_ROUGE    = "battery_soc_reserve_rouge"
 CONF_BATTERY_MAX_CHARGE_POWER_W   = "battery_max_charge_power_w"
 CONF_BATTERY_MAX_DISCHARGE_POWER_W = "battery_max_discharge_power_w"
+CONF_BATTERY_POWER_ENTITY         = "battery_power_entity"
 
 # Battery actions
 BATTERY_ACTION_FORCED_CHARGE   = "forced_charge"

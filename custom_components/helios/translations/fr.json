@@ -25,6 +25,7 @@
         "data": {
           "battery_enabled": "Batterie activée",
           "battery_soc_entity": "Entité SOC batterie (%)",
+          "battery_power_entity": "Entité puissance batterie (W)",
           "battery_charge_script": "Script de charge forcée",
           "battery_autoconsum_script": "Script d'autoconsommation",
           "battery_capacity_kwh": "Capacité batterie (kWh)",
@@ -175,6 +176,7 @@
         "data": {
           "battery_enabled": "Batterie activée",
           "battery_soc_entity": "Entité SOC batterie (%)",
+          "battery_power_entity": "Entité puissance batterie (W)",
           "battery_charge_script": "Script de charge forcée",
           "battery_autoconsum_script": "Script d'autoconsommation",
           "battery_capacity_kwh": "Capacité batterie (kWh)",
@@ -310,6 +312,9 @@
       },
       "eo_battery_soc_level": {
         "name": "Niveau SOC batterie"
+      },
+      "eo_battery_power": {
+        "name": "Puissance batterie"
       },
       "eo_pv_power": {
         "name": "Production PV"

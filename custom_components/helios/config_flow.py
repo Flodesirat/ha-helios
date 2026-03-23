@@ -17,7 +17,7 @@ from .const import (
     CONF_FORECAST_ENTITY,
     CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W,
     # Battery
-    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY,
+    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_POWER_ENTITY,
     CONF_BATTERY_CHARGE_SCRIPT, CONF_BATTERY_AUTOCONSUM_SCRIPT,
     CONF_BATTERY_CAPACITY_KWH, CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
     CONF_BATTERY_SOC_RESERVE_ROUGE,
@@ -829,6 +829,9 @@ def _battery_schema(defaults: dict | None = None) -> vol.Schema:
         vol.Required(CONF_BATTERY_ENABLED, default=_d(CONF_BATTERY_ENABLED, False)): selector.BooleanSelector(),
         vol.Optional(CONF_BATTERY_SOC_ENTITY, **({'default': d[CONF_BATTERY_SOC_ENTITY]} if CONF_BATTERY_SOC_ENTITY in d else {})): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor")
+        ),
+        vol.Optional(CONF_BATTERY_POWER_ENTITY, **({'default': d[CONF_BATTERY_POWER_ENTITY]} if CONF_BATTERY_POWER_ENTITY in d else {})): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_number"])
         ),
         vol.Optional(CONF_BATTERY_CHARGE_SCRIPT, **({'default': d[CONF_BATTERY_CHARGE_SCRIPT]} if CONF_BATTERY_CHARGE_SCRIPT in d else {})): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="script")

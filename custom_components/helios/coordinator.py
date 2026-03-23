@@ -17,7 +17,7 @@ from .const import (
     CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL,
     CONF_PV_POWER_ENTITY, CONF_GRID_POWER_ENTITY, CONF_HOUSE_POWER_ENTITY,
     CONF_TEMPO_COLOR_ENTITY, CONF_FORECAST_ENTITY,
-    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY,
+    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_POWER_ENTITY,
     CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
     CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
@@ -79,6 +79,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.surplus_w:       float       = 0.0
         self.bat_available_w: float       = 0.0
         self.battery_soc:     float | None = None
+        self.battery_power_w: float | None = None  # negative=charge, positive=discharge
         self.tempo_color:     str | None  = None
         self.global_score:    float       = 0.0
         self.battery_action:  str         = BATTERY_ACTION_AUTOCONSOMMATION
@@ -181,7 +182,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "pv_power_w":   _float(cfg.get(CONF_PV_POWER_ENTITY)),
             "grid_power_w": _float(cfg.get(CONF_GRID_POWER_ENTITY)),
             "house_power_w": _float(cfg.get(CONF_HOUSE_POWER_ENTITY)),
-            "battery_soc":  _float(cfg.get(CONF_BATTERY_SOC_ENTITY)) if battery_enabled else None,
+            "battery_soc":   _float(cfg.get(CONF_BATTERY_SOC_ENTITY)) if battery_enabled else None,
+            "battery_power_w": _float(cfg.get(CONF_BATTERY_POWER_ENTITY)) if battery_enabled else None,
             "tempo_color":  _str(cfg.get(CONF_TEMPO_COLOR_ENTITY)),
             "forecast_kwh": _float(cfg.get(CONF_FORECAST_ENTITY)) if cfg.get(CONF_FORECAST_ENTITY) else None,
         }
@@ -190,7 +192,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.pv_power_w    = raw["pv_power_w"]
         self.grid_power_w  = raw["grid_power_w"]
         self.house_power_w = raw["house_power_w"]
-        self.battery_soc   = raw["battery_soc"]
+        self.battery_soc     = raw["battery_soc"]
+        self.battery_power_w = raw["battery_power_w"]
         self.tempo_color   = raw["tempo_color"]
         self.forecast_kwh  = raw["forecast_kwh"]
         # Surplus = PV production − house consumption (floored at 0)
