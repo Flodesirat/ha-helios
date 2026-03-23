@@ -34,7 +34,7 @@ from .const import (
     CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
     CONF_EV_DEPARTURE_TIME, CONF_EV_MIN_CHARGE_POWER_W, CONF_EV_BATTERY_CAPACITY_WH,
     # Water heater
-    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
+    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN, CONF_WH_TEMP_MIN_ENTITY,
     # HVAC
     CONF_HVAC_TEMP_ENTITY, CONF_HVAC_SETPOINT_ENTITY,
     CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
@@ -52,6 +52,7 @@ from .const import (
     CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
     CONF_GRID_ALLOWANCE_W, CONF_OPTIMIZER_ALPHA,
     CONF_BASE_LOAD_NOISE, CONF_OPTIMIZER_N_RUNS, CONF_RISK_LAMBDA, CONF_EMA_ALPHA,
+    CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END, CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
     # Device / general types and defaults
     DEVICE_TYPES, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER,
     DEVICE_TYPE_HVAC, DEVICE_TYPE_APPLIANCE, DEVICE_TYPE_POOL,
@@ -209,7 +210,10 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                     selector.NumberSelectorConfig(min=40, max=75, step=1, unit_of_measurement="°C")
                 ),
                 vol.Optional(CONF_WH_TEMP_MIN, default=DEFAULT_WH_TEMP_MIN): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=40, max=65, step=1, unit_of_measurement="°C")
+                    selector.NumberSelectorConfig(min=10, max=65, step=1, unit_of_measurement="°C")
+                ),
+                vol.Optional(CONF_WH_TEMP_MIN_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
             }),
         )
@@ -672,7 +676,10 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                     selector.NumberSelectorConfig(min=40, max=75, step=1, unit_of_measurement="°C")
                 ),
                 vol.Optional(CONF_WH_TEMP_MIN, default=cd.get(CONF_WH_TEMP_MIN, DEFAULT_WH_TEMP_MIN)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=40, max=65, step=1, unit_of_measurement="°C")
+                    selector.NumberSelectorConfig(min=10, max=65, step=1, unit_of_measurement="°C")
+                ),
+                vol.Optional(CONF_WH_TEMP_MIN_ENTITY, **_opt_default(cd, CONF_WH_TEMP_MIN_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
             }),
         )
@@ -945,4 +952,20 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0.01, max=0.5, step=0.01)
         ),
+        vol.Optional(
+            CONF_OFF_PEAK_1_START,
+            default=_d(CONF_OFF_PEAK_1_START, ""),
+        ): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TIME)),
+        vol.Optional(
+            CONF_OFF_PEAK_1_END,
+            default=_d(CONF_OFF_PEAK_1_END, ""),
+        ): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TIME)),
+        vol.Optional(
+            CONF_OFF_PEAK_2_START,
+            default=_d(CONF_OFF_PEAK_2_START, ""),
+        ): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TIME)),
+        vol.Optional(
+            CONF_OFF_PEAK_2_END,
+            default=_d(CONF_OFF_PEAK_2_END, ""),
+        ): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TIME)),
     })

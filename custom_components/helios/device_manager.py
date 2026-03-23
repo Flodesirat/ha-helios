@@ -24,7 +24,7 @@ from .const import (
     CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
     CONF_EV_DEPARTURE_TIME, CONF_EV_MIN_CHARGE_POWER_W, CONF_EV_BATTERY_CAPACITY_WH,
     # Water heater
-    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
+    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN, CONF_WH_TEMP_MIN_ENTITY,
     # HVAC
     CONF_HVAC_TEMP_ENTITY, CONF_HVAC_SETPOINT_ENTITY,
     CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
@@ -37,6 +37,9 @@ from .const import (
     CONF_APPLIANCE_POWER_THRESHOLD_W, CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
     APPLIANCE_STATE_IDLE, APPLIANCE_STATE_READY, APPLIANCE_STATE_PREPARING,
     APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_DONE,
+    # Off-peak slots
+    CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
+    CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
     # General
     CONF_SCAN_INTERVAL_MINUTES, CONF_DISPATCH_THRESHOLD,
     # Defaults
@@ -62,10 +65,43 @@ _APPLIANCE_LOW_POWER_CONFIRM_S = 180
 _POOL_MUST_RUN_WINDOW_H = 8  # hours before midnight (default: fires after 16:00)
 
 
+def _parse_time(value: str | None) -> time | None:
+    """Parse a 'HH:MM' string into a time object, return None on failure."""
+    if not value:
+        return None
+    try:
+        h, m = value.split(":")
+        return time(int(h), int(m))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _parse_off_peak_slots(cfg: dict) -> list[tuple[time, time]]:
+    """Return a list of (start, end) time pairs for off-peak slots (0, 1, or 2 entries)."""
+    slots = []
+    for start_key, end_key in (
+        (CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END),
+        (CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END),
+    ):
+        start = _parse_time(cfg.get(start_key))
+        end   = _parse_time(cfg.get(end_key))
+        if start is not None and end is not None:
+            slots.append((start, end))
+    return slots
+
+
+def _is_in_slot(now: time, start: time, end: time) -> bool:
+    """Return True if *now* falls within [start, end), handling midnight crossing."""
+    if start <= end:
+        return start <= now < end
+    # Crosses midnight: e.g. 22:00 → 06:00
+    return now >= start or now < end
+
+
 class ManagedDevice:
     """Represents one controllable device with its full configuration."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any], global_cfg: dict[str, Any] | None = None) -> None:
         # ---- Common ----
         self.name: str          = config[CONF_DEVICE_NAME]
         self.device_type: str   = config[CONF_DEVICE_TYPE]
@@ -98,9 +134,14 @@ class ManagedDevice:
         )
 
         # ---- Water heater ----
-        self.wh_temp_entity: str | None = config.get(CONF_WH_TEMP_ENTITY)
-        self.wh_temp_target: float      = float(config.get(CONF_WH_TEMP_TARGET, DEFAULT_WH_TEMP_TARGET))
-        self.wh_temp_min: float         = float(config.get(CONF_WH_TEMP_MIN,    DEFAULT_WH_TEMP_MIN))
+        self.wh_temp_entity: str | None     = config.get(CONF_WH_TEMP_ENTITY)
+        self.wh_temp_target: float          = float(config.get(CONF_WH_TEMP_TARGET, DEFAULT_WH_TEMP_TARGET))
+        self.wh_temp_min: float             = float(config.get(CONF_WH_TEMP_MIN,    DEFAULT_WH_TEMP_MIN))
+        self.wh_temp_min_entity: str | None = config.get(CONF_WH_TEMP_MIN_ENTITY)
+
+        # ---- Off-peak slots (from global config) ----
+        gcfg = global_cfg or {}
+        self._off_peak_slots: list[tuple[time, time]] = _parse_off_peak_slots(gcfg)
 
         # ---- HVAC ----
         self.hvac_temp_entity: str | None     = config.get(CONF_HVAC_TEMP_ENTITY)
@@ -169,6 +210,23 @@ class ManagedDevice:
         return now >= start or now <= end
 
     # ------------------------------------------------------------------
+    # Off-peak detection (water heater)
+    # ------------------------------------------------------------------
+    def _is_off_peak(self, now: time) -> bool:
+        """Return True if *now* falls in any configured off-peak slot."""
+        return any(_is_in_slot(now, s, e) for s, e in self._off_peak_slots)
+
+    def _wh_off_peak_min(self, hass: HomeAssistant) -> float:
+        """Minimum temperature to reach during off-peak hours.
+
+        Reads the configured entity; falls back to the static legionella floor.
+        """
+        if self.wh_temp_min_entity:
+            val = self._state_float(hass, self.wh_temp_min_entity, fallback=self.wh_temp_min)
+            return val
+        return self.wh_temp_min
+
+    # ------------------------------------------------------------------
     # Satisfaction — has the device reached its target?
     # ------------------------------------------------------------------
     def is_satisfied(self, hass: HomeAssistant) -> bool:
@@ -182,7 +240,12 @@ class ManagedDevice:
             return self._state_float(hass, self.ev_soc_entity) >= self.ev_soc_target
 
         if self.device_type == DEVICE_TYPE_WATER_HEATER:
-            return self._state_float(hass, self.wh_temp_entity) >= self.wh_temp_target
+            temp = self._state_float(hass, self.wh_temp_entity)
+            if self._is_off_peak(datetime.now().time()):
+                # During off-peak: satisfied when the off-peak minimum is reached.
+                # must_run_now() forced us here; once the target is met we stop.
+                return temp >= self._wh_off_peak_min(hass)
+            return temp >= self.wh_temp_target
 
         if self.device_type == DEVICE_TYPE_HVAC:
             current  = self._state_float(hass, self.hvac_temp_entity)
@@ -205,8 +268,15 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     def must_run_now(self, hass: HomeAssistant) -> bool:
         if self.device_type == DEVICE_TYPE_WATER_HEATER:
-            # Below legionella threshold → force heating regardless of surplus
-            return self._state_float(hass, self.wh_temp_entity) < self.wh_temp_min
+            temp = self._state_float(hass, self.wh_temp_entity)
+            # Safety: always force on below the static legionella floor.
+            if temp < self.wh_temp_min:
+                return True
+            # Off-peak: force on until the (possibly dynamic) off-peak minimum is reached.
+            now = datetime.now().time()
+            if self._is_off_peak(now):
+                return temp < self._wh_off_peak_min(hass)
+            return False
 
         if self.device_type == DEVICE_TYPE_POOL:
             # Only considered in the last _POOL_MUST_RUN_WINDOW_H hours of the day.
@@ -239,9 +309,17 @@ class ManagedDevice:
             return min(1.0, 0.6 * soc_deficit + 0.4 * departure_urgency)
 
         if self.device_type == DEVICE_TYPE_WATER_HEATER:
-            temp      = self._state_float(hass, self.wh_temp_entity)
+            temp = self._state_float(hass, self.wh_temp_entity)
+            now  = datetime.now().time()
+            if self._is_off_peak(now):
+                # Off-peak: urgency is based on distance to the off-peak minimum.
+                off_peak_min = self._wh_off_peak_min(hass)
+                temp_range   = max(self.wh_temp_target - off_peak_min, 1.0)
+                deficit      = max(0.0, off_peak_min - temp)
+                return min(1.0, deficit / temp_range)
+            # On-peak: urgency rises as temperature drops toward the minimum.
             temp_range = max(self.wh_temp_target - self.wh_temp_min, 1.0)
-            deficit   = max(0.0, self.wh_temp_target - temp)
+            deficit    = max(0.0, self.wh_temp_target - temp)
             return min(1.0, deficit / temp_range)
 
         if self.device_type == DEVICE_TYPE_HVAC:
@@ -474,7 +552,7 @@ class DeviceManager:
         devices_config: list[dict[str, Any]],
         config: dict[str, Any],
     ) -> None:
-        self.devices: list[ManagedDevice] = [ManagedDevice(c) for c in devices_config]
+        self.devices: list[ManagedDevice] = [ManagedDevice(c, config) for c in devices_config]
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._scan_interval: float = float(config.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL))
         self._dispatch_threshold: float = float(config.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD))
@@ -643,16 +721,18 @@ class DeviceManager:
                 )
                 continue
 
+            # Must-run override → bypass allowed window and force on immediately.
+            # Safety overrides (legionella, off-peak HC heating) must not be blocked
+            # by a misconfigured or too-narrow allowed window.
+            if device in must_run:
+                if not device.is_on:
+                    await self._async_set_switch(hass, device, True, reason="must_run", context=_base_ctx)
+                continue
+
             # Outside allowed window → turn off
             if not device.is_in_allowed_window(now):
                 if device.is_on and device.interruptible and self._min_on_elapsed(device):
                     await self._async_set_switch(hass, device, False, reason="outside_window", context=_base_ctx)
-                continue
-
-            # Must-run override → force on immediately
-            if device in must_run:
-                if not device.is_on:
-                    await self._async_set_switch(hass, device, True, reason="must_run", context=_base_ctx)
                 continue
 
             # Already satisfied → turn off

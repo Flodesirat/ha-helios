@@ -68,7 +68,8 @@
         "data": {
           "wh_temp_entity": "Temperature entity (°C)",
           "wh_temp_target": "Target temperature (°C)",
-          "wh_temp_min": "Legionella minimum temperature (°C)"
+          "wh_temp_min": "Legionella minimum temperature (°C)",
+          "wh_temp_min_entity": "Off-peak minimum temperature entity (°C)"
         }
       },
       "device_hvac": {
@@ -127,11 +128,17 @@
           "scan_interval_minutes": "Update interval (min)",
           "mode": "Operating mode",
           "dispatch_threshold": "Dispatch threshold",
-          "optimizer_alpha": "Alpha (0 = savings, 1 = self-consumption)"
+          "optimizer_alpha": "Alpha (0 = savings, 1 = self-consumption)",
+          "off_peak_1_start": "Off-peak slot 1 — start (HH:MM)",
+          "off_peak_1_end": "Off-peak slot 1 — end (HH:MM)",
+          "off_peak_2_start": "Off-peak slot 2 — start (HH:MM)",
+          "off_peak_2_end": "Off-peak slot 2 — end (HH:MM)"
         },
         "data_description": {
           "dispatch_threshold": "Minimum global score to dispatch devices (0–1).",
-          "optimizer_alpha": "Balance between minimizing bill and maximizing self-consumption."
+          "optimizer_alpha": "Balance between minimizing bill and maximizing self-consumption.",
+          "off_peak_1_start": "E.g. 22:00 for a 22h–6h off-peak contract. Leave empty if unused.",
+          "off_peak_2_start": "Second off-peak slot (e.g. 12:00–14:00). Leave empty if unused."
         }
       }
     },
@@ -188,7 +195,11 @@
           "scan_interval_minutes": "Update interval (min)",
           "mode": "Operating mode",
           "dispatch_threshold": "Dispatch threshold",
-          "optimizer_alpha": "Alpha (0 = savings, 1 = self-consumption)"
+          "optimizer_alpha": "Alpha (0 = savings, 1 = self-consumption)",
+          "off_peak_1_start": "Off-peak slot 1 — start (HH:MM)",
+          "off_peak_1_end": "Off-peak slot 1 — end (HH:MM)",
+          "off_peak_2_start": "Off-peak slot 2 — start (HH:MM)",
+          "off_peak_2_end": "Off-peak slot 2 — end (HH:MM)"
         }
       },
       "devices_select": {
@@ -225,7 +236,8 @@
         "data": {
           "wh_temp_entity": "Temperature entity (°C)",
           "wh_temp_target": "Target temperature (°C)",
-          "wh_temp_min": "Legionella minimum temperature (°C)"
+          "wh_temp_min": "Legionella minimum temperature (°C)",
+          "wh_temp_min_entity": "Off-peak minimum temperature entity (°C)"
         }
       },
       "opt_device_hvac": {

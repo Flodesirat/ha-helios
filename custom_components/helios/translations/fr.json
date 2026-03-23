@@ -68,7 +68,8 @@
         "data": {
           "wh_temp_entity": "Entité température (°C)",
           "wh_temp_target": "Température cible (°C)",
-          "wh_temp_min": "Température minimale légionellose (°C)"
+          "wh_temp_min": "Température minimale légionellose (°C)",
+          "wh_temp_min_entity": "Entité température minimale heures creuses (°C)"
         }
       },
       "device_hvac": {
@@ -127,11 +128,17 @@
           "scan_interval_minutes": "Intervalle de mise à jour (min)",
           "mode": "Mode de fonctionnement",
           "dispatch_threshold": "Seuil de déclenchement",
-          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)"
+          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)",
+          "off_peak_1_start": "Heures creuses plage 1 — début (HH:MM)",
+          "off_peak_1_end": "Heures creuses plage 1 — fin (HH:MM)",
+          "off_peak_2_start": "Heures creuses plage 2 — début (HH:MM)",
+          "off_peak_2_end": "Heures creuses plage 2 — fin (HH:MM)"
         },
         "data_description": {
           "dispatch_threshold": "Score global minimum pour piloter les appareils (0–1).",
-          "optimizer_alpha": "Équilibre entre minimiser la facture et maximiser l'autoconsommation."
+          "optimizer_alpha": "Équilibre entre minimiser la facture et maximiser l'autoconsommation.",
+          "off_peak_1_start": "Ex : 22:00 pour un contrat HC 22h–6h. Laisser vide si inutilisé.",
+          "off_peak_2_start": "Deuxième plage HC (ex : 12:00–14:00). Laisser vide si inutilisée."
         }
       }
     },
@@ -188,7 +195,11 @@
           "scan_interval_minutes": "Intervalle de mise à jour (min)",
           "mode": "Mode de fonctionnement",
           "dispatch_threshold": "Seuil de déclenchement",
-          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)"
+          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)",
+          "off_peak_1_start": "Heures creuses plage 1 — début (HH:MM)",
+          "off_peak_1_end": "Heures creuses plage 1 — fin (HH:MM)",
+          "off_peak_2_start": "Heures creuses plage 2 — début (HH:MM)",
+          "off_peak_2_end": "Heures creuses plage 2 — fin (HH:MM)"
         }
       },
       "devices_select": {
@@ -225,7 +236,8 @@
         "data": {
           "wh_temp_entity": "Entité température (°C)",
           "wh_temp_target": "Température cible (°C)",
-          "wh_temp_min": "Température minimale légionellose (°C)"
+          "wh_temp_min": "Température minimale légionellose (°C)",
+          "wh_temp_min_entity": "Entité température minimale heures creuses (°C)"
         }
       },
       "opt_device_hvac": {

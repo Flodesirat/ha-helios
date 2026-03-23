@@ -70,9 +70,10 @@ CONF_EV_BATTERY_CAPACITY_WH = "ev_battery_capacity_wh"   # optional, for time es
 # ---------------------------------------------------------------------------
 # Per-device keys — water heater
 # ---------------------------------------------------------------------------
-CONF_WH_TEMP_ENTITY = "wh_temp_entity"
-CONF_WH_TEMP_TARGET = "wh_temp_target"
-CONF_WH_TEMP_MIN    = "wh_temp_min"    # legionella floor → triggers must_run override
+CONF_WH_TEMP_ENTITY     = "wh_temp_entity"
+CONF_WH_TEMP_TARGET     = "wh_temp_target"
+CONF_WH_TEMP_MIN        = "wh_temp_min"         # legionella floor → safety must_run override
+CONF_WH_TEMP_MIN_ENTITY = "wh_temp_min_entity"  # entity for off-peak minimum temperature
 
 # ---------------------------------------------------------------------------
 # Per-device keys — HVAC / heat pump
@@ -127,6 +128,12 @@ CONF_MODE                  = "mode"
 CONF_DISPATCH_THRESHOLD    = "dispatch_threshold"  # global_score below which no dispatch
 CONF_GRID_ALLOWANCE_W      = "grid_allowance_w"    # W autorisés depuis le réseau en mode Pleine (SOC ≥ 96 %)
 CONF_OPTIMIZER_ALPHA       = "optimizer_alpha"     # 0.0 = économies pures, 1.0 = autoconsommation pure
+# Off-peak time slots (global, used by water heater HC logic) — HH:MM strings
+CONF_OFF_PEAK_1_START = "off_peak_1_start"
+CONF_OFF_PEAK_1_END   = "off_peak_1_end"
+CONF_OFF_PEAK_2_START = "off_peak_2_start"
+CONF_OFF_PEAK_2_END   = "off_peak_2_end"
+
 CONF_BASE_LOAD_NOISE       = "base_load_noise"     # std-dev du bruit multiplicatif journalier sur la charge
 CONF_OPTIMIZER_N_RUNS      = "optimizer_n_runs"    # nombre de tirages Monte Carlo par combinaison
 CONF_RISK_LAMBDA           = "risk_lambda"         # coefficient de pénalité sur l'écart-type de l'objectif
