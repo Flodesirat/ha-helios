@@ -577,9 +577,13 @@ class DeviceManager:
                     if stored_date == today:
                         device.pool_daily_run_minutes = float(stored.get("minutes", 0.0))
                         device.pool_last_date = today
+                        required = stored.get("required_minutes")
+                        if required is not None:
+                            device.pool_required_minutes_today = float(required)
                         _LOGGER.debug(
-                            "Pool '%s': restored %.1f min for today",
+                            "Pool '%s': restored %.1f min done, %.1f min required for today",
                             device.name, device.pool_daily_run_minutes,
+                            device.pool_required_minutes_today or 0.0,
                         )
                 except ValueError:
                     pass
@@ -592,6 +596,7 @@ class DeviceManager:
                 data[device.name] = {
                     "date": (device.pool_last_date or date.today()).isoformat(),
                     "minutes": device.pool_daily_run_minutes,
+                    "required_minutes": device.pool_required_minutes_today,
                 }
         if data:
             await self._store.async_save(data)
@@ -637,10 +642,12 @@ class DeviceManager:
         for device in self.devices:
             if device.device_type != DEVICE_TYPE_POOL or device.manual_mode:
                 continue
-            before = device.pool_daily_run_minutes
+            before_minutes = device.pool_daily_run_minutes
+            before_required = device.pool_required_minutes_today
             device.update_pool_run_time(self._scan_interval, today)
             device.try_capture_pool_required(hass, now.hour)
-            if device.pool_daily_run_minutes != before:
+            if (device.pool_daily_run_minutes != before_minutes
+                    or device.pool_required_minutes_today != before_required):
                 pool_changed = True
         if pool_changed:
             await self._async_save_pool_data()
