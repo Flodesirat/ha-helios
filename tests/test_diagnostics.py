@@ -24,6 +24,7 @@ from custom_components.helios.const import (
     CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
 )
 from custom_components.helios.device_manager import ManagedDevice
+from custom_components.helios.scoring_engine import ScoringEngine
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +34,7 @@ from custom_components.helios.device_manager import ManagedDevice
 def _make_scoring_engine(
     w_surplus=0.4, w_tempo=0.3, w_soc=0.2, w_forecast=0.1
 ):
-    eng = MagicMock()
+    eng = ScoringEngine({})
     eng.w_surplus  = w_surplus
     eng.w_tempo    = w_tempo
     eng.w_soc      = w_soc
@@ -93,10 +94,18 @@ def _make_coordinator(
     coordinator.house_power_w     = 1000.0
     coordinator.bat_available_w   = 800.0
     coordinator.battery_soc       = battery_soc
+    coordinator.battery_power_w   = None
     coordinator.battery_action    = "idle"
     coordinator.tempo_color       = "blue"
+    coordinator.tempo_next_color  = None
     coordinator.forecast_kwh      = 8.5
     coordinator.grid_allowance_w  = 250.0
+    coordinator._build_score_input = lambda: {
+        "surplus_w":   1200.0,
+        "tempo_color": "blue",
+        "battery_soc": battery_soc,
+        "forecast_kwh": 8.5,
+    }
 
     # Optimizer diagnostics fields
     coordinator.optimizer_last_run         = optimizer_last_run
