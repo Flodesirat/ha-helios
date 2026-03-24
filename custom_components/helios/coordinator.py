@@ -27,6 +27,8 @@ from .const import (
     MODE_AUTO, MODE_OFF,
     BATTERY_ACTION_AUTOCONSOMMATION,
     normalize_tempo_color,
+    CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN,
+    TEMPO_RED,
 )
 from .scoring_engine import ScoringEngine
 from .battery_strategy import BatteryStrategy
@@ -228,15 +230,22 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         if soc is None:
             return 0.0
 
-        soc_reserve  = cfg.get(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE)
-        if soc <= soc_reserve:
+        # On red days protect the battery above soc_reserve_rouge.
+        # On blue/white days use the normal soc_min floor so the full
+        # usable capacity is available for dispatch.
+        if self.tempo_color == TEMPO_RED:
+            soc_floor = cfg.get(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE)
+        else:
+            soc_floor = cfg.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN)
+
+        if soc <= soc_floor:
             return 0.0
 
         capacity_kwh    = cfg.get(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH)
         max_discharge_w = cfg.get(CONF_BATTERY_MAX_DISCHARGE_POWER_W, 0.0)
 
-        # Usable energy above reserve, assuming ≤ 2 h discharge window → W
-        usable_fraction = (soc - soc_reserve) / 100.0
+        # Usable energy above floor, assuming ≤ 2 h discharge window → W
+        usable_fraction = (soc - soc_floor) / 100.0
         energy_based_w  = usable_fraction * capacity_kwh * 500  # kWh × 500 → W over 2 h
 
         if max_discharge_w > 0:
