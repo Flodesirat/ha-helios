@@ -862,6 +862,13 @@ class DeviceManager:
             _LOGGER.info("Appliance '%s': starting (score=%.2f fit=%.2f urgency=%.2f)",
                          device.name, global_score, fit, urgency)
 
+            if not device.appliance_prepare_script and not device.appliance_start_script:
+                _LOGGER.warning(
+                    "Appliance '%s': no prepare_script nor start_script configured — "
+                    "cycle will be tracked but nothing will actually start",
+                    device.name,
+                )
+
             if device.appliance_prepare_script:
                 await hass.services.async_call(
                     "script", "turn_on",

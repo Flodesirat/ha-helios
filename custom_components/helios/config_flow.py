@@ -329,20 +329,19 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_devices()
 
         device_type = self._current_device.get(CONF_DEVICE_TYPE, "")
-        # Appliances don't use a switch entity (scripts only)
-        switch_entity_field = (
-            vol.Optional(CONF_DEVICE_SWITCH_ENTITY)
-            if device_type == DEVICE_TYPE_APPLIANCE
-            else vol.Optional(CONF_DEVICE_SWITCH_ENTITY)
-        )
+        is_appliance = (device_type == DEVICE_TYPE_APPLIANCE)
+
+        switch_field: dict = {} if is_appliance else {
+            vol.Optional(CONF_DEVICE_SWITCH_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
+            )
+        }
 
         return self.async_show_form(
             step_id="device_common",
             data_schema=vol.Schema({
                 vol.Required(CONF_DEVICE_NAME): selector.TextSelector(),
-                vol.Optional(CONF_DEVICE_SWITCH_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
-                ),
+                **switch_field,
                 vol.Required(CONF_DEVICE_POWER_W): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=50, max=22000, step=50, unit_of_measurement="W")
                 ),
@@ -805,13 +804,18 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 self._current_device = {}
                 return await self.async_step_devices_select()
 
+        is_appliance = (cd.get(CONF_DEVICE_TYPE) == DEVICE_TYPE_APPLIANCE)
+        opt_switch_field: dict = {} if is_appliance else {
+            vol.Optional(CONF_DEVICE_SWITCH_ENTITY, **_opt_default(cd, CONF_DEVICE_SWITCH_ENTITY)): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
+            )
+        }
+
         return self.async_show_form(
             step_id="opt_device_common",
             data_schema=vol.Schema({
                 vol.Required(CONF_DEVICE_NAME, default=cd.get(CONF_DEVICE_NAME, "")): selector.TextSelector(),
-                vol.Optional(CONF_DEVICE_SWITCH_ENTITY, **_opt_default(cd, CONF_DEVICE_SWITCH_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
-                ),
+                **opt_switch_field,
                 vol.Required(CONF_DEVICE_POWER_W, default=cd.get(CONF_DEVICE_POWER_W, 500)): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=50, max=22000, step=50, unit_of_measurement="W")
                 ),
