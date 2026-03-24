@@ -448,3 +448,23 @@ python sim.py -v
 
 - **Réseau** : `+` = import, `-` = export
 - **Batterie** : `+` = charge depuis PV, `-` = décharge vers maison
+
+### Log des décisions (`--decisions`)
+
+Affiche chaque changement d'état d'appareil au pas de 5 minutes, avec le score, la production PV, le surplus et le SOC batterie au moment de la décision.
+
+```bash
+python sim.py --decisions
+python sim.py -v --decisions   # combinable avec la vue horaire
+```
+
+```
+  ── Décisions appareils (5 min) ──────────────────────────────────────────────
+  Heure  Appareil           Action  Score      PV  Surplus    SOC
+  08:15  Chauffe-eau          on  0.681    873W     387W    49%
+  08:40  Piscine              on  0.749   1039W     557W    49%
+  12:30  Zoé                  on  0.765   2432W    1982W    52%
+  18:20  Zoé                 off  0.590    666W     216W    20%
+```
+
+Utile pour diagnostiquer un **chattering** (cycles ON/OFF rapides) ou vérifier qu'un appareil se déclenche dans la bonne fenêtre horaire.
