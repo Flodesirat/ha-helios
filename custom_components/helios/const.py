@@ -166,6 +166,20 @@ TEMPO_WHITE  = "white"
 TEMPO_RED    = "red"
 TEMPO_COLORS = [TEMPO_BLUE, TEMPO_WHITE, TEMPO_RED]
 
+# Normalize raw HA state values (FR/EN, any case) to canonical English
+_TEMPO_NORMALIZE: dict[str, str] = {
+    "blue":  TEMPO_BLUE,  "bleu":  TEMPO_BLUE,
+    "white": TEMPO_WHITE, "blanc": TEMPO_WHITE,
+    "red":   TEMPO_RED,   "rouge": TEMPO_RED,
+}
+
+
+def normalize_tempo_color(raw: str | None) -> str | None:
+    """Return canonical tempo color ('blue'/'white'/'red') or None if unrecognised."""
+    if raw is None:
+        return None
+    return _TEMPO_NORMALIZE.get(raw.lower())
+
 # ---------------------------------------------------------------------------
 # Operating modes
 # ---------------------------------------------------------------------------

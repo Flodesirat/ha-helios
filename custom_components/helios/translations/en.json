@@ -314,6 +314,14 @@
           "idle": "Idle"
         }
       },
+      "eo_tempo_next_color": {
+        "name": "Tempo color (tomorrow)",
+        "state": {
+          "blue": "Blue",
+          "white": "White",
+          "red": "Red"
+        }
+      },
       "eo_battery_soc_level": {
         "name": "Battery SOC level"
       },

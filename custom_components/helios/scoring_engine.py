@@ -10,6 +10,7 @@ from .const import (
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
     DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_FORECAST,
     TEMPO_BLUE, TEMPO_WHITE, TEMPO_RED,
+    normalize_tempo_color,
 )
 
 
@@ -75,7 +76,7 @@ class ScoringEngine:
         """
         # TODO: implement
         mapping = {TEMPO_BLUE: 1.0, TEMPO_WHITE: 0.5, TEMPO_RED: 0.0}
-        return mapping.get(color, 0.5)
+        return mapping.get(normalize_tempo_color(color) or "", 0.5)
 
     def _score_soc(self, soc: float | None) -> float:
         """Map battery SOC to [0..1] based on operational zones.

@@ -37,6 +37,7 @@ async def async_setup_entry(
         EnergyOptimizerSurplusSensor(coordinator, entry),
         EnergyOptimizerScoreSensor(coordinator, entry),
         EnergyOptimizerBatteryActionSensor(coordinator, entry),
+        EnergyOptimizerTempoNextColorSensor(coordinator, entry),
         EnergyOptimizerPVPowerSensor(coordinator, entry),
         EnergyOptimizerGridPowerSensor(coordinator, entry),
         EnergyOptimizerHousePowerSensor(coordinator, entry),
@@ -130,6 +131,21 @@ class EnergyOptimizerBatteryActionSensor(_BaseEOSensor):
     @property
     def native_value(self) -> str:
         return self.coordinator.battery_action
+
+
+class EnergyOptimizerTempoNextColorSensor(_BaseEOSensor):
+    """Reports tomorrow's Tempo color (normalized to blue/white/red)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_tempo_next_color"
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry.entry_id}_tempo_next_color"
+
+    @property
+    def native_value(self) -> str | None:
+        return self.coordinator.tempo_next_color
 
 
 class EnergyOptimizerPVPowerSensor(_BaseEOSensor):

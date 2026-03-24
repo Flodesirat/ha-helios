@@ -31,7 +31,7 @@ from .const import (
     CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE,
     CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS,
     CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA,
-    TEMPO_COLORS,
+    TEMPO_COLORS, normalize_tempo_color,
     CONF_DEVICE_NAME, CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
     CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
     CONF_DEVICE_MUST_RUN_DAILY,
@@ -202,9 +202,10 @@ async def async_run_daily_optimization(
         if not entity_id:
             continue
         state = hass.states.get(entity_id)
-        if state and state.state in TEMPO_COLORS:
-            tempo_color = state.state
-            _LOGGER.debug("Helios optimizer: tempo=%s (from %s)", tempo_color, entity_id)
+        normalized = normalize_tempo_color(state.state if state else None)
+        if normalized:
+            tempo_color = normalized
+            _LOGGER.debug("Helios optimizer: tempo=%s (raw=%s, from %s)", tempo_color, state.state, entity_id)
             break
     else:
         _LOGGER.debug("Helios optimizer: no valid tempo entity found, defaulting to 'blue'")
