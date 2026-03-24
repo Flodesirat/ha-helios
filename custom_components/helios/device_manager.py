@@ -68,13 +68,13 @@ _POOL_MUST_RUN_WINDOW_H = 8  # hours before midnight (default: fires after 16:00
 
 
 def _parse_time(value: str | None) -> time | None:
-    """Parse a 'HH:MM' string into a time object, return None on failure."""
+    """Parse a 'HH:MM' or 'HH:MM:SS' string into a time object, return None on failure."""
     if not value:
         return None
     try:
-        h, m = value.split(":")
-        return time(int(h), int(m))
-    except (ValueError, AttributeError):
+        parts = value.split(":")
+        return time(int(parts[0]), int(parts[1]))
+    except (ValueError, AttributeError, IndexError):
         return None
 
 
@@ -201,12 +201,9 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     def is_in_allowed_window(self, now: time) -> bool:
         """True if *now* falls within [allowed_start, allowed_end]."""
-        try:
-            sh, sm = map(int, self.allowed_start.split(":"))
-            eh, em = map(int, self.allowed_end.split(":"))
-            start = time(sh, sm)
-            end   = time(eh, em)
-        except (ValueError, AttributeError):
+        start = _parse_time(self.allowed_start)
+        end   = _parse_time(self.allowed_end)
+        if start is None or end is None:
             return True
 
         if start <= end:
