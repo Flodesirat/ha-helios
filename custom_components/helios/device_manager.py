@@ -756,10 +756,19 @@ class DeviceManager:
 
         # ---- Greedy allocation (highest score first) ----
         scored.sort(key=lambda x: x[0], reverse=True)
-        remaining = surplus_w + bat_available_w + grid_allowance_w
+
+        # Add back the power of currently-ON Helios devices: house_w already
+        # includes their consumption, so surplus_w is already reduced by their
+        # load. Without this correction, each cycle they would compete against
+        # their own consumption and get turned off spuriously.
+        helios_on_w = sum(d.power_w for d in self.devices if d.is_on and _helios_manages(d))
+        remaining = surplus_w + bat_available_w + grid_allowance_w + helios_on_w
 
         for score, device in scored:
-            fit = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
+            # For fit calculation, add back this device's own power if it's already ON
+            # so it doesn't penalise itself when re-evaluated each cycle.
+            fit_surplus = surplus_w + (device.power_w if device.is_on else 0)
+            fit = ManagedDevice.compute_fit_score(device.power_w, fit_surplus, bat_available_w)
 
             # Skip if fit is negligible (would import too much from grid)
             if fit < 0.1:

@@ -249,6 +249,7 @@ class SimResult:
     bat_soc_end: float
     cost_eur: float = 0.0
     cost_no_pv_eur: float = 0.0
+    decision_log: list[dict] = field(default_factory=list)
 
     @property
     def savings_eur(self) -> float:
@@ -301,6 +302,7 @@ def run(cfg: SimConfig, devices: list[SimDevice] | None = None) -> SimResult:
 
     e_pv = e_load = e_self = e_import = e_export = cost = cost_no_pv = 0.0
     steps: list[StepResult] = []
+    decision_log: list[dict] = []
 
     for i in range(STEPS_PER_DAY):
         hour = i * step_h
@@ -318,8 +320,10 @@ def run(cfg: SimConfig, devices: list[SimDevice] | None = None) -> SimResult:
                 bat_available_w = min(abs(surplus_base), cfg.bat_max_discharge_w)
 
         # ---- Score ----
-        current_devices_w = sum(d.power_w for d in devices if d.active)
-        surplus_w = max(0.0, pv_w - base_w - current_devices_w)
+        # Use base surplus (PV - base load, without Helios devices) so that
+        # currently-ON devices do not penalise their own score each cycle.
+        base_surplus_w = max(0.0, pv_w - base_w)
+        surplus_w = base_surplus_w
         global_score = _score(
             surplus_w, t_color,
             bat_soc if cfg.bat_enabled else None,
@@ -327,8 +331,29 @@ def run(cfg: SimConfig, devices: list[SimDevice] | None = None) -> SimResult:
             forecast_kwh=_forecast_table[i],
         )
 
+        # ---- Snapshot active states before dispatch (for decision log) ----
+        _before = {d.name: d.active for d in devices}
+
         # ---- Dispatch ----
         dispatch(devices, hour, pv_w - base_w, bat_available_w, global_score, cfg.dispatch_threshold)
+
+        # ---- Record state changes ----
+        h = int(hour)
+        m = int(round((hour - h) * 60))
+        ts = f"{h:02d}:{m:02d}"
+        for d in devices:
+            was_on = _before[d.name]
+            is_on  = d.active
+            if was_on != is_on:
+                decision_log.append({
+                    "ts":    ts,
+                    "device": d.name,
+                    "action": "on" if is_on else "off",
+                    "score":  round(global_score, 3),
+                    "pv_w":  round(pv_w),
+                    "surplus_w": round(surplus_w),
+                    "bat_soc": round(bat_soc, 1),
+                })
 
         # ---- Power accounting ----
         devices_w = sum(d.power_w for d in devices if d.active)
@@ -404,4 +429,5 @@ def run(cfg: SimConfig, devices: list[SimDevice] | None = None) -> SimResult:
         bat_soc_end=bat_soc,
         cost_eur=cost,
         cost_no_pv_eur=cost_no_pv,
+        decision_log=decision_log,
     )

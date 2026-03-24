@@ -315,6 +315,8 @@ def main() -> None:
                         help="Path to tariff JSON (default: EDF Tempo 03/03/2026)")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Print hourly table")
+    parser.add_argument("--decisions", action="store_true",
+                        help="Print device ON/OFF decision log (5-min steps)")
     args = parser.parse_args()
 
     base_load_fn = load_base_load_from_json(args.base_load) if args.base_load else None
@@ -378,6 +380,15 @@ def main() -> None:
     else:
         result = run(cfg, devices)
         print_report(result, cfg, verbose=args.verbose)
+        if args.decisions and result.decision_log:
+            print()
+            print("  ── Décisions appareils (5 min) ──────────────────────────────────────────────")
+            print(f"  {'Heure':>5}  {'Appareil':<18} {'Action':>4}  {'Score':>5}  {'PV':>6}  {'Surplus':>7}  {'SOC':>5}")
+            print(f"  {'─'*5}  {'─'*18}  {'─'*4}  {'─'*5}  {'─'*6}  {'─'*7}  {'─'*5}")
+            for e in result.decision_log:
+                print(f"  {e['ts']:>5}  {e['device']:<18} {e['action']:>4}  {e['score']:>5.3f}"
+                      f"  {e['pv_w']:>5}W  {e['surplus_w']:>6}W  {e['bat_soc']:>4.0f}%")
+            print()
 
 
 if __name__ == "__main__":
