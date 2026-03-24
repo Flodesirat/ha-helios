@@ -512,6 +512,7 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 k: self._current(k)
                 for k in (
                     CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY,
+                    CONF_BATTERY_POWER_ENTITY,
                     CONF_BATTERY_CHARGE_SCRIPT, CONF_BATTERY_AUTOCONSUM_SCRIPT,
                     CONF_BATTERY_CAPACITY_KWH, CONF_BATTERY_SOC_MIN,
                     CONF_BATTERY_SOC_MAX, CONF_BATTERY_SOC_RESERVE_ROUGE,
