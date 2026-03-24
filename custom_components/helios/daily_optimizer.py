@@ -161,7 +161,7 @@ async def async_run_daily_optimization(
     """
     _LOGGER.info("Helios daily optimizer: starting morning optimization")
 
-    cfg = coordinator.entry.data
+    cfg = {**coordinator.entry.data, **coordinator.entry.options}
     peak_pv_w = float(cfg.get(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W))
 
     # ---- Season from today's date ----
