@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time as _time
 from datetime import timedelta
 from typing import Any
 
@@ -75,6 +76,12 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             cfg.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W)
         )
 
+        # Startup guard: skip dispatch until entities have had time to stabilise.
+        # The first HA update cycle fires immediately at load, before entities are
+        # available. We wait one full scan interval (min 5 min) before dispatching.
+        _warmup = max(5, interval)
+        self._dispatch_ready_at: float = _time.monotonic() + _warmup * 60
+
         # Latest computed state — exposed to sensor/switch entities
         self.pv_power_w:      float       = 0.0
         self.grid_power_w:    float       = 0.0
@@ -130,6 +137,15 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             self._update_state(raw)
 
             if self.mode == MODE_OFF:
+                return self._snapshot()
+
+            # Skip scoring and dispatch until entities have stabilised after startup.
+            if _time.monotonic() < self._dispatch_ready_at:
+                _LOGGER.debug(
+                    "Helios: warmup period — sensors read but dispatch skipped "
+                    "(%.0f s remaining)",
+                    self._dispatch_ready_at - _time.monotonic(),
+                )
                 return self._snapshot()
 
             score_input = self._build_score_input()
