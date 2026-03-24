@@ -709,7 +709,12 @@ class DeviceManager:
         if global_score < dispatch_threshold and not must_run:
             for device in self.devices:
                 if device.device_type == DEVICE_TYPE_APPLIANCE:
-                    continue  # appliance state machine runs regardless
+                    # State machine always runs so IDLE→READY→RUNNING transitions
+                    # are not blocked by a low global score.
+                    await self._async_handle_appliance(
+                        hass, device, global_score, surplus_w, bat_available_w
+                    )
+                    continue
                 if not _helios_manages(device):
                     continue  # manual / force / inhibit — hands off
                 if device.is_on and device.interruptible and self._min_on_elapsed(device):
