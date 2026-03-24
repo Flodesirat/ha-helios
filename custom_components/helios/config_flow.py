@@ -36,6 +36,7 @@ from .const import (
     CONF_EV_CHARGE_START_SCRIPT, CONF_EV_CHARGE_STOP_SCRIPT,
     # Water heater
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN, CONF_WH_TEMP_MIN_ENTITY,
+    CONF_WH_POWER_ENTITY,
     # HVAC
     CONF_HVAC_TEMP_ENTITY, CONF_HVAC_SETPOINT_ENTITY,
     CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
@@ -221,6 +222,9 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(CONF_WH_TEMP_MIN_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["sensor", "input_number"])
+                ),
+                vol.Optional(CONF_WH_POWER_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
             }),
         )
@@ -696,6 +700,9 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 ),
                 vol.Optional(CONF_WH_TEMP_MIN_ENTITY, **_opt_default(cd, CONF_WH_TEMP_MIN_ENTITY)): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["sensor", "input_number"])
+                ),
+                vol.Optional(CONF_WH_POWER_ENTITY, **_opt_default(cd, CONF_WH_POWER_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
             }),
         )

@@ -26,6 +26,7 @@ from .const import (
     CONF_EV_CHARGE_START_SCRIPT, CONF_EV_CHARGE_STOP_SCRIPT,
     # Water heater
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN, CONF_WH_TEMP_MIN_ENTITY,
+    CONF_WH_POWER_ENTITY,
     # HVAC
     CONF_HVAC_TEMP_ENTITY, CONF_HVAC_SETPOINT_ENTITY,
     CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
@@ -141,6 +142,7 @@ class ManagedDevice:
         self.wh_temp_target: float          = float(config.get(CONF_WH_TEMP_TARGET, DEFAULT_WH_TEMP_TARGET))
         self.wh_temp_min: float             = float(config.get(CONF_WH_TEMP_MIN,    DEFAULT_WH_TEMP_MIN))
         self.wh_temp_min_entity: str | None = config.get(CONF_WH_TEMP_MIN_ENTITY)
+        self.wh_power_entity: str | None    = config.get(CONF_WH_POWER_ENTITY)
 
         # ---- Off-peak slots (from global config) ----
         gcfg = global_cfg or {}
@@ -211,6 +213,22 @@ class ManagedDevice:
             return start <= now <= end
         # Overnight window (e.g. 22:00–06:00)
         return now >= start or now <= end
+
+    # ------------------------------------------------------------------
+    # Actual power — uses measured entity when available, else nominal
+    # ------------------------------------------------------------------
+    def actual_power_w(self, hass: HomeAssistant) -> float:
+        """Return current power draw in W.
+
+        For water heaters a power entity can be configured: the heating
+        element shuts off internally when temperature is reached, so the
+        measured value can be 0 W even while the switch is ON.  Using the
+        real reading avoids over-estimating the dispatch budget.
+        All other device types fall back to the nominal power_w.
+        """
+        if self.device_type == DEVICE_TYPE_WATER_HEATER and self.wh_power_entity:
+            return self._state_float(hass, self.wh_power_entity)
+        return self.power_w
 
     # ------------------------------------------------------------------
     # Off-peak detection (water heater)
@@ -766,7 +784,7 @@ class DeviceManager:
         # includes their consumption, so surplus_w is already reduced by their
         # load. Without this correction, each cycle they would compete against
         # their own consumption and get turned off spuriously.
-        helios_on_w = sum(d.power_w for d in self.devices if d.is_on and _helios_manages(d))
+        helios_on_w = sum(d.actual_power_w(hass) for d in self.devices if d.is_on and _helios_manages(d))
         remaining = surplus_w + bat_available_w + grid_allowance_w + helios_on_w
 
         for score, device in scored:

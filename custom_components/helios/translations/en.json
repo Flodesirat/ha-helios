@@ -72,7 +72,8 @@
           "wh_temp_entity": "Temperature entity (°C)",
           "wh_temp_target": "Target temperature (°C)",
           "wh_temp_min": "Emergency trigger threshold (°C)",
-          "wh_temp_min_entity": "Off-peak minimum temperature entity (°C)"
+          "wh_temp_min_entity": "Off-peak minimum temperature entity (°C)",
+          "wh_power_entity": "Actual power entity (W) (optional)"
         }
       },
       "device_hvac": {
@@ -243,7 +244,8 @@
           "wh_temp_entity": "Temperature entity (°C)",
           "wh_temp_target": "Target temperature (°C)",
           "wh_temp_min": "Emergency trigger threshold (°C)",
-          "wh_temp_min_entity": "Off-peak minimum temperature entity (°C)"
+          "wh_temp_min_entity": "Off-peak minimum temperature entity (°C)",
+          "wh_power_entity": "Actual power entity (W) (optional)"
         }
       },
       "opt_device_hvac": {
