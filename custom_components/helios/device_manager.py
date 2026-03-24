@@ -560,7 +560,7 @@ class DeviceManager:
         self._scan_interval: float = float(config.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL))
         self._dispatch_threshold: float = float(config.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD))
         # Decision log — rolling 24 h, max 500 entries
-        self.decision_log: deque[dict] = deque(maxlen=500)
+        self.decision_log: deque[dict] = deque(maxlen=100)
 
     # ------------------------------------------------------------------
     # Startup — restore persisted pool run data
