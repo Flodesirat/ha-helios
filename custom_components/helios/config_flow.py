@@ -546,6 +546,8 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                     CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
                     CONF_GRID_ALLOWANCE_W, CONF_OPTIMIZER_ALPHA,
                     CONF_BASE_LOAD_NOISE, CONF_OPTIMIZER_N_RUNS, CONF_RISK_LAMBDA, CONF_EMA_ALPHA,
+                    CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
+                    CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
                 )
                 if self._current(k) is not None
             }),
