@@ -163,6 +163,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                     "dispatch_threshold": self.dispatch_threshold,
                     "grid_allowance_w":   self.grid_allowance_w,
                     "house_power_w":      self.house_power_w,
+                    "soc_reserve_rouge":  float(self._cfg.get(
+                        CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE
+                    )),
                 }
                 await self.device_manager.async_dispatch(self.hass, dispatch_input)
 

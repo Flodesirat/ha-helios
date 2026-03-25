@@ -106,6 +106,10 @@ def _make_coordinator(
         "battery_soc": battery_soc,
         "forecast_kwh": 8.5,
     }
+    coordinator._cfg = {
+        "battery_soc_reserve_rouge": 80,
+        "battery_soc_min":           10,
+    }
 
     # Optimizer diagnostics fields
     coordinator.optimizer_last_run         = optimizer_last_run

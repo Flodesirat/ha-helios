@@ -44,6 +44,9 @@ from .const import (
     CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
     # General
     CONF_SCAN_INTERVAL_MINUTES, CONF_DISPATCH_THRESHOLD,
+    # Battery reserve (used in dispatch guard)
+    DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
+    TEMPO_RED,
     # Defaults
     DEFAULT_DEVICE_PRIORITY, DEFAULT_DEVICE_MIN_ON_MINUTES,
     DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
@@ -640,6 +643,17 @@ class DeviceManager:
         configured_allowance_w: float   = float(score_input.get("grid_allowance_w", 250.0))
         pv_power_w:         float       = score_input.get("pv_power_w",         0.0)
         house_power_w:      float       = score_input.get("house_power_w",      0.0)
+        tempo_color:        str | None  = score_input.get("tempo_color")
+        soc_reserve_rouge:  float       = float(score_input.get("soc_reserve_rouge", DEFAULT_BATTERY_SOC_RESERVE_ROUGE))
+
+        # Red-day strict mode: when SOC is below the battery reserve, do not
+        # activate NEW devices unless they fit within the PV surplus alone.
+        # Already-ON devices are not affected — we don't cut them off mid-cycle.
+        _red_strict = (
+            tempo_color == TEMPO_RED
+            and battery_soc is not None
+            and battery_soc < soc_reserve_rouge
+        )
 
         # Base context injected into every decision log entry
         _base_ctx: dict = {
@@ -807,6 +821,18 @@ class DeviceManager:
                 continue
 
             if device.power_w <= remaining:
+                # Red-day strict guard: on red days below battery reserve, only
+                # activate NEW devices that fit within the PV surplus alone.
+                # This prevents the physical battery from being drained to power
+                # devices on expensive red days when the reserve is not met.
+                if not device.is_on and _red_strict and device.power_w > surplus_w:
+                    _LOGGER.debug(
+                        "Dispatch: '%s' blocked — red day strict mode "
+                        "(SOC=%.0f%% < reserve=%.0f%%, power=%dW > surplus=%dW)",
+                        device.name, battery_soc, soc_reserve_rouge,
+                        device.power_w, surplus_w,
+                    )
+                    continue
                 remaining -= device.power_w
                 if not device.is_on:
                     await self._async_set_switch(

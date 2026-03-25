@@ -10,6 +10,8 @@ from homeassistant.core import HomeAssistant
 from .const import (
     DOMAIN,
     DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE,
+    CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
+    CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN,
 )
 from .coordinator import EnergyOptimizerCoordinator
 from .device_manager import ManagedDevice
@@ -111,6 +113,10 @@ async def async_get_config_entry_diagnostics(
         "tempo_next_color":   coordinator.tempo_next_color,
         "forecast_kwh":       coordinator.forecast_kwh,
         "grid_allowance_w":   coordinator.grid_allowance_w,
+        "battery_config": {
+            "soc_reserve_rouge": coordinator._cfg.get(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE),
+            "soc_min":           coordinator._cfg.get(CONF_BATTERY_SOC_MIN,           DEFAULT_BATTERY_SOC_MIN),
+        },
         "score_breakdown": {
             "f_surplus":  f_surplus,
             "f_tempo":    f_tempo,
