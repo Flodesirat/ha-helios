@@ -37,6 +37,17 @@
           "weight_tempo": "Poids Tempo",
           "weight_battery_soc": "Poids SOC batterie",
           "weight_forecast": "Poids prévision"
+        },
+        "data_description": {
+          "battery_soc_entity": "Capteur retournant l'état de charge de la batterie en pourcentage (0–100).",
+          "battery_charge_script": "Appelé pendant les heures creuses la veille d'un jour Tempo rouge, pour remplir la batterie avant les heures pleines coûteuses.",
+          "battery_autoconsum_script": "Appelé pour revenir en mode autoconsommation. Le BMS/onduleur gère alors la charge et la décharge automatiquement.",
+          "battery_capacity_kwh": "Capacité nominale totale. Utilisée pour estimer la puissance disponible depuis la batterie pour alimenter les appareils.",
+          "battery_soc_min": "Plancher de décharge sur jours bleus et blancs. Helios n'utilisera pas l'énergie batterie en dessous de ce seuil pour alimenter les appareils. Augmentez cette valeur pour conserver une réserve pour la nuit (ex : 30 %).",
+          "battery_soc_max": "Plafond de charge. Utilisé par l'optimiseur journalier pour les simulations. Doit correspondre à la valeur configurée dans votre onduleur.",
+          "battery_soc_reserve_rouge": "Seuil de protection en jour rouge. Si le SOC descend en dessous, Helios réserve la batterie : seuls les appareils dont la consommation tient dans le surplus PV seul peuvent être démarrés. La charge forcée la veille remplit la batterie à son maximum indépendamment de ce seuil.",
+          "battery_max_charge_power_w": "Puissance maximale de charge de votre onduleur/batterie (W). Nécessaire pour que l'optimiseur journalier simule correctement la recharge. Correspond à la limite configurée dans votre onduleur.",
+          "battery_max_discharge_power_w": "Puissance maximale de décharge (W). Utilisée par l'optimiseur journalier et pour calculer l'énergie batterie disponible pour les appareils. Correspond à la limite configurée dans votre onduleur."
         }
       },
       "devices": {
@@ -178,6 +189,17 @@
           "battery_soc_reserve_rouge": "SOC de réserve jours rouges (%)",
           "battery_max_charge_power_w": "Puissance max de charge (W)",
           "battery_max_discharge_power_w": "Puissance max de décharge (W)"
+        },
+        "data_description": {
+          "battery_soc_entity": "Capteur retournant l'état de charge de la batterie en pourcentage (0–100).",
+          "battery_charge_script": "Appelé pendant les heures creuses la veille d'un jour Tempo rouge, pour remplir la batterie avant les heures pleines coûteuses.",
+          "battery_autoconsum_script": "Appelé pour revenir en mode autoconsommation. Le BMS/onduleur gère alors la charge et la décharge automatiquement.",
+          "battery_capacity_kwh": "Capacité nominale totale. Utilisée pour estimer la puissance disponible depuis la batterie pour alimenter les appareils.",
+          "battery_soc_min": "Plancher de décharge sur jours bleus et blancs. Helios n'utilisera pas l'énergie batterie en dessous de ce seuil pour alimenter les appareils. Augmentez cette valeur pour conserver une réserve pour la nuit (ex : 30 %).",
+          "battery_soc_max": "Plafond de charge. Utilisé par l'optimiseur journalier pour les simulations. Doit correspondre à la valeur configurée dans votre onduleur.",
+          "battery_soc_reserve_rouge": "Seuil de protection en jour rouge. Si le SOC descend en dessous, Helios réserve la batterie : seuls les appareils dont la consommation tient dans le surplus PV seul peuvent être démarrés. La charge forcée la veille remplit la batterie à son maximum indépendamment de ce seuil.",
+          "battery_max_charge_power_w": "Puissance maximale de charge de votre onduleur/batterie (W). Nécessaire pour que l'optimiseur journalier simule correctement la recharge. Correspond à la limite configurée dans votre onduleur.",
+          "battery_max_discharge_power_w": "Puissance maximale de décharge (W). Utilisée par l'optimiseur journalier et pour calculer l'énergie batterie disponible pour les appareils. Correspond à la limite configurée dans votre onduleur."
         }
       },
       "strategy": {

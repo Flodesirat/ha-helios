@@ -189,6 +189,18 @@
           "battery_soc_reserve_rouge": "Reserve SOC on red Tempo days (%)",
           "battery_max_charge_power_w": "Max charge power (W)",
           "battery_max_discharge_power_w": "Max discharge power (W)"
+        },
+        "data_description": {
+          "battery_soc_entity": "Sensor returning the battery state of charge as a percentage (0–100).",
+          "battery_power_entity": "Battery power sensor (W). Negative = charging, positive = discharging. Used to refine the available surplus calculation.",
+          "battery_charge_script": "Called during off-peak hours the night before a red Tempo day, to fill the battery before expensive peak hours.",
+          "battery_autoconsum_script": "Called to return to self-consumption mode. The BMS/inverter then handles charging and discharging automatically.",
+          "battery_capacity_kwh": "Total nominal capacity. Used to estimate the power available from the battery to run appliances.",
+          "battery_soc_min": "Discharge floor on blue and white days. Helios will not draw battery energy below this threshold to power appliances. Increase this value to keep a reserve for the evening (e.g. 30%).",
+          "battery_soc_max": "Charge ceiling. Used by the daily optimizer for simulations. Should match the value configured in your inverter.",
+          "battery_soc_reserve_rouge": "Protection threshold on red Tempo days. If SOC drops below this level, Helios reserves the battery: only appliances whose consumption fits within the PV surplus alone can be started. The forced charge the previous evening fills the battery to its maximum regardless of this threshold.",
+          "battery_max_charge_power_w": "Maximum charge power of your inverter/battery (W). Required for the daily optimizer to simulate recharging accurately. Should match the limit configured in your inverter.",
+          "battery_max_discharge_power_w": "Maximum discharge power (W). Used by the daily optimizer and to calculate the battery energy available for appliances. Should match the limit configured in your inverter."
         }
       },
       "strategy": {

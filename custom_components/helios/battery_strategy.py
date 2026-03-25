@@ -5,8 +5,7 @@ Design principles:
 - It only switches between two modes by calling user-defined scripts.
 - The battery's own BMS/inverter handles all power management in each mode.
 - Calling a script only on state *change* avoids spamming the inverter.
-- forced_charge triggers only during HC hours when tomorrow is a red day
-  and SOC is below soc_reserve_rouge.
+- forced_charge triggers only during HC hours when tomorrow is a red day.
 """
 from __future__ import annotations
 
