@@ -107,8 +107,44 @@ def _make_coordinator(
         "forecast_kwh": 8.5,
     }
     coordinator._cfg = {
-        "battery_soc_reserve_rouge": 80,
-        "battery_soc_min":           10,
+        # Sources
+        "pv_power_entity":        "sensor.pv",
+        "grid_power_entity":      "sensor.grid",
+        "house_power_entity":     "sensor.house",
+        "tempo_color_entity":     None,
+        "tempo_next_color_entity": None,
+        "forecast_entity":        None,
+        "peak_pv_w":              5000,
+        "off_peak_1_start":       "22:00",
+        "off_peak_1_end":         "06:00",
+        "off_peak_2_start":       None,
+        "off_peak_2_end":         None,
+        # Battery
+        "battery_enabled":               True,
+        "battery_soc_entity":            "sensor.bat_soc",
+        "battery_power_entity":          "sensor.bat_power",
+        "battery_charge_script":         None,
+        "battery_autoconsum_script":     None,
+        "battery_capacity_kwh":          10.0,
+        "battery_soc_min":               10,
+        "battery_soc_max":               95,
+        "battery_soc_reserve_rouge":     80,
+        "battery_max_charge_power_w":    3000,
+        "battery_max_discharge_power_w": 3000,
+        # Strategy
+        "mode":                  "auto",
+        "scan_interval_minutes": 5,
+        "dispatch_threshold":    0.3,
+        "grid_allowance_w":      250,
+        "optimizer_alpha":       0.5,
+        "ema_alpha":             0.05,
+        "base_load_noise":       0.20,
+        "optimizer_n_runs":      5,
+        "risk_lambda":           0.5,
+        "weight_pv_surplus":     0.4,
+        "weight_tempo":          0.3,
+        "weight_battery_soc":    0.2,
+        "weight_forecast":       0.1,
     }
 
     # Optimizer diagnostics fields
@@ -150,7 +186,7 @@ class TestDiagnosticsStructure:
 
         result = await async_get_config_entry_diagnostics(hass, entry)
 
-        assert set(result.keys()) == {"current_state", "optimizer", "base_load_profile", "decision_log"}
+        assert set(result.keys()) == {"current_state", "configuration", "optimizer", "base_load_profile", "decision_log"}
 
     @pytest.mark.asyncio
     async def test_current_state_keys(self):
@@ -239,6 +275,69 @@ class TestCurrentStateValues:
         cs = (await async_get_config_entry_diagnostics(hass, entry))["current_state"]
 
         assert cs["battery_soc"] is None
+
+
+# ---------------------------------------------------------------------------
+# Configuration section
+# ---------------------------------------------------------------------------
+
+class TestConfigurationSection:
+
+    @pytest.mark.asyncio
+    async def test_configuration_top_level_sections(self):
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        cfg = (await async_get_config_entry_diagnostics(hass, entry))["configuration"]
+
+        assert set(cfg.keys()) == {"sources", "battery", "strategy"}
+
+    @pytest.mark.asyncio
+    async def test_sources_section(self):
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        sources = (await async_get_config_entry_diagnostics(hass, entry))["configuration"]["sources"]
+
+        assert sources["pv_power_entity"]   == "sensor.pv"
+        assert sources["grid_power_entity"] == "sensor.grid"
+        assert sources["peak_pv_w"]         == 5000
+        assert sources["off_peak_1_start"]  == "22:00"
+        assert sources["off_peak_1_end"]    == "06:00"
+        assert sources["off_peak_2_start"]  is None
+
+    @pytest.mark.asyncio
+    async def test_battery_section(self):
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        bat = (await async_get_config_entry_diagnostics(hass, entry))["configuration"]["battery"]
+
+        assert bat["enabled"]           is True
+        assert bat["capacity_kwh"]      == 10.0
+        assert bat["soc_min"]           == 10
+        assert bat["soc_max"]           == 95
+        assert bat["soc_reserve_rouge"] == 80
+        assert bat["max_charge_power_w"]    == 3000
+        assert bat["max_discharge_power_w"] == 3000
+
+    @pytest.mark.asyncio
+    async def test_strategy_section(self):
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        strat = (await async_get_config_entry_diagnostics(hass, entry))["configuration"]["strategy"]
+
+        assert strat["mode"]                  == "auto"
+        assert strat["scan_interval_minutes"] == 5
+        assert strat["dispatch_threshold"]    == 0.3
+        assert strat["grid_allowance_w"]      == 250
+        assert strat["optimizer_alpha"]       == 0.5
+        assert strat["ema_alpha"]             == 0.05
+        assert strat["weight_pv_surplus"]     == 0.4
+        assert strat["weight_tempo"]          == 0.3
+        assert strat["weight_battery_soc"]    == 0.2
+        assert strat["weight_forecast"]       == 0.1
 
 
 # ---------------------------------------------------------------------------
