@@ -758,6 +758,61 @@ class DeviceManager:
                         await self._async_set_switch(hass, device, False, reason=reason, context=_base_ctx)
             return
 
+        # ---- Priority preemption for PREPARING appliances ----
+        # If a high-priority appliance is ready to start (score+fit or urgency)
+        # but can't fit because lower-priority interruptible devices are running,
+        # turn off those devices to free budget within this cycle.
+        preparing_apps = [
+            d for d in self.devices
+            if d.device_type == DEVICE_TYPE_APPLIANCE
+            and d.appliance_state == APPLIANCE_STATE_PREPARING
+            and _helios_manages(d)
+        ]
+        for app in sorted(preparing_apps, key=lambda d: d.priority, reverse=True):
+            urgency = app.urgency_modifier(hass)
+            fit = ManagedDevice.compute_fit_score(app.power_w, surplus_w, bat_available_w)
+            # Conditions to start are already met — no preemption needed
+            if (global_score >= 0.4 and fit >= 0.3) or urgency >= 0.8:
+                continue
+            # Score not high enough regardless of budget — skip
+            if global_score < 0.4 and urgency < 0.8:
+                continue
+            # Find lower-priority ON interruptible non-appliance devices
+            candidates = sorted(
+                [
+                    d for d in self.devices
+                    if d.device_type != DEVICE_TYPE_APPLIANCE
+                    and d.is_on
+                    and d.interruptible
+                    and d.priority < app.priority
+                    and _helios_manages(d)
+                    and self._min_on_elapsed(d)
+                ],
+                key=lambda d: d.priority,  # Preempt lowest priority first
+            )
+            freed_w = 0.0
+            to_preempt: list[ManagedDevice] = []
+            for c in candidates:
+                freed_w += c.actual_power_w(hass)
+                to_preempt.append(c)
+                if ManagedDevice.compute_fit_score(
+                    app.power_w, surplus_w + freed_w, bat_available_w
+                ) >= 0.3:
+                    break
+            else:
+                continue  # Can't free enough budget even with all candidates
+            for c in to_preempt:
+                _LOGGER.info(
+                    "Dispatch: preempting '%s' (priority=%d) to start appliance '%s' (priority=%d)",
+                    c.name, c.priority, app.name, app.priority,
+                )
+                await self._async_set_switch(
+                    hass, c, False,
+                    reason="preempted",
+                    context={**_base_ctx, "preempted_by": app.name},
+                )
+            surplus_w += freed_w  # Make freed budget visible to appliance state machine
+
         # ---- Score all eligible devices ----
         scored: list[tuple[float, ManagedDevice]] = []
 
