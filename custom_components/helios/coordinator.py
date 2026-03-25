@@ -223,9 +223,11 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         # Battery discharge headroom available for device dispatch
         self.bat_available_w = self._compute_bat_available_w()
 
-        # EMA update: net base load = house_w − currently-active Helios devices
+        # EMA update: net base load = house_w − currently-active Helios devices.
+        # Use actual_power_w so a water heater whose internal thermostat has cut
+        # (switch ON but 0 W draw) doesn't distort the base load estimate.
         helios_devices_w = sum(
-            d.power_w for d in self.device_manager.devices if d.is_on
+            d.actual_power_w(self.hass) for d in self.device_manager.devices if d.is_on
         )
         net_base_w = self.house_power_w - helios_devices_w
         now = dt_util.now()

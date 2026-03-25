@@ -51,10 +51,12 @@ def _device_diag(device: ManagedDevice, hass: HomeAssistant, now_time, surplus_w
 
     if device.device_type == DEVICE_TYPE_WATER_HEATER:
         base["water_heater"] = {
-            "temp":        ManagedDevice._state_float(hass, device.wh_temp_entity) if device.wh_temp_entity else None,
-            "temp_target":     device.wh_temp_target,
-            "temp_min":        device.wh_temp_min,
-            "temp_min_entity": ManagedDevice._state_float(hass, device.wh_temp_min_entity) if device.wh_temp_min_entity else None,
+            "temp":              ManagedDevice._state_float(hass, device.wh_temp_entity) if device.wh_temp_entity else None,
+            "temp_target":       device.wh_temp_target,
+            "temp_min":          device.wh_temp_min,
+            "temp_min_entity":   ManagedDevice._state_float(hass, device.wh_temp_min_entity) if device.wh_temp_min_entity else None,
+            "actual_power_w":    device.actual_power_w(hass),
+            "off_peak_hysteresis_k": device.wh_off_peak_hysteresis_k,
         }
 
     if device.device_type == DEVICE_TYPE_POOL:

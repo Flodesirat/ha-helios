@@ -793,9 +793,11 @@ class DeviceManager:
         remaining = surplus_w + bat_available_w + grid_allowance_w + helios_on_w
 
         for score, device in scored:
-            # For fit calculation, add back this device's own power if it's already ON
+            # For fit calculation, add back this device's actual draw if already ON
             # so it doesn't penalise itself when re-evaluated each cycle.
-            fit_surplus = surplus_w + (device.power_w if device.is_on else 0)
+            # Use actual_power_w: a water heater whose thermostat has cut (0 W actual)
+            # must not inflate fit_surplus with its nominal power.
+            fit_surplus = surplus_w + (device.actual_power_w(hass) if device.is_on else 0)
             fit = ManagedDevice.compute_fit_score(device.power_w, fit_surplus, bat_available_w)
 
             # Skip if fit is negligible (would import too much from grid)
