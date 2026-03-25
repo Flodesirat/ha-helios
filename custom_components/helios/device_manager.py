@@ -365,7 +365,7 @@ class ManagedDevice:
             return min(1.0, deficit_m / minutes_left)
 
         if self.device_type == DEVICE_TYPE_APPLIANCE:
-            if self.appliance_state != APPLIANCE_STATE_READY:
+            if self.appliance_state != APPLIANCE_STATE_PREPARING:
                 return 0.0
             energy_wh = (
                 (self.appliance_cycle_duration_minutes or DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES)
@@ -872,14 +872,21 @@ class DeviceManager:
         now_ts = time_mod.time()
 
         if device.appliance_state == APPLIANCE_STATE_IDLE:
-            # Watch ready entity — transition to READY when user marks it
+            # Watch ready entity — when user activates the switch, launch prepare
+            # script immediately and wait for Helios to pick the right start time.
             ready = ManagedDevice._state_bool(hass, device.appliance_ready_entity, fallback=False)
             if ready:
-                device.appliance_state = APPLIANCE_STATE_READY
-                _LOGGER.info("Appliance '%s': ready to run", device.name)
+                device.appliance_state = APPLIANCE_STATE_PREPARING
+                _LOGGER.info("Appliance '%s': preparing — waiting for optimal start window", device.name)
+                if device.appliance_prepare_script:
+                    await hass.services.async_call(
+                        "script", "turn_on",
+                        {"entity_id": device.appliance_prepare_script},
+                        blocking=False,
+                    )
             return
 
-        if device.appliance_state == APPLIANCE_STATE_READY:
+        if device.appliance_state == APPLIANCE_STATE_PREPARING:
             fit     = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
             urgency = device.urgency_modifier(hass)
 
@@ -890,23 +897,15 @@ class DeviceManager:
             if not should_start:
                 return
 
-            # Transition: READY → PREPARING → RUNNING
-            device.appliance_state = APPLIANCE_STATE_PREPARING
+            # Transition: PREPARING → RUNNING
             _LOGGER.info("Appliance '%s': starting (score=%.2f fit=%.2f urgency=%.2f)",
                          device.name, global_score, fit, urgency)
 
-            if not device.appliance_prepare_script and not device.appliance_start_script:
+            if not device.appliance_start_script:
                 _LOGGER.warning(
-                    "Appliance '%s': no prepare_script nor start_script configured — "
+                    "Appliance '%s': no start_script configured — "
                     "cycle will be tracked but nothing will actually start",
                     device.name,
-                )
-
-            if device.appliance_prepare_script:
-                await hass.services.async_call(
-                    "script", "turn_on",
-                    {"entity_id": device.appliance_prepare_script},
-                    blocking=False,
                 )
 
             if device.appliance_start_script:
