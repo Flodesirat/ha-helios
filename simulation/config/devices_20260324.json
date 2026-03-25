@@ -1,0 +1,29 @@
+[
+  {
+    "name": "Chauffe-eau",
+    "power_w": 400,
+    "allowed_start": 8.0,
+    "allowed_end": 18.0,
+    "priority": 6,
+    "min_on_minutes": 15,
+    "run_quota_h": 5.0,
+    "must_run_daily": false
+  },
+  {
+    "name": "Piscine",
+    "power_w": 600,
+    "allowed_start": 8.0,
+    "allowed_end": 20.0,
+    "priority": 5,
+    "min_on_minutes": 15,
+    "run_quota_h": 3.0
+  },
+  {
+    "name": "Zoé",
+    "power_w": 2000,
+    "allowed_start": 8.0,
+    "allowed_end": 20.0,
+    "priority": 5,
+    "min_on_minutes": 15
+  }
+]

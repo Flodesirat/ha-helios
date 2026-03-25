@@ -26,7 +26,7 @@ from .const import (
     CONF_EV_CHARGE_START_SCRIPT, CONF_EV_CHARGE_STOP_SCRIPT,
     # Water heater
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN, CONF_WH_TEMP_MIN_ENTITY,
-    CONF_WH_POWER_ENTITY,
+    CONF_WH_POWER_ENTITY, CONF_WH_OFF_PEAK_HYSTERESIS_K,
     # HVAC
     CONF_HVAC_TEMP_ENTITY, CONF_HVAC_SETPOINT_ENTITY,
     CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
@@ -49,7 +49,7 @@ from .const import (
     DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
     DEFAULT_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_FIT, DEFAULT_DEVICE_WEIGHT_URGENCY,
     DEFAULT_EV_SOC_TARGET, DEFAULT_EV_MIN_CHARGE_POWER_W,
-    DEFAULT_WH_TEMP_TARGET, DEFAULT_WH_TEMP_MIN,
+    DEFAULT_WH_TEMP_TARGET, DEFAULT_WH_TEMP_MIN, DEFAULT_WH_OFF_PEAK_HYSTERESIS_K,
     DEFAULT_HVAC_HYSTERESIS_K, DEFAULT_HVAC_MIN_OFF_MINUTES, HVAC_MODE_HEAT,
     DEFAULT_POOL_SPLIT_SESSIONS,
     DEFAULT_APPLIANCE_POWER_THRESHOLD_W, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES,
@@ -143,6 +143,9 @@ class ManagedDevice:
         self.wh_temp_min: float             = float(config.get(CONF_WH_TEMP_MIN,    DEFAULT_WH_TEMP_MIN))
         self.wh_temp_min_entity: str | None = config.get(CONF_WH_TEMP_MIN_ENTITY)
         self.wh_power_entity: str | None    = config.get(CONF_WH_POWER_ENTITY)
+        self.wh_off_peak_hysteresis_k: float = float(
+            config.get(CONF_WH_OFF_PEAK_HYSTERESIS_K, DEFAULT_WH_OFF_PEAK_HYSTERESIS_K)
+        )
 
         # ---- Off-peak slots (from global config) ----
         gcfg = global_cfg or {}
@@ -290,10 +293,12 @@ class ManagedDevice:
             # Safety: always force on below the static legionella floor.
             if temp < self.wh_temp_min:
                 return True
-            # Off-peak: force on until the (possibly dynamic) off-peak minimum is reached.
+            # Off-peak: force on only when temperature is significantly below the target.
+            # A hysteresis band prevents repeated short cycles when temp hovers near the minimum.
+            # Trigger threshold = off_peak_min − hysteresis_k  (default 3 °C).
             now = datetime.now().time()
             if self._is_off_peak(now):
-                return temp < self._wh_off_peak_min(hass)
+                return temp < self._wh_off_peak_min(hass) - self.wh_off_peak_hysteresis_k
             return False
 
         if self.device_type == DEVICE_TYPE_POOL:
@@ -732,8 +737,11 @@ class DeviceManager:
                     continue
                 if not _helios_manages(device):
                     continue  # manual / force / inhibit — hands off
-                if device.is_on and device.interruptible and self._min_on_elapsed(device):
-                    await self._async_set_switch(hass, device, False, reason="score_too_low", context=_base_ctx)
+                if device.is_on and device.interruptible:
+                    satisfied = device.is_satisfied(hass)
+                    if satisfied or self._min_on_elapsed(device):
+                        reason = "satisfied" if satisfied else "score_too_low"
+                        await self._async_set_switch(hass, device, False, reason=reason, context=_base_ctx)
             return
 
         # ---- Score all eligible devices ----
@@ -765,9 +773,9 @@ class DeviceManager:
                     await self._async_set_switch(hass, device, False, reason="outside_window", context=_base_ctx)
                 continue
 
-            # Already satisfied → turn off
+            # Already satisfied → turn off immediately (reaching target is always a valid stop)
             if device.is_satisfied(hass):
-                if device.is_on and device.interruptible and self._min_on_elapsed(device):
+                if device.is_on and device.interruptible:
                     await self._async_set_switch(hass, device, False, reason="satisfied", context=_base_ctx)
                 continue
 

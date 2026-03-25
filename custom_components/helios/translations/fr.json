@@ -73,7 +73,8 @@
           "wh_temp_target": "Température cible (°C)",
           "wh_temp_min": "Seuil de déclenchement d'urgence (°C)",
           "wh_temp_min_entity": "Entité température minimale heures creuses (°C)",
-          "wh_power_entity": "Entité puissance réelle (W) (optionnel)"
+          "wh_power_entity": "Entité puissance réelle (W) (optionnel)",
+          "wh_off_peak_hysteresis_k": "Hystérésis déclenchement heures creuses (°C)"
         }
       },
       "device_hvac": {
@@ -245,7 +246,8 @@
           "wh_temp_target": "Température cible (°C)",
           "wh_temp_min": "Seuil de déclenchement d'urgence (°C)",
           "wh_temp_min_entity": "Entité température minimale heures creuses (°C)",
-          "wh_power_entity": "Entité puissance réelle (W) (optionnel)"
+          "wh_power_entity": "Entité puissance réelle (W) (optionnel)",
+          "wh_off_peak_hysteresis_k": "Hystérésis déclenchement heures creuses (°C)"
         }
       },
       "opt_device_hvac": {

@@ -73,11 +73,12 @@ CONF_EV_CHARGE_STOP_SCRIPT  = "ev_charge_stop_script"
 # ---------------------------------------------------------------------------
 # Per-device keys — water heater
 # ---------------------------------------------------------------------------
-CONF_WH_TEMP_ENTITY     = "wh_temp_entity"
-CONF_WH_TEMP_TARGET     = "wh_temp_target"
-CONF_WH_TEMP_MIN        = "wh_temp_min"         # legionella floor → safety must_run override
-CONF_WH_TEMP_MIN_ENTITY = "wh_temp_min_entity"  # entity for off-peak minimum temperature
-CONF_WH_POWER_ENTITY    = "wh_power_entity"     # actual power consumption sensor (W)
+CONF_WH_TEMP_ENTITY           = "wh_temp_entity"
+CONF_WH_TEMP_TARGET           = "wh_temp_target"
+CONF_WH_TEMP_MIN              = "wh_temp_min"              # legionella floor → safety must_run override
+CONF_WH_TEMP_MIN_ENTITY       = "wh_temp_min_entity"       # entity for off-peak minimum temperature
+CONF_WH_POWER_ENTITY          = "wh_power_entity"          # actual power consumption sensor (W)
+CONF_WH_OFF_PEAK_HYSTERESIS_K = "wh_off_peak_hysteresis_k" # °C below off-peak min before forcing ON
 
 # ---------------------------------------------------------------------------
 # Per-device keys — HVAC / heat pump
@@ -237,6 +238,7 @@ DEFAULT_EV_MIN_CHARGE_POWER_W      = 1380.0 # 6 A × 230 V
 
 DEFAULT_WH_TEMP_TARGET             = 60.0   # °C
 DEFAULT_WH_TEMP_MIN                = 55.0   # °C (legionella threshold)
+DEFAULT_WH_OFF_PEAK_HYSTERESIS_K   = 3.0    # °C — must_run triggers only below (off_peak_min − 3°C)
 
 DEFAULT_HVAC_HYSTERESIS_K          = 0.5    # °C
 DEFAULT_HVAC_MIN_OFF_MINUTES       = 5

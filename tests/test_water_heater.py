@@ -145,10 +145,13 @@ class TestOffPeakDetection:
 
 class TestMustRunNow:
 
-    def test_off_peak_below_min_forces_on(self):
-        """During HC, temp below off-peak min → must_run = True."""
+    def test_off_peak_below_hysteresis_threshold_forces_on(self):
+        """During HC, temp below (off-peak min − hysteresis) → must_run = True.
+
+        With off_peak_min=50 and default hysteresis=3°C, trigger threshold = 47°C.
+        """
         device = _make_device()
-        hass = _hass(temp=48.0, off_peak_min=50.0)  # 48 < 50
+        hass = _hass(temp=44.0, off_peak_min=50.0)  # 44 < 50 - 3 = 47
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
@@ -156,6 +159,22 @@ class TestMustRunNow:
                 _fixed_datetime(time(23, 0)),
             )
             assert device.must_run_now(hass) is True
+
+    def test_off_peak_within_hysteresis_band_no_force(self):
+        """During HC, temp in hysteresis band [47–50°C] → must_run = False.
+
+        In this band the device is not forced on by must_run, but normal scoring
+        can still turn it on if surplus is available.
+        """
+        device = _make_device()
+        hass = _hass(temp=48.0, off_peak_min=50.0)  # 48 is between 47 and 50
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "custom_components.helios.device_manager.datetime",
+                _fixed_datetime(time(23, 0)),
+            )
+            assert device.must_run_now(hass) is False
 
     def test_off_peak_at_min_no_longer_forces(self):
         """During HC, temp exactly at off-peak min → must_run = False."""
