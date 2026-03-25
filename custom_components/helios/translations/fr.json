@@ -71,10 +71,18 @@
         "data": {
           "wh_temp_entity": "Entité température (°C)",
           "wh_temp_target": "Température cible (°C)",
-          "wh_temp_min": "Seuil de déclenchement d'urgence (°C)",
+          "wh_temp_min": "Température minimale de sécurité (°C)",
           "wh_temp_min_entity": "Entité température minimale heures creuses (°C)",
-          "wh_power_entity": "Entité puissance réelle (W) (optionnel)",
+          "wh_power_entity": "Entité puissance réelle (W)",
           "wh_off_peak_hysteresis_k": "Hystérésis déclenchement heures creuses (°C)"
+        },
+        "data_description": {
+          "wh_temp_entity": "Capteur de température actuelle du ballon.",
+          "wh_temp_target": "Température cible en dehors des heures creuses. Le chauffe-eau est arrêté quand cette valeur est atteinte.",
+          "wh_temp_min": "Température en dessous de laquelle le chauffe-eau est forcé ON immédiatement, quelle que soit l'heure ou le score solaire.",
+          "wh_temp_min_entity": "Entité définissant la température minimale à atteindre pendant les heures creuses. Le chauffe-eau chauffe jusqu'à cette valeur en HC, puis s'arrête.",
+          "wh_power_entity": "Capteur de puissance réelle (W). Permet de détecter quand le thermostat interne coupe la résistance. Utilisé pour le calcul du surplus disponible et l'apprentissage de la consommation de fond.",
+          "wh_off_peak_hysteresis_k": "Évite les cycles courts en début de plage HC. Le chauffe-eau ne se déclenche qu'en dessous de (temp_min_HC − hystérésis). Une fois démarré, il continue jusqu'à temp_min_HC."
         }
       },
       "device_hvac": {
@@ -256,10 +264,18 @@
         "data": {
           "wh_temp_entity": "Entité température (°C)",
           "wh_temp_target": "Température cible (°C)",
-          "wh_temp_min": "Seuil de déclenchement d'urgence (°C)",
+          "wh_temp_min": "Température minimale de sécurité (°C)",
           "wh_temp_min_entity": "Entité température minimale heures creuses (°C)",
-          "wh_power_entity": "Entité puissance réelle (W) (optionnel)",
+          "wh_power_entity": "Entité puissance réelle (W)",
           "wh_off_peak_hysteresis_k": "Hystérésis déclenchement heures creuses (°C)"
+        },
+        "data_description": {
+          "wh_temp_entity": "Capteur de température actuelle du ballon.",
+          "wh_temp_target": "Température cible en dehors des heures creuses. Le chauffe-eau est arrêté quand cette valeur est atteinte.",
+          "wh_temp_min": "Température en dessous de laquelle le chauffe-eau est forcé ON immédiatement, quelle que soit l'heure ou le score solaire.",
+          "wh_temp_min_entity": "Entité définissant la température minimale à atteindre pendant les heures creuses. Le chauffe-eau chauffe jusqu'à cette valeur en HC, puis s'arrête.",
+          "wh_power_entity": "Capteur de puissance réelle (W). Permet de détecter quand le thermostat interne coupe la résistance. Utilisé pour le calcul du surplus disponible et l'apprentissage de la consommation de fond.",
+          "wh_off_peak_hysteresis_k": "Évite les cycles courts en début de plage HC. Le chauffe-eau ne se déclenche qu'en dessous de (temp_min_HC − hystérésis). Une fois démarré, il continue jusqu'à temp_min_HC."
         }
       },
       "opt_device_hvac": {

@@ -274,9 +274,18 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         return energy_based_w
 
     def _build_score_input(self) -> dict[str, Any]:
+        # Virtual surplus: add back the power of Helios-managed devices currently ON.
+        # Without this correction, active devices inflate house_w → deflate surplus_w →
+        # score drops below threshold → gate block turns them off → chattering.
+        helios_on_w = sum(
+            d.actual_power_w(self.hass)
+            for d in self.device_manager.devices
+            if d.is_on
+        )
+        virtual_surplus_w = max(0.0, self.surplus_w + helios_on_w)
         return {
             "pv_power_w":       self.pv_power_w,
-            "surplus_w":        self.surplus_w,
+            "surplus_w":        virtual_surplus_w,
             "grid_power_w":     self.grid_power_w,
             "battery_soc":      self.battery_soc,
             "tempo_color":      self.tempo_color,
