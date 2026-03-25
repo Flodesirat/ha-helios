@@ -275,12 +275,13 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
 
     def _build_score_input(self) -> dict[str, Any]:
         return {
-            "pv_power_w":    self.pv_power_w,
-            "surplus_w":     self.surplus_w,
-            "grid_power_w":  self.grid_power_w,
-            "battery_soc":   self.battery_soc,
-            "tempo_color":   self.tempo_color,
-            "forecast_kwh":  self.forecast_kwh,
+            "pv_power_w":       self.pv_power_w,
+            "surplus_w":        self.surplus_w,
+            "grid_power_w":     self.grid_power_w,
+            "battery_soc":      self.battery_soc,
+            "tempo_color":      self.tempo_color,
+            "tempo_next_color": self.tempo_next_color,
+            "forecast_kwh":     self.forecast_kwh,
         }
 
     def _snapshot(self) -> dict[str, Any]:
