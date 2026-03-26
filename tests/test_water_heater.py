@@ -10,6 +10,7 @@ from custom_components.helios.device_manager import ManagedDevice, _parse_off_pe
 from custom_components.helios.const import (
     DEVICE_TYPE_WATER_HEATER,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY, CONF_DEVICE_POWER_W,
+    CONF_DEVICE_MIN_ON_MINUTES,
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN, CONF_WH_TEMP_MIN_ENTITY,
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
     CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
@@ -230,6 +231,53 @@ class TestMustRunNow:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(23, 0)),
+            )
+            assert device.must_run_now(hass) is True
+
+
+    def test_off_peak_too_close_to_end_no_force(self):
+        """HC ends at 06:00, min_on_minutes=60 → no trigger after 05:00 (only 50 min left).
+
+        temp=46 is above the legionella floor (45°C) but below the HC trigger
+        threshold (50 - 3 = 47°C), so only the HC guard can block it.
+        """
+        device_cfg, global_cfg = _wh_config()
+        device_cfg[CONF_DEVICE_MIN_ON_MINUTES] = 60
+        device = ManagedDevice(device_cfg, global_cfg)
+        hass = _hass(temp=46.0, off_peak_min=50.0)  # 46 < 47 → would trigger without guard
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "custom_components.helios.device_manager.datetime",
+                _fixed_datetime(time(5, 10)),  # 50 min before 06:00 end < 60 min
+            )
+            assert device.must_run_now(hass) is False
+
+    def test_off_peak_exactly_at_cutoff_forces(self):
+        """HC ends at 06:00, min_on_minutes=60 → trigger allowed at exactly 05:00 (60 min left)."""
+        device_cfg, global_cfg = _wh_config()
+        device_cfg[CONF_DEVICE_MIN_ON_MINUTES] = 60
+        device = ManagedDevice(device_cfg, global_cfg)
+        hass = _hass(temp=46.0, off_peak_min=50.0)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "custom_components.helios.device_manager.datetime",
+                _fixed_datetime(time(5, 0)),  # exactly 60 min before 06:00
+            )
+            assert device.must_run_now(hass) is True
+
+    def test_off_peak_early_morning_forces(self):
+        """HC at 02:00, 4h before end → must_run = True."""
+        device_cfg, global_cfg = _wh_config()
+        device_cfg[CONF_DEVICE_MIN_ON_MINUTES] = 60
+        device = ManagedDevice(device_cfg, global_cfg)
+        hass = _hass(temp=46.0, off_peak_min=50.0)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "custom_components.helios.device_manager.datetime",
+                _fixed_datetime(time(2, 0)),  # 4 h before 06:00 end
             )
             assert device.must_run_now(hass) is True
 

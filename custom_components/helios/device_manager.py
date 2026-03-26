@@ -240,6 +240,33 @@ class ManagedDevice:
         """Return True if *now* falls in any configured off-peak slot."""
         return any(_is_in_slot(now, s, e) for s, e in self._off_peak_slots)
 
+    def _minutes_to_off_peak_end(self, now: time) -> float | None:
+        """Return minutes remaining until the end of the current off-peak slot.
+
+        Works purely with time-of-day arithmetic (no datetime objects) so it
+        is safe to call with a plain time value obtained from datetime.now().time().
+        Returns None if *now* is not inside any off-peak slot.
+        Handles midnight-crossing slots (e.g. 22:00 → 06:00).
+        """
+        def _mins(t: time) -> int:
+            return t.hour * 60 + t.minute
+
+        now_m = _mins(now)
+        for start, end in self._off_peak_slots:
+            if not _is_in_slot(now, start, end):
+                continue
+            end_m = _mins(end)
+            if start <= end:
+                # Same-day slot
+                return float(end_m - now_m)
+            # Midnight-crossing slot (e.g. 22:00 → 06:00)
+            if now >= start:
+                # Evening side: wrap around midnight
+                return float((24 * 60 - now_m) + end_m)
+            # Morning side
+            return float(end_m - now_m)
+        return None
+
     def _wh_off_peak_min(self, hass: HomeAssistant) -> float:
         """Minimum temperature to reach during off-peak hours.
 
@@ -301,6 +328,11 @@ class ManagedDevice:
             # Trigger threshold = off_peak_min − hysteresis_k  (default 3 °C).
             now = datetime.now().time()
             if self._is_off_peak(now):
+                minutes_left = self._minutes_to_off_peak_end(now)
+                # Don't start if there's less than min_on_minutes remaining in the
+                # off-peak slot: the heater would spill into peak hours.
+                if minutes_left is not None and minutes_left < self.min_on_minutes:
+                    return False
                 return temp < self._wh_off_peak_min(hass) - self.wh_off_peak_hysteresis_k
             return False
 
