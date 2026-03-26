@@ -119,6 +119,7 @@
           "device_name": "Device name",
           "device_switch_entity": "Switch entity",
           "device_power_w": "Rated power (W)",
+          "device_power_entity": "Measured power sensor (W)",
           "device_priority": "Priority (1 = low, 10 = high)",
           "device_min_on_minutes": "Minimum on duration (min)",
           "device_allowed_start": "Allowed window start (HH:MM)",
@@ -128,6 +129,10 @@
           "device_weight_priority": "Priority weight",
           "device_weight_fit": "Surplus fit weight",
           "device_weight_urgency": "Urgency weight"
+        },
+        "data_description": {
+          "device_power_w": "Maximum power consumed by the device. Used when no measured power sensor is configured.",
+          "device_power_entity": "Measured power sensor (smart plug, meter…). When set, replaces the rated power for budget calculations and base-load estimation."
         }
       },
       "strategy": {
@@ -312,6 +317,7 @@
           "device_name": "Device name",
           "device_switch_entity": "Switch entity",
           "device_power_w": "Rated power (W)",
+          "device_power_entity": "Measured power sensor (W)",
           "device_priority": "Priority (1 = low, 10 = high)",
           "device_min_on_minutes": "Minimum on duration (min)",
           "device_allowed_start": "Allowed window start (HH:MM)",
@@ -321,6 +327,10 @@
           "device_weight_priority": "Priority weight",
           "device_weight_fit": "Surplus fit weight",
           "device_weight_urgency": "Urgency weight"
+        },
+        "data_description": {
+          "device_power_w": "Maximum power consumed by the device. Used when no measured power sensor is configured.",
+          "device_power_entity": "Measured power sensor (smart plug, meter…). When set, replaces the rated power for budget calculations and base-load estimation."
         }
       }
     },

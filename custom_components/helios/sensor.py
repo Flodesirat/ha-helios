@@ -356,7 +356,9 @@ class DevicePowerSensor(_BaseEOSensor):
 
     @property
     def native_value(self) -> float:
-        return float(self._device.power_w) if self._device.is_on else 0.0
+        if not self._device.is_on:
+            return 0.0
+        return float(self._device.actual_power_w(self.coordinator.hass))
 
     @property
     def extra_state_attributes(self) -> dict:

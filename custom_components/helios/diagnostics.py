@@ -55,6 +55,7 @@ def _ts_iso(epoch: float | None) -> str | None:
 
 def _device_diag(device: ManagedDevice, hass: HomeAssistant, now_time, surplus_w: float, bat_available_w: float) -> dict:
     """Build a rich diagnostic snapshot for one device."""
+    measured_w = device.actual_power_w(hass)
     base = {
         "name":                device.name,
         "type":                device.device_type,
@@ -62,9 +63,10 @@ def _device_diag(device: ManagedDevice, hass: HomeAssistant, now_time, surplus_w
         "manual_mode":         device.manual_mode,
         "priority":            device.priority,
         "power_w":             device.power_w,
+        "actual_power_w":      measured_w if device.is_on else 0.0,
         "is_satisfied":        device.is_satisfied(hass),
         "is_in_allowed_window": device.is_in_allowed_window(now_time),
-        "fit_score":           round(ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w), 3),
+        "fit_score":           round(ManagedDevice.compute_fit_score(measured_w if device.is_on else device.power_w, surplus_w, bat_available_w), 3),
         "effective_score":     round(device.effective_score(hass, surplus_w, bat_available_w), 3),
         "turned_on_at":        _ts_iso(device.turned_on_at),
         "turned_off_at":       _ts_iso(device.turned_off_at),
@@ -86,7 +88,6 @@ def _device_diag(device: ManagedDevice, hass: HomeAssistant, now_time, surplus_w
             "temp_target":       device.wh_temp_target,
             "temp_min":          device.wh_temp_min,
             "temp_min_entity":   ManagedDevice._state_float(hass, device.wh_temp_min_entity) if device.wh_temp_min_entity else None,
-            "actual_power_w":    device.actual_power_w(hass),
             "off_peak_hysteresis_k": device.wh_off_peak_hysteresis_k,
         }
 

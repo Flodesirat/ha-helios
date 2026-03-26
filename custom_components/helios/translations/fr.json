@@ -119,6 +119,7 @@
           "device_name": "Nom de l'appareil",
           "device_switch_entity": "Entité interrupteur",
           "device_power_w": "Puissance nominale (W)",
+          "device_power_entity": "Capteur de puissance réelle (W)",
           "device_priority": "Priorité (1 = faible, 10 = haute)",
           "device_min_on_minutes": "Durée minimale d'allumage (min)",
           "device_allowed_start": "Début de plage horaire (HH:MM)",
@@ -128,6 +129,10 @@
           "device_weight_priority": "Poids priorité",
           "device_weight_fit": "Poids adéquation surplus",
           "device_weight_urgency": "Poids urgence"
+        },
+        "data_description": {
+          "device_power_w": "Puissance maximale consommée. Utilisée si aucun capteur de puissance réelle n'est configuré.",
+          "device_power_entity": "Capteur de puissance mesuré (prise connectée, compteur…). Si renseigné, remplace la puissance nominale pour le calcul du budget disponible et de la consommation de fond de la maison."
         }
       },
       "strategy": {
@@ -312,6 +317,7 @@
           "device_name": "Nom de l'appareil",
           "device_switch_entity": "Entité interrupteur",
           "device_power_w": "Puissance nominale (W)",
+          "device_power_entity": "Capteur de puissance réelle (W)",
           "device_priority": "Priorité (1 = faible, 10 = haute)",
           "device_min_on_minutes": "Durée minimale d'allumage (min)",
           "device_allowed_start": "Début de plage horaire (HH:MM)",
@@ -321,6 +327,10 @@
           "device_weight_priority": "Poids priorité",
           "device_weight_fit": "Poids adéquation surplus",
           "device_weight_urgency": "Poids urgence"
+        },
+        "data_description": {
+          "device_power_w": "Puissance maximale consommée. Utilisée si aucun capteur de puissance réelle n'est configuré.",
+          "device_power_entity": "Capteur de puissance mesuré (prise connectée, compteur…). Si renseigné, remplace la puissance nominale pour le calcul du budget disponible et de la consommation de fond de la maison."
         }
       }
     },

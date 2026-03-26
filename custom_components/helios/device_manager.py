@@ -16,7 +16,7 @@ from .const import (
     DEVICE_TYPE_APPLIANCE, DEVICE_TYPE_POOL,
     # Common device config
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
-    CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
+    CONF_DEVICE_POWER_W, CONF_DEVICE_POWER_ENTITY, CONF_DEVICE_PRIORITY,
     CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
     CONF_DEVICE_INTERRUPTIBLE, CONF_DEVICE_MUST_RUN_DAILY, CONF_DEVICE_DEADLINE,
     CONF_DEVICE_WEIGHT_PRIORITY, CONF_DEVICE_WEIGHT_FIT, CONF_DEVICE_WEIGHT_URGENCY,
@@ -111,8 +111,9 @@ class ManagedDevice:
         self.name: str          = config[CONF_DEVICE_NAME]
         self.device_type: str   = config[CONF_DEVICE_TYPE]
         self.switch_entity: str | None = config.get(CONF_DEVICE_SWITCH_ENTITY)
-        self.power_w: float     = float(config.get(CONF_DEVICE_POWER_W, 0))
-        self.priority: int      = int(config.get(CONF_DEVICE_PRIORITY, DEFAULT_DEVICE_PRIORITY))
+        self.power_w: float          = float(config.get(CONF_DEVICE_POWER_W, 0))
+        self.power_entity: str | None = config.get(CONF_DEVICE_POWER_ENTITY)
+        self.priority: int           = int(config.get(CONF_DEVICE_PRIORITY, DEFAULT_DEVICE_PRIORITY))
         self.min_on_minutes: int = int(config.get(CONF_DEVICE_MIN_ON_MINUTES, DEFAULT_DEVICE_MIN_ON_MINUTES))
         self.allowed_start: str = config.get(CONF_DEVICE_ALLOWED_START, DEFAULT_ALLOWED_START)
         self.allowed_end: str   = config.get(CONF_DEVICE_ALLOWED_END,   DEFAULT_ALLOWED_END)
@@ -223,14 +224,22 @@ class ManagedDevice:
     def actual_power_w(self, hass: HomeAssistant) -> float:
         """Return current power draw in W.
 
-        For water heaters a power entity can be configured: the heating
-        element shuts off internally when temperature is reached, so the
-        measured value can be 0 W even while the switch is ON.  Using the
-        real reading avoids over-estimating the dispatch budget.
-        All other device types fall back to the nominal power_w.
+        Priority:
+        1. Generic device_power_entity (common to all types) — smart plug / sensor.
+        2. Type-specific entity: wh_power_entity for water heaters,
+           appliance_power_entity for appliances.
+        3. Fallback: nominal power_w from configuration.
+
+        Using the measured value avoids over-estimating the dispatch budget when
+        the internal thermostat has cut (water heater) or when actual draw differs
+        from the nominal (partial EV charge, variable pump speed, etc.).
         """
+        if self.power_entity:
+            return self._state_float(hass, self.power_entity)
         if self.device_type == DEVICE_TYPE_WATER_HEATER and self.wh_power_entity:
             return self._state_float(hass, self.wh_power_entity)
+        if self.device_type == DEVICE_TYPE_APPLIANCE and self.appliance_power_entity:
+            return self._state_float(hass, self.appliance_power_entity)
         return self.power_w
 
     # ------------------------------------------------------------------

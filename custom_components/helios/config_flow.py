@@ -26,7 +26,7 @@ from .const import (
     CONF_DEVICES,
     # Common device fields
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
-    CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
+    CONF_DEVICE_POWER_W, CONF_DEVICE_POWER_ENTITY, CONF_DEVICE_PRIORITY,
     CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
     CONF_DEVICE_MUST_RUN_DAILY, CONF_DEVICE_DEADLINE,
     CONF_DEVICE_WEIGHT_PRIORITY, CONF_DEVICE_WEIGHT_FIT, CONF_DEVICE_WEIGHT_URGENCY,
@@ -347,6 +347,9 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 **switch_field,
                 vol.Required(CONF_DEVICE_POWER_W): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=50, max=22000, step=50, unit_of_measurement="W")
+                ),
+                vol.Optional(CONF_DEVICE_POWER_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
                 vol.Optional(CONF_DEVICE_PRIORITY, default=DEFAULT_DEVICE_PRIORITY): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=1, max=10, step=1)
@@ -824,6 +827,9 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 **opt_switch_field,
                 vol.Required(CONF_DEVICE_POWER_W, default=cd.get(CONF_DEVICE_POWER_W, 500)): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=50, max=22000, step=50, unit_of_measurement="W")
+                ),
+                vol.Optional(CONF_DEVICE_POWER_ENTITY, **_opt_default(cd, CONF_DEVICE_POWER_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
                 vol.Optional(CONF_DEVICE_PRIORITY, default=cd.get(CONF_DEVICE_PRIORITY, DEFAULT_DEVICE_PRIORITY)): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=1, max=10, step=1)
