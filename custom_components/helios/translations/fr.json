@@ -379,8 +379,8 @@
       "eo_house_power": {
         "name": "Consommation maison"
       },
-      "eo_optimizer_weights": {
-        "name": "Poids optimiseur"
+      "eo_bat_available_w": {
+        "name": "Puissance batterie disponible"
       },
       "eo_device_power": {
         "name": "Puissance {name}"

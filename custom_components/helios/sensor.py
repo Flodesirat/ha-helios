@@ -41,7 +41,7 @@ async def async_setup_entry(
         EnergyOptimizerPVPowerSensor(coordinator, entry),
         EnergyOptimizerGridPowerSensor(coordinator, entry),
         EnergyOptimizerHousePowerSensor(coordinator, entry),
-        EnergyOptimizerWeightsSensor(coordinator, entry),
+        EnergyOptimizerBatAvailableSensor(coordinator, entry),
         EnergyOptimizerBatterySocLevelSensor(coordinator, entry),
         EnergyOptimizerBatteryPowerSensor(coordinator, entry),
     ]
@@ -111,10 +111,27 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
 
     @property
     def extra_state_attributes(self):
+        c = self.coordinator
+        eng = c.scoring_engine
+        score_input = c._build_score_input()
         return {
-            "tempo_color": self.coordinator.tempo_color,
-            "battery_soc": self.coordinator.battery_soc,
-            "mode": self.coordinator.mode,
+            # Score breakdown — explains *why* the score is what it is
+            "f_surplus":  round(eng._score_surplus(score_input.get("surplus_w", 0.0)), 3),
+            "f_tempo":    round(eng._score_tempo(score_input.get("tempo_color")), 3),
+            "f_soc":      round(eng._score_soc(score_input.get("battery_soc")), 3),
+            "f_forecast": round(eng._score_forecast(score_input), 3),
+            # Scoring weights (can be tuned by daily optimizer)
+            "w_surplus":  round(eng.w_surplus,  3),
+            "w_tempo":    round(eng.w_tempo,    3),
+            "w_soc":      round(eng.w_soc,      3),
+            "w_forecast": round(eng.w_forecast, 3),
+            # Dispatch context
+            "dispatch_threshold": round(c.dispatch_threshold, 3),
+            "last_optimized":     c.optimizer_last_run,
+            # Raw inputs
+            "tempo_color": c.tempo_color,
+            "battery_soc": c.battery_soc,
+            "mode":        c.mode,
         }
 
 
@@ -202,36 +219,26 @@ class EnergyOptimizerHousePowerSensor(_BaseEOSensor):
         return self.coordinator.house_power_w
 
 
-class EnergyOptimizerWeightsSensor(_BaseEOSensor):
-    """Exposes the scoring weights applied by the daily optimizer.
+class EnergyOptimizerBatAvailableSensor(_BaseEOSensor):
+    """Reports the power available from the battery for managed devices (W).
 
-    State    : dispatch threshold [0..1]
-    Attributes: w_surplus, w_tempo, w_soc, w_forecast, last_optimized (ISO timestamp)
+    This is the budget Helios can draw from the battery on top of PV surplus.
+    0 W when battery is disabled, SOC is too low, or a red Tempo day restricts discharge.
     """
 
     _attr_has_entity_name = True
-    _attr_translation_key = "eo_optimizer_weights"
-    _attr_native_unit_of_measurement = None
+    _attr_translation_key = "eo_bat_available_w"
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_optimizer_weights"
+        return f"{self._entry.entry_id}_bat_available_w"
 
     @property
     def native_value(self) -> float:
-        return round(self.coordinator.dispatch_threshold, 3)
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        eng = self.coordinator.scoring_engine
-        return {
-            "w_surplus":      round(eng.w_surplus,  3),
-            "w_tempo":        round(eng.w_tempo,    3),
-            "w_soc":          round(eng.w_soc,      3),
-            "w_forecast":     round(eng.w_forecast, 3),
-            "last_optimized": self.coordinator.optimizer_last_run,
-        }
+        return self.coordinator.bat_available_w
 
 
 def _soc_level_label(soc: float | None) -> str | None:
