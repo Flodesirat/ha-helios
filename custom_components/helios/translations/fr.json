@@ -150,13 +150,15 @@
           "off_peak_1_start": "Heures creuses plage 1 — début (HH:MM)",
           "off_peak_1_end": "Heures creuses plage 1 — fin (HH:MM)",
           "off_peak_2_start": "Heures creuses plage 2 — début (HH:MM)",
-          "off_peak_2_end": "Heures creuses plage 2 — fin (HH:MM)"
+          "off_peak_2_end": "Heures creuses plage 2 — fin (HH:MM)",
+          "ema_enabled": "Apprentissage de la charge de fond (EMA)"
         },
         "data_description": {
           "dispatch_threshold": "Score global minimum pour piloter les appareils (0–1).",
           "optimizer_alpha": "Équilibre entre minimiser la facture et maximiser l'autoconsommation.",
           "off_peak_1_start": "Ex : 22:00 pour un contrat HC 22h–6h. Laisser vide si inutilisé.",
-          "off_peak_2_start": "Deuxième plage HC (ex : 12:00–14:00). Laisser vide si inutilisée."
+          "off_peak_2_start": "Deuxième plage HC (ex : 12:00–14:00). Laisser vide si inutilisée.",
+          "ema_enabled": "Si désactivé, le profil de consommation de fond est figé et ne s'adapte plus aux nouvelles mesures."
         }
       }
     },
@@ -230,7 +232,8 @@
           "off_peak_1_start": "Heures creuses plage 1 — début (HH:MM)",
           "off_peak_1_end": "Heures creuses plage 1 — fin (HH:MM)",
           "off_peak_2_start": "Heures creuses plage 2 — début (HH:MM)",
-          "off_peak_2_end": "Heures creuses plage 2 — fin (HH:MM)"
+          "off_peak_2_end": "Heures creuses plage 2 — fin (HH:MM)",
+          "ema_enabled": "Apprentissage de la charge de fond (EMA)"
         }
       },
       "devices_select": {

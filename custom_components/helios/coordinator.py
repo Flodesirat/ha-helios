@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
+    CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED,
     CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL,
     CONF_PV_POWER_ENTITY, CONF_GRID_POWER_ENTITY, CONF_HOUSE_POWER_ENTITY,
     CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY, CONF_FORECAST_ENTITY,
@@ -274,15 +275,16 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         # EMA update: net base load = house_w − currently-active Helios devices.
         # Use actual_power_w so a water heater whose internal thermostat has cut
         # (switch ON but 0 W draw) doesn't distort the base load estimate.
-        reader = ManagedDevice._make_ha_reader(self.hass)
-        helios_devices_w = sum(
-            d.actual_power_w(reader) for d in self.device_manager.devices if d.is_on
-        )
-        net_base_w = self.house_power_w - helios_devices_w
-        now = dt_util.now()
-        slot = (now.hour * 60 + now.minute) // 5
-        self.consumption_learner.update(slot, net_base_w)
-        self.consumption_learner.schedule_save()
+        if self._cfg.get(CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED):
+            reader = ManagedDevice._make_ha_reader(self.hass)
+            helios_devices_w = sum(
+                d.actual_power_w(reader) for d in self.device_manager.devices if d.is_on
+            )
+            net_base_w = self.house_power_w - helios_devices_w
+            now = dt_util.now()
+            slot = (now.hour * 60 + now.minute) // 5
+            self.consumption_learner.update(slot, net_base_w)
+            self.consumption_learner.schedule_save()
 
     def _compute_bat_available_w(self) -> float:
         """Estimate how much power the battery can contribute to device loads.

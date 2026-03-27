@@ -154,11 +154,13 @@
           "scan_interval_minutes": "Intervalle de mise à jour (min)",
           "mode": "Mode de fonctionnement",
           "dispatch_threshold": "Seuil de déclenchement",
-          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)"
+          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)",
+          "ema_enabled": "Apprentissage de la charge de fond (EMA)"
         },
         "data_description": {
           "dispatch_threshold": "Score global minimum pour piloter les appareils (0–1).",
-          "optimizer_alpha": "Équilibre entre minimiser la facture et maximiser l'autoconsommation."
+          "optimizer_alpha": "Équilibre entre minimiser la facture et maximiser l'autoconsommation.",
+          "ema_enabled": "Si désactivé, le profil de consommation de fond est figé et ne s'adapte plus aux nouvelles mesures."
         }
       }
     },
