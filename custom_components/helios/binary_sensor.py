@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
@@ -13,8 +14,6 @@ from homeassistant.util import slugify
 from .const import DOMAIN, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE
 from .coordinator import EnergyOptimizerCoordinator
 from .device_manager import ManagedDevice
-
-_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 def _epoch_to_iso(ts: float | None) -> str | None:
@@ -44,32 +43,28 @@ class DeviceControlSensor(CoordinatorEntity, BinarySensorEntity):
         device: ManagedDevice,
     ) -> None:
         super().__init__(coordinator)
-        self._entry   = entry
-        self._device  = device
-        slug          = slugify(device.name)
+        self._device = device
+        slug = slugify(device.name)
         self._attr_unique_id = f"{entry.entry_id}_device_{slug}"
         self._attr_has_entity_name = True
         self._attr_translation_key = "eo_device"
         self._attr_translation_placeholders = {"name": device.name}
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Helios",
-            "manufacturer": "Community",
-            "model": "Helios",
-            "entry_type": "service",
-        }
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Helios",
+            manufacturer="Community",
+            model="Helios",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
     @property
     def is_on(self) -> bool:
-        return self._device.is_on
+        return bool(self._device.is_on)
 
     @property
     def extra_state_attributes(self) -> dict:
         d = self._device
-        attrs = {
+        attrs: dict = {
             "device_type":   d.device_type,
             "turned_on_at":  _epoch_to_iso(d.turned_on_at),
             "turned_off_at": _epoch_to_iso(d.turned_off_at),
