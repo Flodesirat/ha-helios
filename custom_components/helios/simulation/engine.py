@@ -138,8 +138,11 @@ def _effective_score(
     if managed is not None and _HAS_MANAGED:
         reader = dev.make_state_reader()
         return managed.effective_score(reader, surplus_w, bat_available_w, now=sim_now)
-    # Fallback: inline simplified scoring
-    fit = _fit_score_inline(dev, surplus_w, bat_available_w)
+    # Fallback: use static method from ManagedDevice when available, else inline
+    if _HAS_MANAGED:
+        fit = _ManagedDevice.compute_fit_score(dev.power_w, surplus_w, bat_available_w)
+    else:
+        fit = _fit_score_inline(dev, surplus_w, bat_available_w)
     urg = _urgency_inline(dev)
     pri = dev.priority / 10.0
     total_w = dev.w_priority + dev.w_fit + dev.w_urgency
