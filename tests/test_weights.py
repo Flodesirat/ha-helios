@@ -198,43 +198,83 @@ class TestSocScoring:
 # ---------------------------------------------------------------------------
 
 class TestForecastScoring:
-    """_score_forecast non-monotone curve."""
+    """_score_forecast density-based curve (monotone decreasing).
 
-    def _engine(self) -> ScoringEngine:
+    density = forecast_kwh / (peak_pv_kw × hours_remaining)
+    high density → defer (low score), low density → urgency (high score).
+    """
+
+    def _engine(self, peak_pv_w=3000.0) -> ScoringEngine:
         return ScoringEngine({
-            "weight_pv_surplus": 0.0,
-            "weight_tempo":      0.0,
+            "weight_pv_surplus":  0.0,
+            "weight_tempo":       0.0,
             "weight_battery_soc": 0.0,
-            "weight_forecast":   1.0,
+            "weight_forecast":    1.0,
+            "peak_pv_w":          peak_pv_w,
         })
 
     def test_no_forecast_returns_neutral(self):
         eng = self._engine()
-        assert eng.compute({}) == 0.5
-        assert eng.compute({"forecast_kwh": None}) == 0.5
+        assert eng.compute({}) == pytest.approx(0.5)
+        assert eng.compute({"forecast_kwh": None}) == pytest.approx(0.5)
 
     def test_zero_forecast_returns_neutral(self):
         eng = self._engine()
-        assert eng.compute({"forecast_kwh": 0.0}) == 0.5
+        assert eng.compute({"forecast_kwh": 0.0}) == pytest.approx(0.5)
 
-    def test_low_forecast_high_urgency(self):
-        """1 kWh remaining → urgency, score > 0.5."""
-        eng = self._engine()
-        score = eng.compute({"forecast_kwh": 1.0})
-        assert score > 0.5, f"Expected urgency score > 0.5, got {score}"
+    def test_low_density_high_urgency(self):
+        """Near sunset with little left → density low → score near 0.9."""
+        eng = self._engine(peak_pv_w=3000)
+        # hour=19, hours_remaining=1h, forecast=0.2 kWh → density=0.2/(3×1)=0.067
+        score = eng.compute({"forecast_kwh": 0.2, "hour": 19})
+        assert score >= 0.85, f"Expected urgency score ≥ 0.85, got {score}"
 
-    def test_high_forecast_low_score(self):
-        """15 kWh remaining → defer, score < 0.5."""
-        eng = self._engine()
-        score = eng.compute({"forecast_kwh": 15.0})
-        assert score < 0.5, f"Expected deferred score < 0.5, got {score}"
+    def test_high_density_strong_defer(self):
+        """Morning, sunny forecast → density ≥ 1 → score = 0.1."""
+        eng = self._engine(peak_pv_w=3000)
+        # hour=9, hours_remaining=11h, forecast=36 kWh → density=36/(3×11)=1.09
+        score = eng.compute({"forecast_kwh": 36.0, "hour": 9})
+        assert score == pytest.approx(0.10)
 
-    def test_curve_is_non_monotone(self):
-        """Score at 1 kWh should be higher than at 7 kWh (non-monotone curve)."""
+    def test_monotone_decreasing_with_forecast(self):
+        """More forecast remaining at same hour → score must not increase."""
+        eng = self._engine(peak_pv_w=3000)
+        forecasts = [0.5, 2.0, 5.0, 10.0, 20.0]
+        scores = [eng.compute({"forecast_kwh": f, "hour": 12}) for f in forecasts]
+        for i in range(len(scores) - 1):
+            assert scores[i] >= scores[i + 1], (
+                f"Score increased from forecast={forecasts[i]} ({scores[i]:.3f}) "
+                f"to forecast={forecasts[i+1]} ({scores[i+1]:.3f})"
+            )
+
+    def test_end_of_day_low_remaining_triggers_urgency(self):
+        """Near sunset with little left → urgency; sunny morning → defer."""
+        eng = self._engine(peak_pv_w=3000)
+        # 17h / 1 kWh → density=1/(3×3)=0.11 → urgency
+        score_end_of_day = eng.compute({"forecast_kwh": 1.0, "hour": 17})
+        # 10h / 20 kWh → density=20/(3×10)=0.67 → defer
+        score_sunny_morning = eng.compute({"forecast_kwh": 20.0, "hour": 10})
+        assert score_end_of_day > score_sunny_morning, (
+            "End-of-day with little remaining must be more urgent than a sunny morning"
+        )
+
+    def test_scales_with_installation_size(self):
+        """A large installation should defer more for the same absolute kWh."""
+        small = self._engine(peak_pv_w=2000)
+        large = self._engine(peak_pv_w=6000)
+        # 6 kWh at noon: small installation has density=6/(2×8)=0.375, large=6/(6×8)=0.125
+        score_small = small.compute({"forecast_kwh": 6.0, "hour": 12})
+        score_large = large.compute({"forecast_kwh": 6.0, "hour": 12})
+        assert score_small < score_large, (
+            "Large installation should see 6 kWh as less urgent than small installation"
+        )
+
+    def test_score_range_always_01(self):
         eng = self._engine()
-        score_1kwh = eng.compute({"forecast_kwh": 1.0})
-        score_7kwh = eng.compute({"forecast_kwh": 7.0})
-        assert score_1kwh > score_7kwh
+        for hour in (6, 9, 12, 15, 18, 20):
+            for kwh in (0.0, 0.5, 2.0, 5.0, 15.0, 30.0):
+                s = eng.compute({"forecast_kwh": kwh, "hour": hour})
+                assert 0.0 <= s <= 1.0, f"hour={hour}, kwh={kwh} → score={s}"
 
 
 # ---------------------------------------------------------------------------

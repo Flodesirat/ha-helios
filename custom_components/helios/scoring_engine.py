@@ -8,9 +8,11 @@ from .const import (
     CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
     CONF_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
+    CONF_PEAK_PV_W,
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
     DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_FORECAST,
     DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
+    DEFAULT_PEAK_PV_W,
     TEMPO_BLUE, TEMPO_WHITE, TEMPO_RED,
     normalize_tempo_color,
 )
@@ -34,6 +36,7 @@ class ScoringEngine:
         self.capacity_kwh = config.get(CONF_BATTERY_CAPACITY_KWH, 5.0)
         self.soc_min    = float(config.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
         self.soc_max    = float(config.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX))
+        self.peak_pv_kw = float(config.get(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W)) / 1000.0
 
     # ------------------------------------------------------------------
     # Public API
@@ -114,32 +117,37 @@ class ScoringEngine:
         return 1.0
 
     def _score_forecast(self, data: dict[str, Any]) -> float:
-        """Score based on remaining solar production forecast for today.
+        """Score based on production density: remaining forecast vs. expected potential.
 
-        The entity reports kWh still to be produced for the rest of the day.
-        It can be revised upward when the sky clears (as seen in real data).
+        density = forecast_kwh / (peak_pv_kw × hours_remaining_of_sun)
 
-        Curve (non-monotone):
-          None / unavailable  → 0.5  neutral
-          0 kWh (sun set)     → 0.5  neutral — surplus scoring takes over
-          0–2 kWh             → 0.5→0.8  urgency: last chance to use PV today
-          2–5 kWh             → 0.8→0.4  sun fading, act now but not panic
-          5–10 kWh            → 0.4→0.2  plenty of sun to come, be patient
-          ≥ 10 kWh            → 0.2  strong defer: wait for production peak
+        This single dimensionless ratio encodes both the installation size and
+        the time of day — no hardcoded kWh thresholds needed.
+
+          density ≥ 1.0  → 0.10  full clear-sky day ahead → defer strongly
+          0.5 ≤ d < 1.0  → 0.10→0.50  decent production coming → defer
+          0.1 ≤ d < 0.5  → 0.50→0.85  sun fading or cloudy → act progressively
+          d < 0.1        → 0.90  last scraps / near sunset → urgency
+
+          forecast None or 0 → 0.5  neutral (night: surplus scoring takes over)
+
+        Sunset is approximated at 20 h; remaining window is clamped to ≥ 0.5 h
+        to avoid division by zero near nightfall.
         """
         forecast_kwh = data.get("forecast_kwh")
-        if forecast_kwh is None:
+        if forecast_kwh is None or forecast_kwh <= 0.0:
             return 0.5
-        if forecast_kwh <= 0.0:
-            return 0.5
-        if forecast_kwh <= 2.0:
-            # Last kWhs of the day → urgency ramp up
-            return 0.5 + 0.3 * (forecast_kwh / 2.0)
-        if forecast_kwh <= 5.0:
-            # Afternoon decline: high urgency → fading
-            return 0.8 - 0.4 * (forecast_kwh - 2.0) / 3.0
-        if forecast_kwh <= 10.0:
-            # Morning/midday: decent sun ahead → defer
-            return 0.4 - 0.2 * (forecast_kwh - 5.0) / 5.0
-        # Very high forecast: strongly defer, wait for production peak
-        return 0.2
+
+        hour = float(data.get("hour", 12))
+        hours_remaining = max(0.5, 20.0 - hour)
+        density = forecast_kwh / (self.peak_pv_kw * hours_remaining)
+
+        if density >= 1.0:
+            return 0.10
+        if density >= 0.5:
+            # 0.10 → 0.50 as density falls from 1.0 to 0.5
+            return 0.10 + 0.40 * (1.0 - density) / 0.5
+        if density >= 0.1:
+            # 0.50 → 0.85 as density falls from 0.5 to 0.1
+            return 0.50 + 0.35 * (0.5 - density) / 0.4
+        return 0.90

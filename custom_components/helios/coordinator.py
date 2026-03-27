@@ -336,6 +336,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "tempo_color":      self.tempo_color,
             "tempo_next_color": self.tempo_next_color,
             "forecast_kwh":     self.forecast_kwh,
+            "hour":             dt_util.now().hour,
         }
 
     def _snapshot(self) -> dict[str, Any]:
