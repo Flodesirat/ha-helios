@@ -365,7 +365,9 @@ class DevicePowerSensor(_BaseEOSensor):
     def native_value(self) -> float:
         if not self._device.is_on:
             return 0.0
-        return float(self._device.actual_power_w(self.coordinator.hass))
+        from .device_manager import ManagedDevice
+        reader = ManagedDevice._make_ha_reader(self.coordinator.hass)
+        return float(self._device.actual_power_w(reader))
 
     @property
     def extra_state_attributes(self) -> dict:

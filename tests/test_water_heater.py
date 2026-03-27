@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.helios.device_manager import ManagedDevice, _parse_off_peak_slots
+from custom_components.helios.device_manager import ManagedDevice, StateReader, _parse_off_peak_slots
 from custom_components.helios.const import (
     DEVICE_TYPE_WATER_HEATER,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY, CONF_DEVICE_POWER_W,
@@ -84,6 +84,12 @@ def _hass(temp: float, off_peak_min: float = OFF_PEAK_MIN) -> MagicMock:
     return hass
 
 
+def _reader(temp: float, off_peak_min: float = OFF_PEAK_MIN) -> StateReader:
+    """StateReader equivalent of _hass — no HA dependency needed."""
+    states = {TEMP_ENTITY: str(temp), MIN_ENTITY: str(off_peak_min)}
+    return lambda eid: states.get(eid, "unavailable")
+
+
 # ---------------------------------------------------------------------------
 # Off-peak detection helpers
 # ---------------------------------------------------------------------------
@@ -152,14 +158,14 @@ class TestMustRunNow:
         With off_peak_min=50 and default hysteresis=3°C, trigger threshold = 47°C.
         """
         device = _make_device()
-        hass = _hass(temp=44.0, off_peak_min=50.0)  # 44 < 50 - 3 = 47
+        reader = _reader(temp=44.0, off_peak_min=50.0)  # 44 < 50 - 3 = 47
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(23, 0)),
             )
-            assert device.must_run_now(hass) is True
+            assert device.must_run_now(reader) is True
 
     def test_off_peak_within_hysteresis_band_no_force(self):
         """During HC, temp in hysteresis band [47–50°C] → must_run = False.
@@ -168,55 +174,55 @@ class TestMustRunNow:
         can still turn it on if surplus is available.
         """
         device = _make_device()
-        hass = _hass(temp=48.0, off_peak_min=50.0)  # 48 is between 47 and 50
+        reader = _reader(temp=48.0, off_peak_min=50.0)  # 48 is between 47 and 50
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(23, 0)),
             )
-            assert device.must_run_now(hass) is False
+            assert device.must_run_now(reader) is False
 
     def test_off_peak_at_min_no_longer_forces(self):
         """During HC, temp exactly at off-peak min → must_run = False."""
         device = _make_device()
-        hass = _hass(temp=50.0, off_peak_min=50.0)  # temp == min
+        reader = _reader(temp=50.0, off_peak_min=50.0)  # temp == min
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(23, 0)),
             )
-            assert device.must_run_now(hass) is False
+            assert device.must_run_now(reader) is False
 
     def test_off_peak_above_min_no_longer_forces(self):
         """During HC, temp above off-peak min → must_run = False."""
         device = _make_device()
-        hass = _hass(temp=52.0, off_peak_min=50.0)
+        reader = _reader(temp=52.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(1, 0)),
             )
-            assert device.must_run_now(hass) is False
+            assert device.must_run_now(reader) is False
 
     def test_on_peak_below_target_no_force(self):
         """Outside HC, temp below target → must_run = False (normal scoring applies)."""
         device = _make_device()
-        hass = _hass(temp=48.0)
+        reader = _reader(temp=48.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(14, 0)),  # on-peak hour
             )
-            assert device.must_run_now(hass) is False
+            assert device.must_run_now(reader) is False
 
     def test_legionella_safety_always_forces_on(self):
         """Below legionella floor → must_run = True at any time of day."""
         device = _make_device()
-        hass = _hass(temp=44.0)  # below LEGIONELLA = 45
+        reader = _reader(temp=44.0)  # below LEGIONELLA = 45
 
         # On-peak hour
         with pytest.MonkeyPatch.context() as mp:
@@ -224,7 +230,7 @@ class TestMustRunNow:
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(14, 0)),
             )
-            assert device.must_run_now(hass) is True
+            assert device.must_run_now(reader) is True
 
         # Off-peak hour — also forces
         with pytest.MonkeyPatch.context() as mp:
@@ -232,7 +238,7 @@ class TestMustRunNow:
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(23, 0)),
             )
-            assert device.must_run_now(hass) is True
+            assert device.must_run_now(reader) is True
 
 
     def test_off_peak_too_close_to_end_no_force(self):
@@ -244,42 +250,42 @@ class TestMustRunNow:
         device_cfg, global_cfg = _wh_config()
         device_cfg[CONF_DEVICE_MIN_ON_MINUTES] = 60
         device = ManagedDevice(device_cfg, global_cfg)
-        hass = _hass(temp=46.0, off_peak_min=50.0)  # 46 < 47 → would trigger without guard
+        reader = _reader(temp=46.0, off_peak_min=50.0)  # 46 < 47 → would trigger without guard
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(5, 10)),  # 50 min before 06:00 end < 60 min
             )
-            assert device.must_run_now(hass) is False
+            assert device.must_run_now(reader) is False
 
     def test_off_peak_exactly_at_cutoff_forces(self):
         """HC ends at 06:00, min_on_minutes=60 → trigger allowed at exactly 05:00 (60 min left)."""
         device_cfg, global_cfg = _wh_config()
         device_cfg[CONF_DEVICE_MIN_ON_MINUTES] = 60
         device = ManagedDevice(device_cfg, global_cfg)
-        hass = _hass(temp=46.0, off_peak_min=50.0)
+        reader = _reader(temp=46.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(5, 0)),  # exactly 60 min before 06:00
             )
-            assert device.must_run_now(hass) is True
+            assert device.must_run_now(reader) is True
 
     def test_off_peak_early_morning_forces(self):
         """HC at 02:00, 4h before end → must_run = True."""
         device_cfg, global_cfg = _wh_config()
         device_cfg[CONF_DEVICE_MIN_ON_MINUTES] = 60
         device = ManagedDevice(device_cfg, global_cfg)
-        hass = _hass(temp=46.0, off_peak_min=50.0)
+        reader = _reader(temp=46.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(2, 0)),  # 4 h before 06:00 end
             )
-            assert device.must_run_now(hass) is True
+            assert device.must_run_now(reader) is True
 
 
 # ---------------------------------------------------------------------------
@@ -291,67 +297,67 @@ class TestIsSatisfied:
     def test_off_peak_satisfied_at_off_peak_min(self):
         """During HC, temp == off-peak min → satisfied (heater cuts)."""
         device = _make_device()
-        hass = _hass(temp=50.0, off_peak_min=50.0)
+        reader = _reader(temp=50.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(23, 0)),
             )
-            assert device.is_satisfied(hass) is True
+            assert device.is_satisfied(reader) is True
 
     def test_off_peak_satisfied_above_off_peak_min(self):
         """During HC, temp > off-peak min → satisfied."""
         device = _make_device()
-        hass = _hass(temp=53.0, off_peak_min=50.0)
+        reader = _reader(temp=53.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(3, 0)),
             )
-            assert device.is_satisfied(hass) is True
+            assert device.is_satisfied(reader) is True
 
     def test_off_peak_not_satisfied_below_off_peak_min(self):
         """During HC, temp < off-peak min → NOT satisfied."""
         device = _make_device()
-        hass = _hass(temp=47.0, off_peak_min=50.0)
+        reader = _reader(temp=47.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(23, 0)),
             )
-            assert device.is_satisfied(hass) is False
+            assert device.is_satisfied(reader) is False
 
     def test_on_peak_satisfied_at_target(self):
         """Outside HC, temp >= target → satisfied."""
         device = _make_device()
-        hass = _hass(temp=55.0)  # == TARGET
+        reader = _reader(temp=55.0)  # == TARGET
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(14, 0)),
             )
-            assert device.is_satisfied(hass) is True
+            assert device.is_satisfied(reader) is True
 
     def test_on_peak_not_satisfied_below_target(self):
         """Outside HC, temp below target → NOT satisfied."""
         device = _make_device()
-        hass = _hass(temp=52.0)  # below TARGET = 55
+        reader = _reader(temp=52.0)  # below TARGET = 55
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(14, 0)),
             )
-            assert device.is_satisfied(hass) is False
+            assert device.is_satisfied(reader) is False
 
     def test_off_peak_not_satisfied_if_above_min_but_below_target(self):
         """During HC at 52°C with min=50 and target=55: satisfied (min reached, HC done)."""
         device = _make_device()
-        hass = _hass(temp=52.0, off_peak_min=50.0)  # 52 > 50, but < 55
+        reader = _reader(temp=52.0, off_peak_min=50.0)  # 52 > 50, but < 55
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
@@ -359,7 +365,7 @@ class TestIsSatisfied:
                 _fixed_datetime(time(23, 0)),
             )
             # During HC the satisfaction threshold is off_peak_min, not target
-            assert device.is_satisfied(hass) is True
+            assert device.is_satisfied(reader) is True
 
 
 # ---------------------------------------------------------------------------
@@ -372,55 +378,55 @@ class TestUrgencyModifier:
         """Outside HC, temp well below target → urgency close to 1."""
         device = _make_device()
         # temp = LEGIONELLA = 45, target = 55, range = 10 → urgency = (55-45)/10 = 1.0
-        hass = _hass(temp=45.0)
+        reader = _reader(temp=45.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(14, 0)),
             )
-            urgency = device.urgency_modifier(hass)
+            urgency = device.urgency_modifier(reader)
             assert urgency == pytest.approx(1.0)
 
     def test_on_peak_close_to_target_low_urgency(self):
         """Outside HC, temp just below target → urgency close to 0."""
         device = _make_device()
         # temp = 54, target = 55, range = 10 → urgency = 1/10 = 0.1
-        hass = _hass(temp=54.0)
+        reader = _reader(temp=54.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(14, 0)),
             )
-            urgency = device.urgency_modifier(hass)
+            urgency = device.urgency_modifier(reader)
             assert urgency == pytest.approx(0.1)
 
     def test_off_peak_far_from_min_is_urgent(self):
         """During HC, temp well below off-peak min → high urgency."""
         device = _make_device()
         # temp=45, off_peak_min=50, target=55, range = 55-50=5 → deficit=50-45=5 → 1.0
-        hass = _hass(temp=45.0, off_peak_min=50.0)
+        reader = _reader(temp=45.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(23, 0)),
             )
-            urgency = device.urgency_modifier(hass)
+            urgency = device.urgency_modifier(reader)
             assert urgency == pytest.approx(1.0)
 
     def test_off_peak_at_min_zero_urgency(self):
         """During HC, temp at off-peak min → urgency = 0 (no deficit)."""
         device = _make_device()
-        hass = _hass(temp=50.0, off_peak_min=50.0)
+        reader = _reader(temp=50.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.device_manager.datetime",
                 _fixed_datetime(time(23, 0)),
             )
-            urgency = device.urgency_modifier(hass)
+            urgency = device.urgency_modifier(reader)
             assert urgency == pytest.approx(0.0)
 
 

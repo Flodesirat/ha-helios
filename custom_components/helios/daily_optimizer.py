@@ -32,19 +32,33 @@ from .const import (
     CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS,
     CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA,
     TEMPO_COLORS, normalize_tempo_color,
-    CONF_DEVICE_NAME, CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
+    CONF_DEVICE_NAME, CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY, CONF_DEVICE_TYPE,
     CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
     CONF_DEVICE_MUST_RUN_DAILY,
     CONF_DEVICE_WEIGHT_PRIORITY, CONF_DEVICE_WEIGHT_FIT, CONF_DEVICE_WEIGHT_URGENCY,
     DEFAULT_DEVICE_PRIORITY, DEFAULT_DEVICE_MIN_ON_MINUTES,
     DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
     DEFAULT_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_FIT, DEFAULT_DEVICE_WEIGHT_URGENCY,
+    DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_EV, DEVICE_TYPE_POOL,
+    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
+    CONF_WH_TEMP_MIN_ENTITY, CONF_WH_OFF_PEAK_HYSTERESIS_K,
+    DEFAULT_WH_TEMP_TARGET, DEFAULT_WH_TEMP_MIN, DEFAULT_WH_OFF_PEAK_HYSTERESIS_K,
+    CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY, DEFAULT_EV_SOC_TARGET,
+    CONF_POOL_FILTRATION_ENTITY,
+    CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
+    CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
 )
 
 if TYPE_CHECKING:
     from .coordinator import EnergyOptimizerCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+try:
+    from .device_manager import ManagedDevice as _CheckManagedDevice  # noqa: F401
+    _HAS_MANAGED_DISPATCH = True
+except ImportError:
+    _HAS_MANAGED_DISPATCH = False
 
 # ---------------------------------------------------------------------------
 # Seasonal helpers
@@ -107,10 +121,24 @@ def cloud_from_forecast(forecast_kwh: float, theoretical_kwh: float) -> str:
 # HA device config → SimDevice
 # ---------------------------------------------------------------------------
 
-def ha_devices_to_sim(devices_config: list[dict]) -> list:
-    """Convert HA config-entry device dicts to SimDevice objects for the simulation."""
-    # Import here to avoid circular dependency at module load time
+def ha_devices_to_sim(
+    devices_config: list[dict],
+    global_cfg: dict | None = None,
+    hass=None,
+) -> tuple[list, list]:
+    """Convert HA config-entry device dicts to (SimDevice, ManagedDevice) pairs.
+
+    Returns a tuple (sim_devices, managed_devices). Both lists are parallel —
+    sim_devices[i] and managed_devices[i] refer to the same physical device.
+
+    Args:
+        devices_config: Device dicts from the config entry.
+        global_cfg: Global config dict (used for off-peak slot parsing in ManagedDevice).
+        hass: Optional HomeAssistant instance; when provided, reads current physical
+            state (WH temp, EV SOC) from HA to seed the simulation accurately.
+    """
     from .simulation.devices import SimDevice
+    from .device_manager import ManagedDevice
 
     def _t(v: str, default: str) -> float:
         """Parse 'HH:MM' time string to decimal hours, or return default."""
@@ -126,14 +154,33 @@ def ha_devices_to_sim(devices_config: list[dict]) -> list:
         h, m = default.split(":")
         return int(h) + int(m) / 60.0
 
-    result = []
+    def _read_float(entity_id: str | None, default: float) -> float:
+        if not entity_id or hass is None:
+            return default
+        state = hass.states.get(entity_id)
+        if state and state.state not in ("unavailable", "unknown"):
+            try:
+                return float(state.state)
+            except ValueError:
+                pass
+        return default
+
+    sim_devices = []
+    managed_devices = []
+    gcfg = global_cfg or {}
+
     for d in devices_config:
         power_w = float(d.get(CONF_DEVICE_POWER_W, 0))
         if power_w <= 0:
             continue
-        result.append(SimDevice(
+
+        dev_type = d.get(CONF_DEVICE_TYPE, "generic")
+
+        # ---- Build SimDevice with physical state ----
+        sd_kwargs: dict = dict(
             name=d.get(CONF_DEVICE_NAME, "unknown"),
             power_w=power_w,
+            device_type=dev_type,
             allowed_start=_t(d.get(CONF_DEVICE_ALLOWED_START, DEFAULT_ALLOWED_START), DEFAULT_ALLOWED_START),
             allowed_end=_t(d.get(CONF_DEVICE_ALLOWED_END, DEFAULT_ALLOWED_END), DEFAULT_ALLOWED_END),
             priority=int(d.get(CONF_DEVICE_PRIORITY, DEFAULT_DEVICE_PRIORITY)),
@@ -142,8 +189,51 @@ def ha_devices_to_sim(devices_config: list[dict]) -> list:
             w_priority=float(d.get(CONF_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_PRIORITY)),
             w_fit=float(d.get(CONF_DEVICE_WEIGHT_FIT, DEFAULT_DEVICE_WEIGHT_FIT)),
             w_urgency=float(d.get(CONF_DEVICE_WEIGHT_URGENCY, DEFAULT_DEVICE_WEIGHT_URGENCY)),
-        ))
-    return result
+        )
+
+        if dev_type == DEVICE_TYPE_WATER_HEATER:
+            wh_temp_entity = d.get(CONF_WH_TEMP_ENTITY)
+            wh_temp_default = float(d.get(CONF_WH_TEMP_TARGET, DEFAULT_WH_TEMP_TARGET)) - 5.0
+            sd_kwargs.update(
+                wh_temp=_read_float(wh_temp_entity, wh_temp_default),
+                wh_temp_target=float(d.get(CONF_WH_TEMP_TARGET, DEFAULT_WH_TEMP_TARGET)),
+                wh_temp_min=float(d.get(CONF_WH_TEMP_MIN, DEFAULT_WH_TEMP_MIN)),
+                wh_off_peak_hysteresis_k=float(d.get(CONF_WH_OFF_PEAK_HYSTERESIS_K, DEFAULT_WH_OFF_PEAK_HYSTERESIS_K)),
+                wh_temp_entity=wh_temp_entity,
+                wh_temp_min_entity=d.get(CONF_WH_TEMP_MIN_ENTITY),
+            )
+
+        elif dev_type == DEVICE_TYPE_EV:
+            ev_soc_entity = d.get(CONF_EV_SOC_ENTITY)
+            sd_kwargs.update(
+                ev_soc=_read_float(ev_soc_entity, 50.0),
+                ev_soc_target=float(d.get(CONF_EV_SOC_TARGET, DEFAULT_EV_SOC_TARGET)),
+                ev_plugged=True,  # assume plugged in simulation
+                ev_soc_entity=ev_soc_entity,
+                ev_plugged_entity=d.get(CONF_EV_PLUGGED_ENTITY),
+            )
+
+        elif dev_type == DEVICE_TYPE_POOL:
+            pool_ent = d.get(CONF_POOL_FILTRATION_ENTITY)
+            pool_h = _read_float(pool_ent, 0.0)
+            sd_kwargs.update(
+                run_quota_h=pool_h if pool_h > 0 else None,
+                pool_required_min=pool_h * 60.0 if pool_h > 0 else None,
+                pool_filtration_entity=pool_ent,
+            )
+
+        sim_dev = SimDevice(**sd_kwargs)
+
+        # ---- Build ManagedDevice (real dispatch logic) ----
+        managed_dev = ManagedDevice(d, gcfg)
+        # Seed pool state from simulation initial values
+        if dev_type == DEVICE_TYPE_POOL and sim_dev.pool_required_min is not None:
+            managed_dev.pool_required_minutes_today = sim_dev.pool_required_min
+
+        sim_devices.append(sim_dev)
+        managed_devices.append(managed_dev)
+
+    return sim_devices, managed_devices
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +320,17 @@ async def async_run_daily_optimization(
     # ---- Device list from HA config ----
     devices_config = cfg.get(CONF_DEVICES, [])
 
+    # ---- Pre-read physical state from HA (async context, before executor) ----
+    # This seeds the simulation with real WH temperature and EV SOC at 05:00.
+    initial_sim_devices, initial_managed_devices = ha_devices_to_sim(
+        devices_config, global_cfg=cfg, hass=hass
+    )
+    _LOGGER.debug(
+        "Helios optimizer: %d devices mapped for simulation (managed dispatch: %s)",
+        len(initial_sim_devices),
+        _HAS_MANAGED_DISPATCH,
+    )
+
     # ---- Run optimization + capture schedule in executor ----
     def _run_optimization():
         try:
@@ -276,7 +377,13 @@ async def async_run_daily_optimization(
         )
 
         def _devices_fn():
-            return ha_devices_to_sim(devices_config)
+            # Return fresh (sim_devices, managed_devices) pairs each run.
+            # SimDevice has mutable runtime state, so we need a fresh copy per run.
+            import copy
+            return (
+                copy.deepcopy(initial_sim_devices),
+                copy.deepcopy(initial_managed_devices),
+            )
 
         objective_alpha  = float(cfg.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA))
         base_load_noise  = float(cfg.get(CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE))
@@ -307,7 +414,8 @@ async def async_run_daily_optimization(
             },
             dispatch_threshold=best.threshold,
         )
-        sim_result = sim_run(best_cfg, _devices_fn())
+        best_sim_devices, best_managed_devices = _devices_fn()
+        sim_result = sim_run(best_cfg, best_sim_devices, managed_devices=best_managed_devices)
 
         # Aggregate 5-min steps into 24 hourly entries
         steps_per_hour = 12

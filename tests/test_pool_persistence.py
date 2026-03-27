@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.helios.device_manager import DeviceManager, ManagedDevice
+from custom_components.helios.device_manager import DeviceManager, ManagedDevice, StateReader
 from custom_components.helios.const import (
     DEVICE_TYPE_POOL,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
@@ -47,12 +47,9 @@ def _make_manager(stored_data: dict) -> DeviceManager:
     return mgr
 
 
-def _hass_with_filtration(minutes: float) -> MagicMock:
-    hass = MagicMock()
-    state = MagicMock()
-    state.state = str(minutes / 60.0)  # entity in hours
-    hass.states.get.side_effect = lambda eid: state if eid == FILTRATION_ENTITY else None
-    return hass
+def _reader_with_filtration(minutes: float) -> StateReader:
+    hours = str(minutes / 60.0)  # entity in hours
+    return lambda eid: hours if eid == FILTRATION_ENTITY else None
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +105,8 @@ class TestPoolRequiredPersistence:
         assert device.pool_required_minutes_today is None
 
         # Simulate dispatch at 06:00 — entity says 3 h = 180 min
-        hass = _hass_with_filtration(180.0)
-        device.try_capture_pool_required(hass, current_hour=6)
+        reader = _reader_with_filtration(180.0)
+        device.try_capture_pool_required(reader, current_hour=6)
 
         assert device.pool_required_minutes_today == pytest.approx(180.0)
 
@@ -127,7 +124,7 @@ class TestPoolRequiredPersistence:
         await mgr.async_setup()
 
         device = mgr.devices[0]
-        hass = _hass_with_filtration(180.0)
-        device.try_capture_pool_required(hass, current_hour=4)
+        reader = _reader_with_filtration(180.0)
+        device.try_capture_pool_required(reader, current_hour=4)
 
         assert device.pool_required_minutes_today is None

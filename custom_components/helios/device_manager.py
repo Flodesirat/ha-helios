@@ -5,9 +5,15 @@ import logging
 import time as time_mod
 from collections import deque
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant
+
+# A StateReader reads a HA entity state and returns its raw string value,
+# or None if the entity is unavailable / unknown / missing.
+# Used to decouple pure decision logic from the HA runtime so the same
+# methods can be called from the simulation without a real hass instance.
+StateReader = Callable[[str], str | None]
 from homeassistant.helpers.storage import Store
 
 from .const import (
@@ -221,7 +227,7 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     # Actual power — uses measured entity when available, else nominal
     # ------------------------------------------------------------------
-    def actual_power_w(self, hass: HomeAssistant) -> float:
+    def actual_power_w(self, reader: StateReader) -> float:
         """Return current power draw in W.
 
         Priority:
@@ -235,11 +241,11 @@ class ManagedDevice:
         from the nominal (partial EV charge, variable pump speed, etc.).
         """
         if self.power_entity:
-            return self._state_float(hass, self.power_entity)
+            return self._state_float(reader, self.power_entity)
         if self.device_type == DEVICE_TYPE_WATER_HEATER and self.wh_power_entity:
-            return self._state_float(hass, self.wh_power_entity)
+            return self._state_float(reader, self.wh_power_entity)
         if self.device_type == DEVICE_TYPE_APPLIANCE and self.appliance_power_entity:
-            return self._state_float(hass, self.appliance_power_entity)
+            return self._state_float(reader, self.appliance_power_entity)
         return self.power_w
 
     # ------------------------------------------------------------------
@@ -276,46 +282,46 @@ class ManagedDevice:
             return float(end_m - now_m)
         return None
 
-    def _wh_off_peak_min(self, hass: HomeAssistant) -> float:
+    def _wh_off_peak_min(self, reader: StateReader) -> float:
         """Minimum temperature to reach during off-peak hours.
 
         Reads the configured entity; falls back to the static legionella floor.
         """
         if self.wh_temp_min_entity:
-            val = self._state_float(hass, self.wh_temp_min_entity, fallback=self.wh_temp_min)
+            val = self._state_float(reader, self.wh_temp_min_entity, fallback=self.wh_temp_min)
             return val
         return self.wh_temp_min
 
     # ------------------------------------------------------------------
     # Satisfaction — has the device reached its target?
     # ------------------------------------------------------------------
-    def is_satisfied(self, hass: HomeAssistant) -> bool:
+    def is_satisfied(self, reader: StateReader, now: datetime | None = None) -> bool:
         if self.device_type == DEVICE_TYPE_EV:
             if self.ev_plugged_entity:
-                plugged = self._state_bool(hass, self.ev_plugged_entity, fallback=True)
+                plugged = self._state_bool(reader, self.ev_plugged_entity, fallback=True)
             else:
                 plugged = self.ev_plugged_manual
             if not plugged:
                 return True  # car not plugged → nothing to do
-            return self._state_float(hass, self.ev_soc_entity) >= self.ev_soc_target
+            return self._state_float(reader, self.ev_soc_entity) >= self.ev_soc_target
 
         if self.device_type == DEVICE_TYPE_WATER_HEATER:
-            temp = self._state_float(hass, self.wh_temp_entity)
-            if self._is_off_peak(datetime.now().time()):
+            temp = self._state_float(reader, self.wh_temp_entity)
+            if self._is_off_peak((now or datetime.now()).time()):
                 # During off-peak: satisfied when the off-peak minimum is reached.
                 # must_run_now() forced us here; once the target is met we stop.
-                return temp >= self._wh_off_peak_min(hass)
+                return temp >= self._wh_off_peak_min(reader)
             return temp >= self.wh_temp_target
 
         if self.device_type == DEVICE_TYPE_HVAC:
-            current  = self._state_float(hass, self.hvac_temp_entity)
-            setpoint = self._state_float(hass, self.hvac_setpoint_entity)
+            current  = self._state_float(reader, self.hvac_temp_entity)
+            setpoint = self._state_float(reader, self.hvac_setpoint_entity)
             if self.hvac_mode == HVAC_MODE_HEAT:
                 return current >= setpoint - self.hvac_hysteresis_k
             return current <= setpoint + self.hvac_hysteresis_k  # cool
 
         if self.device_type == DEVICE_TYPE_POOL:
-            return self.pool_daily_run_minutes >= self._pool_required_minutes(hass)
+            return self.pool_daily_run_minutes >= self._pool_required_minutes(reader)
 
         if self.device_type == DEVICE_TYPE_APPLIANCE:
             # Appliance is "satisfied" when it's not waiting to run
@@ -326,34 +332,34 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     # Must-run override — ignore score, turn on unconditionally
     # ------------------------------------------------------------------
-    def must_run_now(self, hass: HomeAssistant) -> bool:
+    def must_run_now(self, reader: StateReader, now: datetime | None = None) -> bool:
         if self.device_type == DEVICE_TYPE_WATER_HEATER:
-            temp = self._state_float(hass, self.wh_temp_entity)
+            temp = self._state_float(reader, self.wh_temp_entity)
             # Safety: always force on below the static legionella floor.
             if temp < self.wh_temp_min:
                 return True
             # Off-peak: force on only when temperature is significantly below the target.
             # A hysteresis band prevents repeated short cycles when temp hovers near the minimum.
             # Trigger threshold = off_peak_min − hysteresis_k  (default 3 °C).
-            now = datetime.now().time()
-            if self._is_off_peak(now):
-                minutes_left = self._minutes_to_off_peak_end(now)
+            _now_t = (now or datetime.now()).time()
+            if self._is_off_peak(_now_t):
+                minutes_left = self._minutes_to_off_peak_end(_now_t)
                 # Don't start if there's less than min_on_minutes remaining in the
                 # off-peak slot: the heater would spill into peak hours.
                 if minutes_left is not None and minutes_left < self.min_on_minutes:
                     return False
-                return temp < self._wh_off_peak_min(hass) - self.wh_off_peak_hysteresis_k
+                return temp < self._wh_off_peak_min(reader) - self.wh_off_peak_hysteresis_k
             return False
 
         if self.device_type == DEVICE_TYPE_POOL:
             # Only considered in the last _POOL_MUST_RUN_WINDOW_H hours of the day.
             # Earlier, solar production may still cover the deficit naturally.
-            now      = datetime.now()
-            midnight = datetime.combine(now.date() + timedelta(days=1), time(0, 0))
-            minutes_left = (midnight - now).total_seconds() / 60
+            _now     = now or datetime.now()
+            midnight = datetime.combine(_now.date() + timedelta(days=1), time(0, 0))
+            minutes_left = (midnight - _now).total_seconds() / 60
             if minutes_left > _POOL_MUST_RUN_WINDOW_H * 60:
                 return False
-            required_m = self._pool_required_minutes(hass)
+            required_m = self._pool_required_minutes(reader)
             deficit_m  = max(0.0, required_m - self.pool_daily_run_minutes)
             if deficit_m <= 0:
                 return False
@@ -364,9 +370,9 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     # Urgency modifier [0..1] — how urgent is it to run this device now?
     # ------------------------------------------------------------------
-    def urgency_modifier(self, hass: HomeAssistant) -> float:
+    def urgency_modifier(self, reader: StateReader, now: datetime | None = None) -> float:
         if self.device_type == DEVICE_TYPE_EV:
-            soc = self._state_float(hass, self.ev_soc_entity, fallback=self.ev_soc_target)
+            soc = self._state_float(reader, self.ev_soc_entity, fallback=self.ev_soc_target)
             soc_deficit      = max(0.0, self.ev_soc_target - soc) / max(self.ev_soc_target, 1)
             departure_urgency = self._deadline_urgency(
                 self.ev_departure_time,
@@ -376,11 +382,11 @@ class ManagedDevice:
             return min(1.0, 0.6 * soc_deficit + 0.4 * departure_urgency)
 
         if self.device_type == DEVICE_TYPE_WATER_HEATER:
-            temp = self._state_float(hass, self.wh_temp_entity)
-            now  = datetime.now().time()
-            if self._is_off_peak(now):
+            temp = self._state_float(reader, self.wh_temp_entity)
+            _now_t = (now or datetime.now()).time()
+            if self._is_off_peak(_now_t):
                 # Off-peak: urgency is based on distance to the off-peak minimum.
-                off_peak_min = self._wh_off_peak_min(hass)
+                off_peak_min = self._wh_off_peak_min(reader)
                 temp_range   = max(self.wh_temp_target - off_peak_min, 1.0)
                 deficit      = max(0.0, off_peak_min - temp)
                 return min(1.0, deficit / temp_range)
@@ -390,19 +396,19 @@ class ManagedDevice:
             return min(1.0, deficit / temp_range)
 
         if self.device_type == DEVICE_TYPE_HVAC:
-            current  = self._state_float(hass, self.hvac_temp_entity)
-            setpoint = self._state_float(hass, self.hvac_setpoint_entity)
+            current  = self._state_float(reader, self.hvac_temp_entity)
+            setpoint = self._state_float(reader, self.hvac_setpoint_entity)
             deviation = abs(setpoint - current)
             return min(1.0, deviation / 3.0)  # max urgency at 3 °C off-target
 
         if self.device_type == DEVICE_TYPE_POOL:
-            required_m = self._pool_required_minutes(hass)
+            required_m = self._pool_required_minutes(reader)
             if required_m <= 0:
                 return 0.0
             deficit_m = max(0.0, required_m - self.pool_daily_run_minutes)
-            now      = datetime.now()
-            midnight = datetime.combine(now.date() + timedelta(days=1), time(0, 0))
-            minutes_left = max(1.0, (midnight - now).total_seconds() / 60)
+            _now     = now or datetime.now()
+            midnight = datetime.combine(_now.date() + timedelta(days=1), time(0, 0))
+            minutes_left = max(1.0, (midnight - _now).total_seconds() / 60)
             return min(1.0, deficit_m / minutes_left)
 
         if self.device_type == DEVICE_TYPE_APPLIANCE:
@@ -460,13 +466,14 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     def effective_score(
         self,
-        hass: HomeAssistant,
+        reader: StateReader,
         surplus_w: float,
         bat_available_w: float,
+        now: datetime | None = None,
     ) -> float:
         priority_score = self.priority / 10.0
         fit     = self.compute_fit_score(self.power_w, surplus_w, bat_available_w)
-        urgency = self.urgency_modifier(hass)
+        urgency = self.urgency_modifier(reader, now=now)
 
         total_w = self.w_priority + self.w_fit + self.w_urgency
         if total_w <= 0:
@@ -490,7 +497,7 @@ class ManagedDevice:
         if self.is_on:
             self.pool_daily_run_minutes += scan_interval_minutes
 
-    def try_capture_pool_required(self, hass: HomeAssistant, current_hour: int) -> None:
+    def try_capture_pool_required(self, reader: StateReader, current_hour: int) -> None:
         """Snapshot the required filtration minutes once at 05:00 (or on restart if already ≥ 05:00).
 
         Reading the entity live would cause ON/OFF oscillations as the pool
@@ -500,7 +507,7 @@ class ManagedDevice:
             return  # already captured today
         if current_hour < 5:
             return  # wait until 05:00
-        raw = self._pool_required_minutes_live(hass)
+        raw = self._pool_required_minutes_live(reader)
         if raw <= 0.0:
             return  # entity not ready yet — try again next cycle
         self.pool_required_minutes_today = raw
@@ -509,25 +516,18 @@ class ManagedDevice:
             self.name, raw, current_hour,
         )
 
-    def _pool_required_minutes_live(self, hass: HomeAssistant) -> float:
+    def _pool_required_minutes_live(self, reader: StateReader) -> float:
         """Read the filtration entity directly (only used for the 05:00 snapshot)."""
-        if not self.pool_filtration_entity:
-            return 0.0
-        state = hass.states.get(self.pool_filtration_entity)
-        if state is None or state.state in ("unavailable", "unknown"):
-            return 0.0
-        try:
-            return float(state.state) * 60.0  # hours → minutes
-        except ValueError:
-            return 0.0
+        raw = self._state_float(reader, self.pool_filtration_entity)
+        return raw * 60.0  # hours → minutes
 
-    def _pool_required_minutes(self, hass: HomeAssistant) -> float:
+    def _pool_required_minutes(self, reader: StateReader) -> float:
         """Return the stable daily snapshot, or live value if snapshot not yet taken."""
         if self.pool_required_minutes_today is not None:
             return self.pool_required_minutes_today
         # Before 05:00 or entity unavailable at 05:00: use live value so the
         # force-mode path still works, but dispatch won't run (score = 0 at night).
-        return self._pool_required_minutes_live(hass)
+        return self._pool_required_minutes_live(reader)
 
     # ------------------------------------------------------------------
     # Deadline / departure urgency helper
@@ -574,36 +574,44 @@ class ManagedDevice:
             return 0.3
 
     # ------------------------------------------------------------------
-    # HA state readers
+    # State readers — decoupled from HomeAssistant via StateReader callable
     # ------------------------------------------------------------------
     @staticmethod
+    def _make_ha_reader(hass: HomeAssistant) -> StateReader:
+        """Build a StateReader from a live HomeAssistant instance."""
+        def reader(entity_id: str) -> str | None:
+            s = hass.states.get(entity_id)
+            return s.state if s is not None else None
+        return reader
+
+    @staticmethod
     def _state_float(
-        hass: HomeAssistant,
+        reader: StateReader,
         entity_id: str | None,
         fallback: float = 0.0,
     ) -> float:
         if not entity_id:
             return fallback
-        s = hass.states.get(entity_id)
-        if s is None or s.state in ("unavailable", "unknown"):
+        raw = reader(entity_id)
+        if raw is None or raw in ("unavailable", "unknown"):
             return fallback
         try:
-            return float(s.state)
+            return float(raw)
         except ValueError:
             return fallback
 
     @staticmethod
     def _state_bool(
-        hass: HomeAssistant,
+        reader: StateReader,
         entity_id: str | None,
         fallback: bool = True,
     ) -> bool:
         if not entity_id:
             return fallback
-        s = hass.states.get(entity_id)
-        if s is None:
+        raw = reader(entity_id)
+        if raw is None:
             return fallback
-        return s.state in ("on", "true", "home", "connected", "plugged_in", "1")
+        return raw in ("on", "true", "home", "connected", "plugged_in", "1")
 
 
 # ===========================================================================
@@ -676,6 +684,7 @@ class DeviceManager:
         hass: HomeAssistant,
         score_input: dict[str, Any],
     ) -> None:
+        reader = ManagedDevice._make_ha_reader(hass)
         global_score:       float       = score_input.get("global_score",       0.0)
         surplus_w:          float       = score_input.get("surplus_w",          0.0)
         bat_available_w:    float       = score_input.get("bat_available_w",    0.0)
@@ -723,7 +732,7 @@ class DeviceManager:
             before_minutes = device.pool_daily_run_minutes
             before_required = device.pool_required_minutes_today
             device.update_pool_run_time(self._scan_interval, today)
-            device.try_capture_pool_required(hass, now.hour)
+            device.try_capture_pool_required(reader, now.hour)
             if (device.pool_daily_run_minutes != before_minutes
                     or device.pool_required_minutes_today != before_required):
                 pool_changed = True
@@ -764,7 +773,7 @@ class DeviceManager:
             return True
 
         # ---- Collect must-run overrides (skip devices Helios doesn't manage) ----
-        must_run = {d for d in self.devices if d.must_run_now(hass) and _helios_manages(d)}
+        must_run = {d for d in self.devices if d.must_run_now(reader) and _helios_manages(d)}
 
         # ---- Réserve zone (SOC ≤ 20 %): suppress non-safety overrides ----
         # In this zone the battery is critically low.  The water heater legionella
@@ -793,7 +802,7 @@ class DeviceManager:
                 if not _helios_manages(device):
                     continue  # manual / force / inhibit — hands off
                 if device.is_on and device.interruptible:
-                    satisfied = device.is_satisfied(hass)
+                    satisfied = device.is_satisfied(reader)
                     if satisfied or self._min_on_elapsed(device):
                         reason = "satisfied" if satisfied else "score_too_low"
                         await self._async_set_switch(hass, device, False, reason=reason, context=_base_ctx)
@@ -810,7 +819,7 @@ class DeviceManager:
             and _helios_manages(d)
         ]
         for app in sorted(preparing_apps, key=lambda d: d.priority, reverse=True):
-            urgency = app.urgency_modifier(hass)
+            urgency = app.urgency_modifier(reader)
             fit = ManagedDevice.compute_fit_score(app.power_w, surplus_w, bat_available_w)
             # Conditions to start are already met — no preemption needed
             if (global_score >= 0.4 and fit >= 0.3) or urgency >= 0.8:
@@ -834,7 +843,7 @@ class DeviceManager:
             freed_w = 0.0
             to_preempt: list[ManagedDevice] = []
             for c in candidates:
-                freed_w += c.actual_power_w(hass)
+                freed_w += c.actual_power_w(reader)
                 to_preempt.append(c)
                 if ManagedDevice.compute_fit_score(
                     app.power_w, surplus_w + freed_w, bat_available_w
@@ -884,12 +893,12 @@ class DeviceManager:
                 continue
 
             # Already satisfied → turn off immediately (reaching target is always a valid stop)
-            if device.is_satisfied(hass):
+            if device.is_satisfied(reader):
                 if device.is_on and device.interruptible:
                     await self._async_set_switch(hass, device, False, reason="satisfied", context=_base_ctx)
                 continue
 
-            score = device.effective_score(hass, surplus_w, bat_available_w)
+            score = device.effective_score(reader, surplus_w, bat_available_w)
             scored.append((score, device))
 
         # ---- Greedy allocation (highest score first) ----
@@ -899,7 +908,7 @@ class DeviceManager:
         # includes their consumption, so surplus_w is already reduced by their
         # load. Without this correction, each cycle they would compete against
         # their own consumption and get turned off spuriously.
-        helios_on_w = sum(d.actual_power_w(hass) for d in self.devices if d.is_on and _helios_manages(d))
+        helios_on_w = sum(d.actual_power_w(reader) for d in self.devices if d.is_on and _helios_manages(d))
         remaining = surplus_w + bat_available_w + grid_allowance_w + helios_on_w
 
         for score, device in scored:
@@ -907,7 +916,7 @@ class DeviceManager:
             # so it doesn't penalise itself when re-evaluated each cycle.
             # Use actual_power_w: a water heater whose thermostat has cut (0 W actual)
             # must not inflate fit_surplus with its nominal power.
-            fit_surplus = surplus_w + (device.actual_power_w(hass) if device.is_on else 0)
+            fit_surplus = surplus_w + (device.actual_power_w(reader) if device.is_on else 0)
             fit = ManagedDevice.compute_fit_score(device.power_w, fit_surplus, bat_available_w)
 
             # Skip if fit is negligible (would import too much from grid)
@@ -965,12 +974,13 @@ class DeviceManager:
         surplus_w: float,
         bat_available_w: float,
     ) -> None:
+        reader = ManagedDevice._make_ha_reader(hass)
         now_ts = time_mod.time()
 
         if device.appliance_state == APPLIANCE_STATE_IDLE:
             # Watch ready entity — when user activates the switch, launch prepare
             # script immediately and wait for Helios to pick the right start time.
-            ready = ManagedDevice._state_bool(hass, device.appliance_ready_entity, fallback=False)
+            ready = ManagedDevice._state_bool(reader, device.appliance_ready_entity, fallback=False)
             if ready:
                 device.appliance_state = APPLIANCE_STATE_PREPARING
                 _LOGGER.info("Appliance '%s': preparing — waiting for optimal start window", device.name)
@@ -984,7 +994,7 @@ class DeviceManager:
 
         if device.appliance_state == APPLIANCE_STATE_PREPARING:
             fit     = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
-            urgency = device.urgency_modifier(hass)
+            urgency = device.urgency_modifier(reader)
 
             should_start = (
                 (global_score >= 0.4 and fit >= 0.3)
@@ -1021,7 +1031,7 @@ class DeviceManager:
 
             if device.appliance_power_entity:
                 # Primary: detect power drop
-                power = ManagedDevice._state_float(hass, device.appliance_power_entity)
+                power = ManagedDevice._state_float(reader, device.appliance_power_entity)
                 if power < device.appliance_power_threshold_w:
                     if device.appliance_low_power_since is None:
                         device.appliance_low_power_since = now_ts

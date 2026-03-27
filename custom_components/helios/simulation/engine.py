@@ -6,6 +6,7 @@ import random
 import sys
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, date as _date, time as _time
 from typing import Callable
 
 # Allow running from repo root or simulation/ directory
@@ -20,6 +21,14 @@ try:
     _HAS_ENGINE = True
 except ImportError:
     _HAS_ENGINE = False
+
+# Use the real ManagedDevice dispatch logic when available
+try:
+    from custom_components.helios.device_manager import ManagedDevice as _ManagedDevice
+    _HAS_MANAGED = True
+except ImportError:
+    _ManagedDevice = None  # type: ignore[assignment,misc]
+    _HAS_MANAGED = False
 
 
 STEP_MINUTES = 5
@@ -118,8 +127,51 @@ def _score(
 # Dispatch
 # ---------------------------------------------------------------------------
 
-def _fit_score(device: SimDevice, surplus_w: float, bat_available_w: float) -> float:
-    """Zone 1 / 2 / 3 fit score (mirrors device_manager logic)."""
+def _effective_score(
+    dev: SimDevice,
+    managed: "_ManagedDevice | None",
+    surplus_w: float,
+    bat_available_w: float,
+    sim_now: "datetime",
+) -> float:
+    """Compute effective score using real ManagedDevice logic when available."""
+    if managed is not None and _HAS_MANAGED:
+        reader = dev.make_state_reader()
+        return managed.effective_score(reader, surplus_w, bat_available_w, now=sim_now)
+    # Fallback: inline simplified scoring
+    fit = _fit_score_inline(dev, surplus_w, bat_available_w)
+    urg = _urgency_inline(dev)
+    pri = dev.priority / 10.0
+    total_w = dev.w_priority + dev.w_fit + dev.w_urgency
+    return (dev.w_priority * pri + dev.w_fit * fit + dev.w_urgency * urg) / max(total_w, 1e-6)
+
+
+def _is_satisfied(
+    dev: SimDevice,
+    managed: "_ManagedDevice | None",
+    sim_now: "datetime",
+) -> bool:
+    """Return True if device has reached its target."""
+    if managed is not None and _HAS_MANAGED:
+        reader = dev.make_state_reader()
+        return managed.is_satisfied(reader, now=sim_now)
+    return dev.satisfied()
+
+
+def _must_run(
+    dev: SimDevice,
+    managed: "_ManagedDevice | None",
+    sim_now: "datetime",
+) -> bool:
+    """Return True if device must run regardless of score."""
+    if managed is not None and _HAS_MANAGED:
+        reader = dev.make_state_reader()
+        return managed.must_run_now(reader, now=sim_now)
+    return False
+
+
+def _fit_score_inline(device: SimDevice, surplus_w: float, bat_available_w: float) -> float:
+    """Zone 1 / 2 / 3 fit score (fallback when ManagedDevice not available)."""
     effective = surplus_w + bat_available_w
     if surplus_w <= 0:
         return 0.0
@@ -132,7 +184,8 @@ def _fit_score(device: SimDevice, surplus_w: float, bat_available_w: float) -> f
     return 0.4 * (1.0 - grid_fraction)
 
 
-def _urgency(device: SimDevice) -> float:
+def _urgency_inline(device: SimDevice) -> float:
+    """Urgency fallback when ManagedDevice not available."""
     if device.run_quota_h is not None:
         remaining_quota = max(0.0, device.run_quota_h - device.run_today_h)
         return min(1.0, remaining_quota / max(device.run_quota_h, 0.01))
@@ -148,37 +201,52 @@ def dispatch(
     bat_available_w: float,
     global_score: float,
     threshold: float,
+    managed_devices: "list[_ManagedDevice | None] | None" = None,
+    sim_now: "datetime | None" = None,
 ) -> None:
-    """Greedy dispatch — turns devices on/off in-place."""
-    # Turn off devices that are no longer eligible
-    for dev in devices:
+    """Greedy dispatch — turns devices on/off in-place.
+
+    When *managed_devices* is provided (parallel list to *devices*), uses the
+    real ManagedDevice logic (is_satisfied, must_run_now, urgency_modifier,
+    effective_score) instead of the simplified inline fallbacks.
+    """
+    from datetime import datetime as _dt
+    _now = sim_now or _dt.now()
+    managed = managed_devices or [None] * len(devices)
+
+    # ---- Must-run overrides (forced on regardless of score) ----
+    for dev, mgd in zip(devices, managed):
+        if _must_run(dev, mgd, _now):
+            dev.turn_on()
+
+    # ---- Turn off devices that are no longer eligible ----
+    for dev, mgd in zip(devices, managed):
         if not dev.active:
             continue
+        if _must_run(dev, mgd, _now):
+            continue  # must-run devices stay on
         if not dev.in_window(hour):
             dev.turn_off()
             continue
-        if dev.satisfied() and dev.min_on_respected():
+        if _is_satisfied(dev, mgd, _now) and dev.min_on_respected():
             dev.turn_off()
             continue
         if global_score < threshold and dev.min_on_respected():
             dev.turn_off()
 
-    # Rank eligible devices
-    candidates: list[tuple[float, SimDevice]] = []
-    for dev in devices:
-        if dev.active or dev.satisfied() or not dev.in_window(hour):
+    # ---- Rank eligible devices ----
+    candidates: list[tuple[float, SimDevice, "_ManagedDevice | None"]] = []
+    for dev, mgd in zip(devices, managed):
+        if dev.active or _is_satisfied(dev, mgd, _now) or not dev.in_window(hour):
             continue
-        fit = _fit_score(dev, surplus_w, bat_available_w)
-        urg = _urgency(dev)
-        pri = dev.priority / 10.0
-        eff = (dev.w_priority * pri + dev.w_fit * fit + dev.w_urgency * urg)
-        candidates.append((eff, dev))
+        eff = _effective_score(dev, mgd, surplus_w, bat_available_w, _now)
+        candidates.append((eff, dev, mgd))
 
     candidates.sort(key=lambda x: x[0], reverse=True)
 
     remaining = surplus_w + bat_available_w
-    for eff_score, dev in candidates:
-        if global_score < threshold:
+    for eff_score, dev, mgd in candidates:
+        if global_score < threshold and not _must_run(dev, mgd, _now):
             break
         if dev.power_w <= remaining * 1.10:   # 10 % tolerance
             dev.turn_on()
@@ -264,9 +332,25 @@ class SimResult:
         return self.e_self_consumed_kwh / max(self.e_load_kwh, 1e-6)
 
 
-def run(cfg: SimConfig, devices: list[SimDevice] | None = None) -> SimResult:
+def run(
+    cfg: SimConfig,
+    devices: list[SimDevice] | None = None,
+    managed_devices: "list[_ManagedDevice | None] | None" = None,
+    sim_date: "_date | None" = None,
+) -> SimResult:
+    """Run a full-day simulation.
+
+    Args:
+        cfg: Simulation configuration.
+        devices: SimDevice list (energy accounting + physical state).
+        managed_devices: Optional parallel list of ManagedDevice instances.
+            When provided, uses the real dispatch logic (is_satisfied,
+            must_run_now, urgency_modifier) instead of the inline fallbacks.
+        sim_date: Date to use for time-of-day calculations (default: today).
+    """
     if devices is None:
         devices = default_devices()
+    _sim_date = sim_date or _date.today()
 
     step_h = STEP_MINUTES / 60.0
     bat_soc = cfg.bat_soc_start
@@ -335,7 +419,17 @@ def run(cfg: SimConfig, devices: list[SimDevice] | None = None) -> SimResult:
         _before = {d.name: d.active for d in devices}
 
         # ---- Dispatch ----
-        dispatch(devices, hour, pv_w - base_w, bat_available_w, global_score, cfg.dispatch_threshold)
+        h_int = int(hour)
+        m_int = int(round((hour - h_int) * 60))
+        sim_now = datetime(
+            _sim_date.year, _sim_date.month, _sim_date.day,
+            h_int, min(m_int, 59),
+        )
+        dispatch(
+            devices, hour, pv_w - base_w, bat_available_w, global_score, cfg.dispatch_threshold,
+            managed_devices=managed_devices,
+            sim_now=sim_now,
+        )
 
         # ---- Record state changes ----
         h = int(hour)

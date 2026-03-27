@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from custom_components.helios.device_manager import StateReader
 
 
 @dataclass
@@ -27,6 +31,31 @@ class SimDevice:
     w_fit: float = 0.40
     w_urgency: float = 0.30
 
+    # ---- Physical state for real-model dispatch ----
+    # Device type — set to match ManagedDevice.device_type
+    device_type: str = "generic"
+
+    # Water heater physical state
+    # wh_temp starts at the real temperature (read from HA at 05:00).
+    # The simulation tracks it: heats up when ON, cools slowly when OFF.
+    wh_temp: float | None = None            # °C, None = not tracked
+    wh_temp_target: float = 60.0            # °C
+    wh_temp_min: float = 45.0              # °C — legionella floor
+    wh_off_peak_hysteresis_k: float = 3.0  # °C — must_run_now trigger band
+    wh_temp_entity: str | None = None      # entity ID used by ManagedDevice
+    wh_temp_min_entity: str | None = None
+
+    # EV physical state
+    ev_soc: float | None = None       # %, None = not tracked
+    ev_soc_target: float = 80.0       # %
+    ev_plugged: bool = True           # True = always plugged in simulation
+    ev_soc_entity: str | None = None
+    ev_plugged_entity: str | None = None
+
+    # Pool: required filtration minutes for the day (snapshot from HA at 05:00)
+    pool_required_min: float | None = None   # minutes; None = use run_quota_h
+    pool_filtration_entity: str | None = None
+
     # ---- Runtime state (reset each simulation run) ----
     active: bool = field(default=False, init=False)
     _on_minutes: float = field(default=0.0, init=False, repr=False)   # minutes spent ON this cycle
@@ -42,6 +71,11 @@ class SimDevice:
         return hour >= self.allowed_start or hour < self.allowed_end
 
     def satisfied(self) -> bool:
+        """Simplified satisfaction — used as fallback when no ManagedDevice."""
+        if self.wh_temp is not None:
+            return self.wh_temp >= self.wh_temp_target
+        if self.ev_soc is not None:
+            return self.ev_soc >= self.ev_soc_target
         if self.run_quota_h is not None:
             return self.run_today_h >= self.run_quota_h
         return False
@@ -61,16 +95,66 @@ class SimDevice:
         self._on_minutes = 0.0
 
     def tick(self, step_minutes: float, pv_w: float, total_load_w: float) -> None:
-        """Advance one simulation step."""
-        if not self.active:
-            return
-        self._on_minutes += step_minutes
+        """Advance one simulation step (energy accounting + physical state)."""
+        if self.active:
+            self._on_minutes += step_minutes
+            step_h = step_minutes / 60.0
+            self.run_today_h += step_h
+            e = self.power_w * step_h / 1000.0
+            self.energy_kwh += e
+            pv_share = min(pv_w, total_load_w) / max(total_load_w, 1.0)
+            self.energy_from_pv_kwh += e * pv_share
+
+        # Physical state updates (independent of active/inactive)
+        self._tick_physical(step_minutes)
+
+    def _tick_physical(self, step_minutes: float) -> None:
+        """Update physical state (temperature, SOC) based on current active state."""
         step_h = step_minutes / 60.0
-        self.run_today_h += step_h
-        e = self.power_w * step_h / 1000.0
-        self.energy_kwh += e
-        pv_share = min(pv_w, total_load_w) / max(total_load_w, 1.0)
-        self.energy_from_pv_kwh += e * pv_share
+
+        # Water heater: heating model
+        # Heat rate: power / (volume * cp) where cp = 1.163 Wh/(L·K)
+        # Estimate tank volume from power (200 L at 2000 W is typical)
+        if self.wh_temp is not None:
+            tank_l = max(50.0, min(300.0, self.power_w / 10.0))
+            cp = 1.163  # Wh/(L·K)
+            if self.active:
+                heat_rate = self.power_w / (tank_l * cp)  # °C/h
+                self.wh_temp = min(self.wh_temp_target + 5.0, self.wh_temp + heat_rate * step_h)
+            else:
+                # Thermal losses ~0.5 °C/h (approximate for a well-insulated tank)
+                self.wh_temp = max(15.0, self.wh_temp - 0.5 * step_h)
+
+        # EV: charging model (simplified: full power when active)
+        if self.ev_soc is not None and self.ev_plugged:
+            if self.active:
+                # energy_wh = power_w * step_h, convert to % SOC
+                # Assume EV capacity from power: typical 3700 W → 50 kWh, 7400 W → 80 kWh
+                ev_capacity_kwh = max(20.0, self.power_w / 74.0)  # rough heuristic
+                delta_soc = (self.power_w * step_h / 1000.0) / ev_capacity_kwh * 100.0
+                self.ev_soc = min(100.0, self.ev_soc + delta_soc)
+
+    def make_state_reader(self) -> "StateReader":
+        """Build a StateReader for this device's entities (used by ManagedDevice methods).
+
+        Returns a callable mapping entity_id → current state string, reading from
+        this SimDevice's physical state fields.
+        """
+        state: dict[str, str] = {}
+
+        if self.wh_temp is not None and self.wh_temp_entity:
+            state[self.wh_temp_entity] = str(self.wh_temp)
+        if self.wh_temp_min_entity:
+            state[self.wh_temp_min_entity] = str(self.wh_temp_min)
+        if self.ev_soc is not None and self.ev_soc_entity:
+            state[self.ev_soc_entity] = str(self.ev_soc)
+        if self.ev_plugged_entity:
+            state[self.ev_plugged_entity] = "on" if self.ev_plugged else "off"
+        if self.pool_filtration_entity and self.pool_required_min is not None:
+            # Filtration entity is in hours
+            state[self.pool_filtration_entity] = str(self.pool_required_min / 60.0)
+
+        return lambda eid: state.get(eid)
 
 
 # ---------------------------------------------------------------------------

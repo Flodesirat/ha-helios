@@ -42,7 +42,7 @@ class OptResult:
 
 def optimize(
     cfg_base: SimConfig,
-    devices_fn: Callable[[], list[SimDevice]],
+    devices_fn: "Callable[[], list[SimDevice] | tuple[list[SimDevice], list]]",
     *,
     objective_alpha: float = 0.5,
     w_forecast: float = 0.1,
@@ -107,7 +107,12 @@ def optimize(
             ac_sum = cost_sum = no_pv_sum = 0.0
             per_run_obj: list[float] = []
             for _ in range(n_runs):
-                r = run(cfg, devices_fn())
+                _devs = devices_fn()
+                if isinstance(_devs, tuple):
+                    _sim_devs, _managed_devs = _devs
+                    r = run(cfg, _sim_devs, managed_devices=_managed_devs)
+                else:
+                    r = run(cfg, _devs)
                 ac_sum    += r.autoconsumption_rate
                 cost_sum  += r.cost_eur
                 no_pv_sum += r.cost_no_pv_eur

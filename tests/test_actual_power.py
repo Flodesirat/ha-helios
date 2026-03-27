@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.helios.device_manager import DeviceManager, ManagedDevice
+from custom_components.helios.device_manager import DeviceManager, ManagedDevice, StateReader
 from custom_components.helios.const import (
     DEVICE_TYPE_EV, DEVICE_TYPE_POOL, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_APPLIANCE,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
@@ -80,6 +80,15 @@ def _hass(measured_w: float | None = None) -> MagicMock:
     return hass
 
 
+def _reader(measured_w: float | None = None) -> StateReader:
+    """StateReader equivalent of _hass."""
+    def read(entity_id: str) -> str | None:
+        if entity_id in (POWER_ENTITY, WH_POWER_ENTITY) and measured_w is not None:
+            return str(measured_w)
+        return "unavailable"
+    return read
+
+
 def _make_manager(devices) -> DeviceManager:
     store = AsyncMock()
     store.async_load = AsyncMock(return_value={})
@@ -123,8 +132,8 @@ class TestActualPowerW:
     def test_no_entity_returns_nominal(self):
         """Without any power entity, returns power_w nominal."""
         device = _make_device(power_w=2000)
-        hass = _hass(measured_w=1500)  # entity present but not configured
-        assert device.actual_power_w(hass) == 2000.0
+        reader = _reader(measured_w=1500)  # entity present but not configured
+        assert device.actual_power_w(reader) == 2000.0
 
     def test_generic_entity_takes_priority(self):
         """device_power_entity is used before type-specific or nominal."""
@@ -134,8 +143,8 @@ class TestActualPowerW:
             power_entity=POWER_ENTITY,
             wh_power_entity=WH_POWER_ENTITY,
         )
-        hass = _hass(measured_w=1200)
-        assert device.actual_power_w(hass) == 1200.0
+        reader = _reader(measured_w=1200)
+        assert device.actual_power_w(reader) == 1200.0
 
     def test_wh_power_entity_fallback(self):
         """Without device_power_entity, water heater uses wh_power_entity."""
@@ -144,8 +153,8 @@ class TestActualPowerW:
             power_w=2000,
             wh_power_entity=WH_POWER_ENTITY,
         )
-        hass = _hass(measured_w=0.0)  # thermostat cut
-        assert device.actual_power_w(hass) == 0.0
+        reader = _reader(measured_w=0.0)  # thermostat cut
+        assert device.actual_power_w(reader) == 0.0
 
     def test_appliance_power_entity_fallback(self):
         """Without device_power_entity, appliance uses appliance_power_entity."""
@@ -154,26 +163,26 @@ class TestActualPowerW:
             power_w=2000,
             appliance_power_entity=POWER_ENTITY,
         )
-        hass = _hass(measured_w=1800)
-        assert device.actual_power_w(hass) == 1800.0
+        reader = _reader(measured_w=1800)
+        assert device.actual_power_w(reader) == 1800.0
 
     def test_ev_no_entity_returns_nominal(self):
         """EV without power entity always returns nominal."""
         device = _make_device(device_type=DEVICE_TYPE_EV, power_w=7400)
-        hass = _hass()
-        assert device.actual_power_w(hass) == 7400.0
+        reader = _reader()
+        assert device.actual_power_w(reader) == 7400.0
 
     def test_ev_with_generic_entity(self):
         """EV with device_power_entity returns measured value."""
         device = _make_device(device_type=DEVICE_TYPE_EV, power_w=7400, power_entity=POWER_ENTITY)
-        hass = _hass(measured_w=3700)
-        assert device.actual_power_w(hass) == 3700.0
+        reader = _reader(measured_w=3700)
+        assert device.actual_power_w(reader) == 3700.0
 
     def test_pool_with_generic_entity(self):
         """Pool with device_power_entity returns measured value."""
         device = _make_device(device_type=DEVICE_TYPE_POOL, power_w=600, power_entity=POWER_ENTITY)
-        hass = _hass(measured_w=450)
-        assert device.actual_power_w(hass) == 450.0
+        reader = _reader(measured_w=450)
+        assert device.actual_power_w(reader) == 450.0
 
 
 # ---------------------------------------------------------------------------
@@ -272,19 +281,19 @@ class TestFitSurplus:
             device_type=DEVICE_TYPE_EV, power_w=2000,
             power_entity=POWER_ENTITY, is_on=True,
         )
-        hass_full    = _hass(measured_w=2000)
-        hass_partial = _hass(measured_w=500)
+        reader_full    = _reader(measured_w=2000)
+        reader_partial = _reader(measured_w=500)
 
         surplus_w = 300.0
 
         fit_full    = ManagedDevice.compute_fit_score(
             device.power_w,
-            surplus_w + device.actual_power_w(hass_full),
+            surplus_w + device.actual_power_w(reader_full),
             bat_available_w=0,
         )
         fit_partial = ManagedDevice.compute_fit_score(
             device.power_w,
-            surplus_w + device.actual_power_w(hass_partial),
+            surplus_w + device.actual_power_w(reader_partial),
             bat_available_w=0,
         )
 
@@ -300,10 +309,10 @@ class TestFitSurplus:
             device_type=DEVICE_TYPE_WATER_HEATER, power_w=2000,
             wh_power_entity=WH_POWER_ENTITY, is_on=True,
         )
-        hass = _hass(measured_w=0.0)
+        reader = _reader(measured_w=0.0)
         surplus_w = 500.0
 
-        fit_surplus = surplus_w + device.actual_power_w(hass)
+        fit_surplus = surplus_w + device.actual_power_w(reader)
         assert fit_surplus == 500.0
 
         # Nominal would give 2500 → device fits in zone 1
