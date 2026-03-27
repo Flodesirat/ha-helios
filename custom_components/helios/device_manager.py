@@ -8,6 +8,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_state_change_event
 
 # A StateReader reads a HA entity state and returns its raw string value,
 # or None if the entity is unavailable / unknown / missing.
@@ -634,6 +635,8 @@ class DeviceManager:
         self._dispatch_threshold: float = float(config.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD))
         # Decision log — rolling 24 h, max 500 entries
         self.decision_log: deque[dict] = deque(maxlen=100)
+        # Unsubscribe callbacks for appliance ready-entity listeners
+        self._unsub_ready_listeners: list = []
 
     # ------------------------------------------------------------------
     # Startup — restore persisted device state
@@ -701,6 +704,69 @@ class DeviceManager:
                         "Device '%s': resumed control (switch '%s' is ON)",
                         device.name, device.switch_entity,
                     )
+
+        # Register immediate listeners on appliance ready entities.
+        # This allows the prepare script to be triggered as soon as the user
+        # sets the ready entity to ON, without waiting for the next 5-min cycle.
+        for device in self.devices:
+            if device.device_type == DEVICE_TYPE_APPLIANCE and device.appliance_ready_entity:
+                self._register_appliance_ready_listener(device)
+
+    def _register_appliance_ready_listener(self, device: ManagedDevice) -> None:
+        """Watch the ready entity and immediately trigger prepare on rising edge."""
+
+        def _make_cb(dev: ManagedDevice, ready_entity: str):
+            async def _on_ready_change(event) -> None:  # noqa: ANN001
+                new_state = event.data.get("new_state")
+                if not new_state or new_state.state != "on":
+                    return
+                if dev.appliance_state != APPLIANCE_STATE_IDLE:
+                    return  # Already in PREPARING / RUNNING — ignore
+                _LOGGER.info(
+                    "Appliance '%s': ready entity turned ON — triggering prepare immediately",
+                    dev.name,
+                )
+                await self._async_appliance_to_preparing(self._hass, dev, ready_entity)
+            return _on_ready_change
+
+        unsub = async_track_state_change_event(
+            self._hass,
+            [device.appliance_ready_entity],
+            _make_cb(device, device.appliance_ready_entity),
+        )
+        self._unsub_ready_listeners.append(unsub)
+
+    def async_unload(self) -> None:
+        """Cancel all appliance ready-entity listeners."""
+        for unsub in self._unsub_ready_listeners:
+            unsub()
+        self._unsub_ready_listeners.clear()
+
+    @staticmethod
+    async def _async_appliance_to_preparing(
+        hass: HomeAssistant, device: ManagedDevice, ready_entity: str
+    ) -> None:
+        """Transition an appliance from IDLE to PREPARING.
+
+        Runs the prepare script (if any) and immediately resets the ready entity
+        so the user's helper switch reflects that preparation is in progress.
+        """
+        device.appliance_state = APPLIANCE_STATE_PREPARING
+        _LOGGER.info(
+            "Appliance '%s': preparing — waiting for optimal start window", device.name
+        )
+        if device.appliance_prepare_script:
+            await hass.services.async_call(
+                "script", "turn_on",
+                {"entity_id": device.appliance_prepare_script},
+                blocking=False,
+            )
+        # Reset the ready entity straight away so the toggle shows as OFF
+        await hass.services.async_call(
+            "input_boolean", "turn_off",
+            {"entity_id": ready_entity},
+            blocking=False,
+        )
 
     async def _async_save_device_data(self) -> None:
         """Persist device runtime state (manual_mode, pool counters, force/inhibit)."""
@@ -1024,18 +1090,15 @@ class DeviceManager:
         now_ts = time_mod.time()
 
         if device.appliance_state == APPLIANCE_STATE_IDLE:
-            # Watch ready entity — when user activates the switch, launch prepare
-            # script immediately and wait for Helios to pick the right start time.
+            # Normally the state-change listener (registered in async_setup) handles
+            # the IDLE→PREPARING transition immediately when the ready entity turns ON.
+            # This fallback fires on the first coordinator tick after HA startup if the
+            # entity was already ON before Helios had a chance to register the listener.
             ready = ManagedDevice._state_bool(reader, device.appliance_ready_entity, fallback=False)
             if ready:
-                device.appliance_state = APPLIANCE_STATE_PREPARING
-                _LOGGER.info("Appliance '%s': preparing — waiting for optimal start window", device.name)
-                if device.appliance_prepare_script:
-                    await hass.services.async_call(
-                        "script", "turn_on",
-                        {"entity_id": device.appliance_prepare_script},
-                        blocking=False,
-                    )
+                await DeviceManager._async_appliance_to_preparing(
+                    hass, device, device.appliance_ready_entity
+                )
             return
 
         if device.appliance_state == APPLIANCE_STATE_PREPARING:

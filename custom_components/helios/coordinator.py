@@ -126,10 +126,11 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Helios daily optimizer failed: %s", err)
 
     def async_unload(self) -> None:
-        """Cancel recurring scheduler when the entry is unloaded."""
+        """Cancel recurring scheduler and appliance listeners when the entry is unloaded."""
         if self._unsub_daily_opt:
             self._unsub_daily_opt()
             self._unsub_daily_opt = None
+        self.device_manager.async_unload()
 
     # ------------------------------------------------------------------
     # Optimizer state persistence

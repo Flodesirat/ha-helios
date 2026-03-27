@@ -96,7 +96,7 @@ class TestIdleState:
 
     @pytest.mark.asyncio
     async def test_transitions_to_preparing_when_ready(self):
-        """Ready entity on → transitions to PREPARING and calls prepare_script."""
+        """Ready entity on → transitions to PREPARING, calls prepare script, resets ready entity."""
         device = _make_device()
         dm     = _make_dm(device)
         hass   = _make_hass(ready=True)
@@ -104,15 +104,14 @@ class TestIdleState:
         await _handle(dm, device, hass)
 
         assert device.appliance_state == APPLIANCE_STATE_PREPARING
-        hass.services.async_call.assert_called_once_with(
-            "script", "turn_on",
-            {"entity_id": PREPARE_SCRIPT},
-            blocking=False,
-        )
+        calls = hass.services.async_call.call_args_list
+        assert len(calls) == 2
+        assert calls[0] == (("script", "turn_on", {"entity_id": PREPARE_SCRIPT}), {"blocking": False})
+        assert calls[1] == (("input_boolean", "turn_off", {"entity_id": READY_ENTITY}), {"blocking": False})
 
     @pytest.mark.asyncio
     async def test_no_prepare_script_still_transitions(self):
-        """No prepare_script → transitions to PREPARING without calling any script."""
+        """No prepare_script → transitions to PREPARING, ready entity is still reset."""
         device = _make_device(prepare_script=None)
         dm     = _make_dm(device)
         hass   = _make_hass(ready=True)
@@ -120,7 +119,11 @@ class TestIdleState:
         await _handle(dm, device, hass)
 
         assert device.appliance_state == APPLIANCE_STATE_PREPARING
-        hass.services.async_call.assert_not_called()
+        hass.services.async_call.assert_called_once_with(
+            "input_boolean", "turn_off",
+            {"entity_id": READY_ENTITY},
+            blocking=False,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -225,12 +228,12 @@ class TestFullCycle:
         hass = _make_hass(ready=True)
         hass.services.async_call.side_effect = _record_call
 
-        # IDLE → PREPARING
+        # IDLE → PREPARING: prepare_script + reset ready entity
         await _handle(dm, device, hass)
-        assert all_calls == [PREPARE_SCRIPT]
+        assert all_calls == [PREPARE_SCRIPT, READY_ENTITY]
 
         # PREPARING → RUNNING
         hass2 = _make_hass(ready=False)
         hass2.services.async_call.side_effect = _record_call
         await _handle(dm, device, hass2, global_score=0.8, surplus_w=3000.0)
-        assert all_calls == [PREPARE_SCRIPT, START_SCRIPT]
+        assert all_calls == [PREPARE_SCRIPT, READY_ENTITY, START_SCRIPT]
