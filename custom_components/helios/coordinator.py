@@ -36,7 +36,7 @@ from .const import (
 from .scoring_engine import ScoringEngine
 from .battery_strategy import BatteryStrategy
 from .consumption_learner import ConsumptionLearner
-from .device_manager import DeviceManager
+from .device_manager import DeviceManager, ManagedDevice
 from .daily_optimizer import async_run_daily_optimization
 
 _LOGGER = logging.getLogger(__name__)
@@ -274,8 +274,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         # EMA update: net base load = house_w − currently-active Helios devices.
         # Use actual_power_w so a water heater whose internal thermostat has cut
         # (switch ON but 0 W draw) doesn't distort the base load estimate.
+        reader = ManagedDevice._make_ha_reader(self.hass)
         helios_devices_w = sum(
-            d.actual_power_w(self.hass) for d in self.device_manager.devices if d.is_on
+            d.actual_power_w(reader) for d in self.device_manager.devices if d.is_on
         )
         net_base_w = self.house_power_w - helios_devices_w
         now = dt_util.now()
@@ -322,8 +323,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         # Virtual surplus: add back the power of Helios-managed devices currently ON.
         # Without this correction, active devices inflate house_w → deflate surplus_w →
         # score drops below threshold → gate block turns them off → chattering.
+        reader = ManagedDevice._make_ha_reader(self.hass)
         helios_on_w = sum(
-            d.actual_power_w(self.hass)
+            d.actual_power_w(reader)
             for d in self.device_manager.devices
             if d.is_on
         )

@@ -22,6 +22,7 @@ from custom_components.helios.const import (
     DEVICE_TYPE_POOL, DEVICE_TYPE_WATER_HEATER,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
     CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
+    CONF_DEVICE_POWER_ENTITY,
 )
 from custom_components.helios.device_manager import ManagedDevice
 from custom_components.helios.scoring_engine import ScoringEngine
@@ -226,6 +227,20 @@ class TestDiagnosticsStructure:
 
         assert set(weights.keys()) == {"surplus", "tempo", "soc", "forecast"}
 
+    @pytest.mark.asyncio
+    async def test_score_breakdown_present(self):
+        coordinator = _make_coordinator()
+        hass, entry = _make_hass(coordinator)
+
+        result = await async_get_config_entry_diagnostics(hass, entry)
+        cs = result["current_state"]
+
+        assert "score_breakdown" in cs
+        bd = cs["score_breakdown"]
+        assert set(bd.keys()) == {"f_surplus", "f_tempo", "f_soc", "f_forecast"}
+        for v in bd.values():
+            assert 0.0 <= v <= 1.0, f"score component out of [0, 1]: {v}"
+
 
 # ---------------------------------------------------------------------------
 # Current state values
@@ -385,6 +400,36 @@ class TestDevicesList:
         assert d["manual_mode"] is False
         assert d["priority"]    == 5
         assert d["power_w"]     == 300.0
+
+    @pytest.mark.asyncio
+    async def test_device_with_power_entity_uses_measured_power(self):
+        """A device with power_entity configured must read actual W from hass
+        via StateReader — not receive hass directly (regression for TypeError)."""
+        device = ManagedDevice({
+            CONF_DEVICE_NAME:          "Chauffe-eau",
+            CONF_DEVICE_TYPE:          DEVICE_TYPE_WATER_HEATER,
+            CONF_DEVICE_SWITCH_ENTITY: "switch.cwe",
+            CONF_DEVICE_POWER_W:       2000,
+            CONF_DEVICE_PRIORITY:      8,
+            CONF_DEVICE_POWER_ENTITY:  "sensor.cwe_power",
+        })
+        device.is_on = True
+
+        coordinator = _make_coordinator(devices=[device])
+        hass, entry = _make_hass(coordinator)
+
+        # Simulate the power sensor returning 1800 W
+        power_state = MagicMock()
+        power_state.state = "1800"
+        hass.states.get = MagicMock(return_value=power_state)
+
+        # Must not raise TypeError even though device.power_entity is set
+        devices = (await async_get_config_entry_diagnostics(hass, entry))[
+            "current_state"
+        ]["devices"]
+
+        assert len(devices) == 1
+        assert devices[0]["actual_power_w"] == pytest.approx(1800.0)
 
     @pytest.mark.asyncio
     async def test_multiple_devices(self):
