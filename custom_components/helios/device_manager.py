@@ -628,6 +628,7 @@ class DeviceManager:
         config: dict[str, Any],
     ) -> None:
         self.devices: list[ManagedDevice] = [ManagedDevice(c, config) for c in devices_config]
+        self._hass = hass
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._scan_interval: float = float(config.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL))
         self._dispatch_threshold: float = float(config.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD))
@@ -635,46 +636,91 @@ class DeviceManager:
         self.decision_log: deque[dict] = deque(maxlen=100)
 
     # ------------------------------------------------------------------
-    # Startup — restore persisted pool run data
+    # Startup — restore persisted device state
     # ------------------------------------------------------------------
     async def async_setup(self) -> None:
-        """Load pool daily run counters from HA storage."""
+        """Restore persisted device state from HA storage and reconcile switch states."""
         data: dict = await self._store.async_load() or {}
         today = date.today()
-        for device in self.devices:
-            if device.device_type != DEVICE_TYPE_POOL:
-                continue
-            stored = data.get(device.name, {})
-            stored_date_str: str | None = stored.get("date")
-            if stored_date_str:
-                try:
-                    stored_date = date.fromisoformat(stored_date_str)
-                    if stored_date == today:
-                        device.pool_daily_run_minutes = float(stored.get("minutes", 0.0))
-                        device.pool_last_date = today
-                        required = stored.get("required_minutes")
-                        if required is not None:
-                            device.pool_required_minutes_today = float(required)
-                        _LOGGER.debug(
-                            "Pool '%s': restored %.1f min done, %.1f min required for today",
-                            device.name, device.pool_daily_run_minutes,
-                            device.pool_required_minutes_today or 0.0,
-                        )
-                except ValueError:
-                    pass
+        now_ts = time_mod.time()
 
-    async def _async_save_pool_data(self) -> None:
-        """Persist pool daily run counters (called after each update)."""
+        for device in self.devices:
+            stored = data.get(device.name, {})
+
+            # Restore manual_mode (user-set, sticky across restarts)
+            if stored.get("manual_mode", False):
+                device.manual_mode = True
+                _LOGGER.debug("Device '%s': restored manual_mode=True", device.name)
+
+            # Pool-specific restoration
+            if device.device_type == DEVICE_TYPE_POOL:
+                stored_date_str: str | None = stored.get("date")
+                if stored_date_str:
+                    try:
+                        stored_date = date.fromisoformat(stored_date_str)
+                        if stored_date == today:
+                            device.pool_daily_run_minutes = float(stored.get("minutes", 0.0))
+                            device.pool_last_date = today
+                            required = stored.get("required_minutes")
+                            if required is not None:
+                                device.pool_required_minutes_today = float(required)
+                            _LOGGER.debug(
+                                "Pool '%s': restored %.1f min done, %.1f min required for today",
+                                device.name, device.pool_daily_run_minutes,
+                                device.pool_required_minutes_today or 0.0,
+                            )
+                    except ValueError:
+                        pass
+
+                # Restore force/inhibit only if still active
+                force_until = stored.get("pool_force_until")
+                if force_until and float(force_until) > now_ts:
+                    device.pool_force_until = float(force_until)
+                    _LOGGER.debug(
+                        "Pool '%s': restored force mode (%.0f s remaining)",
+                        device.name, device.pool_force_until - now_ts,
+                    )
+                inhibit_until = stored.get("pool_inhibit_until")
+                if inhibit_until and float(inhibit_until) > now_ts:
+                    device.pool_inhibit_until = float(inhibit_until)
+                    _LOGGER.debug(
+                        "Pool '%s': restored inhibit mode (%.0f s remaining)",
+                        device.name, device.pool_inhibit_until - now_ts,
+                    )
+
+            # Reconcile is_on from the actual HA switch state.
+            # If the switch is physically ON, Helios resumes control without
+            # interrupting it — turned_on_at is set to now so that min_on_minutes
+            # is honoured before any turn-off decision.
+            if device.switch_entity:
+                state = self._hass.states.get(device.switch_entity)
+                if state and state.state == "on":
+                    device.is_on = True
+                    device.turned_on_at = now_ts
+                    _LOGGER.debug(
+                        "Device '%s': resumed control (switch '%s' is ON)",
+                        device.name, device.switch_entity,
+                    )
+
+    async def _async_save_device_data(self) -> None:
+        """Persist device runtime state (manual_mode, pool counters, force/inhibit)."""
         data: dict = {}
         for device in self.devices:
+            entry: dict = {"manual_mode": device.manual_mode}
             if device.device_type == DEVICE_TYPE_POOL:
-                data[device.name] = {
-                    "date": (device.pool_last_date or date.today()).isoformat(),
-                    "minutes": device.pool_daily_run_minutes,
+                entry.update({
+                    "date":             (device.pool_last_date or date.today()).isoformat(),
+                    "minutes":          device.pool_daily_run_minutes,
                     "required_minutes": device.pool_required_minutes_today,
-                }
-        if data:
-            await self._store.async_save(data)
+                    "pool_force_until":   device.pool_force_until,
+                    "pool_inhibit_until": device.pool_inhibit_until,
+                })
+            data[device.name] = entry
+        await self._store.async_save(data)
+
+    async def async_persist_device_state(self) -> None:
+        """Public entry point for switch entities to trigger an immediate persist."""
+        await self._async_save_device_data()
 
     # ------------------------------------------------------------------
     # Main dispatch loop — called each coordinator cycle
@@ -737,7 +783,7 @@ class DeviceManager:
                     or device.pool_required_minutes_today != before_required):
                 pool_changed = True
         if pool_changed:
-            await self._async_save_pool_data()
+            await self._async_save_device_data()
 
         # ---- Pool force ON: maintain / expire ----
         for device in self.devices:

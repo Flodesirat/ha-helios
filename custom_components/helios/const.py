@@ -192,9 +192,10 @@ MODE_OFF    = "off"
 MODES = [MODE_AUTO, MODE_MANUAL, MODE_OFF]
 
 # ---------------------------------------------------------------------------
-# Storage (pool daily run persistence)
+# Storage
 # ---------------------------------------------------------------------------
-STORAGE_KEY     = f"{DOMAIN}_pool_run"
+STORAGE_KEY           = f"{DOMAIN}_pool_run"    # device state (pool counters, manual_mode…)
+STORAGE_KEY_OPTIMIZER = f"{DOMAIN}_optimizer"   # daily optimizer results (weights, schedule…)
 STORAGE_VERSION = 1
 
 # ---------------------------------------------------------------------------

@@ -516,3 +516,5 @@ async def async_run_daily_optimization(
     ]
     coordinator.optimizer_chosen_schedule = hourly_schedule
     _LOGGER.info("Helios optimizer: weights, threshold, and diagnostics applied for today")
+
+    await coordinator.async_save_optimizer_state()

@@ -38,8 +38,11 @@ def _make_manager(stored_data: dict) -> DeviceManager:
     store.async_load = AsyncMock(return_value=stored_data)
     store.async_save = AsyncMock()
 
+    hass.states.get.return_value = None  # no HA switch state during tests
+
     mgr = DeviceManager.__new__(DeviceManager)
     mgr.devices = [ManagedDevice(_pool_config())]
+    mgr._hass = hass
     mgr._store = store
     mgr._scan_interval = 5
     mgr._dispatch_threshold = 0.3
@@ -113,7 +116,7 @@ class TestPoolRequiredPersistence:
         # The dispatch loop should now trigger a save
         saved = {}
         mgr._store.async_save = AsyncMock(side_effect=lambda d: saved.update(d))
-        await mgr._async_save_pool_data()
+        await mgr._async_save_device_data()
 
         assert saved["Piscine"]["required_minutes"] == pytest.approx(180.0)
 

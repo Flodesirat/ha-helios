@@ -46,6 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Energy Optimizer from a config entry."""
     coordinator = EnergyOptimizerCoordinator(hass, entry)
     await coordinator.device_manager.async_setup()
+    await coordinator.async_setup()
     fallback_fn = await hass.async_add_executor_job(_load_base_load_fallback)
     await coordinator.consumption_learner.async_load(
         fallback_fn=fallback_fn

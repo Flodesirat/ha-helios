@@ -111,6 +111,7 @@ class PoolForceSwitch(CoordinatorEntity, SwitchEntity):
                 blocking=False,
             )
         self._device.is_on = True
+        await self.coordinator.device_manager.async_persist_device_state()
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 
@@ -124,6 +125,7 @@ class PoolForceSwitch(CoordinatorEntity, SwitchEntity):
                 blocking=False,
             )
         self._device.is_on = False
+        await self.coordinator.device_manager.async_persist_device_state()
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 
@@ -159,10 +161,12 @@ class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs) -> None:
         self._device.manual_mode = True
+        await self.coordinator.device_manager.async_persist_device_state()
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs) -> None:
         self._device.manual_mode = False
+        await self.coordinator.device_manager.async_persist_device_state()
         self.async_write_ha_state()
 
 

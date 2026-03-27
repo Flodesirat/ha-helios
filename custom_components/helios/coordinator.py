@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from homeassistant.util import dt as dt_util
@@ -30,6 +31,7 @@ from .const import (
     normalize_tempo_color,
     CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN,
     TEMPO_RED,
+    STORAGE_KEY_OPTIMIZER, STORAGE_VERSION,
 )
 from .scoring_engine import ScoringEngine
 from .battery_strategy import BatteryStrategy
@@ -69,6 +71,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.device_manager    = DeviceManager(hass, devices, cfg)
         ema_alpha = float(cfg.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA))
         self.consumption_learner = ConsumptionLearner(hass, entry.entry_id, alpha=ema_alpha)
+        self._optimizer_store  = Store(hass, STORAGE_VERSION, STORAGE_KEY_OPTIMIZER)
         self.dispatch_threshold: float = float(
             cfg.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD)
         )
@@ -126,6 +129,48 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         if self._unsub_daily_opt:
             self._unsub_daily_opt()
             self._unsub_daily_opt = None
+
+    # ------------------------------------------------------------------
+    # Optimizer state persistence
+    # ------------------------------------------------------------------
+    async def async_setup(self) -> None:
+        """Restore persisted optimizer state (weights, threshold, diagnostics)."""
+        data: dict = await self._optimizer_store.async_load() or {}
+        if not data:
+            return
+
+        scoring = data.get("scoring")
+        if scoring:
+            self.scoring_engine.update_weights(scoring)
+            _LOGGER.debug("Helios: restored optimizer scoring weights from storage")
+
+        threshold = data.get("dispatch_threshold")
+        if threshold is not None:
+            self.dispatch_threshold = float(threshold)
+            _LOGGER.debug("Helios: restored dispatch_threshold=%.2f from storage", self.dispatch_threshold)
+
+        self.optimizer_last_run         = data.get("optimizer_last_run")
+        self.optimizer_context          = data.get("optimizer_context") or {}
+        self.optimizer_chosen           = data.get("optimizer_chosen") or {}
+        self.optimizer_top20            = data.get("optimizer_top20") or []
+        self.optimizer_chosen_schedule  = data.get("optimizer_chosen_schedule") or []
+
+        if self.optimizer_last_run:
+            _LOGGER.info(
+                "Helios: optimizer state restored (last run: %s)", self.optimizer_last_run
+            )
+
+    async def async_save_optimizer_state(self) -> None:
+        """Persist current optimizer results so they survive a restart."""
+        await self._optimizer_store.async_save({
+            "optimizer_last_run":        self.optimizer_last_run,
+            "scoring":                   self.scoring_engine.get_weights(),
+            "dispatch_threshold":        self.dispatch_threshold,
+            "optimizer_context":         self.optimizer_context,
+            "optimizer_chosen":          self.optimizer_chosen,
+            "optimizer_top20":           self.optimizer_top20,
+            "optimizer_chosen_schedule": self.optimizer_chosen_schedule,
+        })
 
     # ------------------------------------------------------------------
     # Main update cycle

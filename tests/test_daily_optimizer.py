@@ -43,6 +43,7 @@ def _make_coordinator(scoring_engine=None):
     }
     coordinator.dispatch_threshold = DEFAULT_DISPATCH_THRESHOLD
     coordinator.scoring_engine = scoring_engine or MagicMock()
+    coordinator.async_save_optimizer_state = _AsyncMock()
 
     # Build a real (but storage-less) ConsumptionLearner so as_base_load_fn() works
     learner = ConsumptionLearner.__new__(ConsumptionLearner)

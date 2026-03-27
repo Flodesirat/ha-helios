@@ -89,6 +89,7 @@ class TestForceSwitch_RefreshOnToggle:
         from custom_components.helios.switch import PoolForceSwitch
         coordinator = MagicMock()
         coordinator.async_request_refresh = AsyncMock()
+        coordinator.device_manager.async_persist_device_state = AsyncMock()
         entry = MagicMock()
         entry.entry_id = "test_entry"
         sw = PoolForceSwitch.__new__(PoolForceSwitch)

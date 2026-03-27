@@ -41,6 +41,15 @@ class ScoringEngine:
         self.w_soc      = scoring.get("weight_battery_soc",  self.w_soc)
         self.w_forecast = scoring.get("weight_forecast",     self.w_forecast)
 
+    def get_weights(self) -> dict[str, float]:
+        """Return current scoring weights (for persistence)."""
+        return {
+            "weight_pv_surplus":  self.w_surplus,
+            "weight_tempo":       self.w_tempo,
+            "weight_battery_soc": self.w_soc,
+            "weight_forecast":    self.w_forecast,
+        }
+
     def compute(self, data: dict[str, Any]) -> float:
         """Return global score in [0..1]."""
         s_surplus  = self._score_surplus(data.get("surplus_w", 0.0))

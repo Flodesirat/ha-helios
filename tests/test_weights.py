@@ -271,6 +271,7 @@ class TestDispatchThresholdApplication:
             CONF_OPTIMIZER_ALPHA:  0.5,
         }
         coordinator.dispatch_threshold = DEFAULT_DISPATCH_THRESHOLD
+        coordinator.async_save_optimizer_state = AsyncMock()
 
         # Fake hass — async_add_executor_job returns fake results directly
         # (bypasses the grid search; optimize is imported inside the closure)
