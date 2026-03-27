@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_DEVICES,
+    CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED,
     CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY,
     CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
@@ -346,19 +347,24 @@ async def async_run_daily_optimization(
             _LOGGER.error("Helios optimizer: simulation module not available: %s", exc)
             return None
 
-        # Use the EMA-learned profile when available; fall back to static base_load.json
+        # Use the EMA-learned profile when available and enabled;
+        # fall back to static base_load.json otherwise.
+        import pathlib
+        _base_load_path = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
+
+        ema_enabled = cfg.get(CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED)
         learner = coordinator.consumption_learner
-        if learner.profile is not None:
+        if ema_enabled and learner.profile is not None:
             base_load_fn = learner.as_base_load_fn()
             _LOGGER.debug(
                 "Helios optimizer: using EMA base load profile (samples=%d)",
                 learner.sample_count,
             )
         else:
-            import pathlib
-            _base_load_path = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
             try:
                 base_load_fn = load_base_load_from_json(str(_base_load_path))
+                if not ema_enabled:
+                    _LOGGER.debug("Helios optimizer: EMA disabled — using static base_load.json")
             except Exception as exc:
                 base_load_fn = None
                 _LOGGER.warning(
