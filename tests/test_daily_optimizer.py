@@ -289,8 +289,8 @@ class TestDailyOptimizerInputs:
         hass.async_add_executor_job.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_tempo_next_color_takes_priority(self):
-        """CONF_TEMPO_NEXT_COLOR_ENTITY must be preferred over CONF_TEMPO_COLOR_ENTITY."""
+    async def test_tempo_next_color_used_before_6h(self):
+        """Before 06:00, CONF_TEMPO_NEXT_COLOR_ENTITY must be preferred (HP not yet active)."""
         from custom_components.helios.const import (
             CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY,
         )
@@ -311,18 +311,47 @@ class TestDailyOptimizerInputs:
 
         hass = MagicMock()
         hass.states.get.side_effect = _states_get
+        hass.async_add_executor_job = AsyncMock(return_value=([_fake_result()], []))
 
-        sim_cfgs = []
+        with patch(
+            "custom_components.helios.daily_optimizer.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value.hour = 5  # before 6h
+            await async_run_daily_optimization(hass, coordinator)
 
-        def _capture(fn):
-            sim_cfgs.append(fn())
-            return ([_fake_result()], [])
+        # next_color="blue" must have been used → threshold from _fake_result applied
+        assert coordinator.optimizer_context["tempo"] == "blue"
 
-        hass.async_add_executor_job = AsyncMock(side_effect=_capture)
+    @pytest.mark.asyncio
+    async def test_tempo_color_used_after_6h(self):
+        """From 06:00 onwards, CONF_TEMPO_COLOR_ENTITY must take priority (HP active)."""
+        from custom_components.helios.const import (
+            CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY,
+        )
 
-        await async_run_daily_optimization(hass, coordinator)
+        coordinator = _make_coordinator()
+        coordinator.entry.data = {
+            **coordinator.entry.data,
+            CONF_TEMPO_COLOR_ENTITY:      "sensor.tempo_today",
+            CONF_TEMPO_NEXT_COLOR_ENTITY: "sensor.tempo_tomorrow",
+        }
 
-        # The SimConfig passed to optimize must have tempo="blue" (from tomorrow entity)
-        assert sim_cfgs[0] is not None
-        # Verify by checking the OptResult was applied (means executor ran with blue)
-        assert coordinator.dispatch_threshold == pytest.approx(0.25)
+        def _states_get(entity_id):
+            if entity_id == "sensor.tempo_today":
+                s = MagicMock(); s.state = "red"; return s
+            if entity_id == "sensor.tempo_tomorrow":
+                s = MagicMock(); s.state = "blue"; return s
+            return None
+
+        hass = MagicMock()
+        hass.states.get.side_effect = _states_get
+        hass.async_add_executor_job = AsyncMock(return_value=([_fake_result()], []))
+
+        with patch(
+            "custom_components.helios.daily_optimizer.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value.hour = 10  # after 6h
+            await async_run_daily_optimization(hass, coordinator)
+
+        # today's color="red" must have been used
+        assert coordinator.optimizer_context["tempo"] == "red"

@@ -282,12 +282,17 @@ async def async_run_daily_optimization(
         _LOGGER.debug("Helios optimizer: no forecast entity, using clear-sky profile for season=%s", season)
 
     # ---- Tempo color for the coming day ----
-    # At 05:00 we are still in HC (22h–6h). The HP period starts at 6h, so the color
-    # that matters for today's optimization is the "next color" entity when available
-    # (some Tempo integrations expose separate "couleur aujourd'hui" / "couleur demain").
-    # Fallback: use the regular tempo color entity, then default to "blue".
+    # Before 06:00 (HC period, HP not yet started): the "next color" entity reflects
+    # today's upcoming HP period — use it in priority.
+    # From 06:00 onwards: HP is active, so "couleur actuelle" is the authoritative source.
+    now_hour = datetime.now().hour
+    if now_hour < 6:
+        entity_priority = (CONF_TEMPO_NEXT_COLOR_ENTITY, CONF_TEMPO_COLOR_ENTITY)
+    else:
+        entity_priority = (CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY)
+
     tempo_color = "blue"
-    for entity_key in (CONF_TEMPO_NEXT_COLOR_ENTITY, CONF_TEMPO_COLOR_ENTITY):
+    for entity_key in entity_priority:
         entity_id = cfg.get(entity_key)
         if not entity_id:
             continue
