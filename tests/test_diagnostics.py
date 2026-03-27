@@ -19,10 +19,12 @@ from custom_components.helios.diagnostics import async_get_config_entry_diagnost
 from custom_components.helios.consumption_learner import ConsumptionLearner, SLOTS
 from custom_components.helios.const import (
     DOMAIN,
-    DEVICE_TYPE_POOL, DEVICE_TYPE_WATER_HEATER,
+    DEVICE_TYPE_EV, DEVICE_TYPE_POOL, DEVICE_TYPE_WATER_HEATER,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
     CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY,
     CONF_DEVICE_POWER_ENTITY,
+    CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
+    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET,
 )
 from custom_components.helios.device_manager import ManagedDevice
 from custom_components.helios.scoring_engine import ScoringEngine
@@ -430,6 +432,79 @@ class TestDevicesList:
 
         assert len(devices) == 1
         assert devices[0]["actual_power_w"] == pytest.approx(1800.0)
+
+    @pytest.mark.asyncio
+    async def test_ev_device_reads_entities_via_reader(self):
+        """EV device: soc and plugged must be read via StateReader, not hass directly."""
+        device = ManagedDevice({
+            CONF_DEVICE_NAME:          "Voiture",
+            CONF_DEVICE_TYPE:          DEVICE_TYPE_EV,
+            CONF_DEVICE_SWITCH_ENTITY: "switch.ev",
+            CONF_DEVICE_POWER_W:       7400,
+            CONF_DEVICE_PRIORITY:      6,
+            CONF_EV_SOC_ENTITY:        "sensor.ev_soc",
+            CONF_EV_PLUGGED_ENTITY:    "binary_sensor.ev_plugged",
+            CONF_EV_SOC_TARGET:        80,
+        })
+        device.is_on = False
+
+        coordinator = _make_coordinator(devices=[device])
+        hass, entry = _make_hass(coordinator)
+
+        def _states_get(entity_id):
+            s = MagicMock()
+            if entity_id == "sensor.ev_soc":
+                s.state = "55"
+            elif entity_id == "binary_sensor.ev_plugged":
+                s.state = "on"
+            else:
+                s.state = "unavailable"
+            return s
+
+        hass.states.get = MagicMock(side_effect=_states_get)
+
+        # Must not raise TypeError
+        devices = (await async_get_config_entry_diagnostics(hass, entry))[
+            "current_state"
+        ]["devices"]
+
+        ev = devices[0]["ev"]
+        assert ev["soc"] == pytest.approx(55.0)
+        assert ev["soc_target"] == 80
+        assert ev["plugged"] is True
+
+    @pytest.mark.asyncio
+    async def test_wh_device_reads_temp_via_reader(self):
+        """Water heater: temp must be read via StateReader, not hass directly."""
+        device = ManagedDevice({
+            CONF_DEVICE_NAME:          "Chauffe-eau",
+            CONF_DEVICE_TYPE:          DEVICE_TYPE_WATER_HEATER,
+            CONF_DEVICE_SWITCH_ENTITY: "switch.cwe",
+            CONF_DEVICE_POWER_W:       2000,
+            CONF_DEVICE_PRIORITY:      8,
+            CONF_WH_TEMP_ENTITY:       "sensor.cwe_temp",
+            CONF_WH_TEMP_TARGET:       60,
+        })
+        device.is_on = True
+
+        coordinator = _make_coordinator(devices=[device])
+        hass, entry = _make_hass(coordinator)
+
+        def _states_get(entity_id):
+            s = MagicMock()
+            s.state = "52" if entity_id == "sensor.cwe_temp" else "unavailable"
+            return s
+
+        hass.states.get = MagicMock(side_effect=_states_get)
+
+        # Must not raise TypeError
+        devices = (await async_get_config_entry_diagnostics(hass, entry))[
+            "current_state"
+        ]["devices"]
+
+        wh = devices[0]["water_heater"]
+        assert wh["temp"] == pytest.approx(52.0)
+        assert wh["temp_target"] == 60
 
     @pytest.mark.asyncio
     async def test_multiple_devices(self):

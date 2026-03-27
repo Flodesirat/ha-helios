@@ -78,17 +78,17 @@ def _device_diag(device: ManagedDevice, hass: HomeAssistant, now_time, surplus_w
 
     if device.device_type == DEVICE_TYPE_EV:
         base["ev"] = {
-            "soc":       ManagedDevice._state_float(hass, device.ev_soc_entity) if device.ev_soc_entity else None,
+            "soc":       ManagedDevice._state_float(reader, device.ev_soc_entity) if device.ev_soc_entity else None,
             "soc_target": device.ev_soc_target,
-            "plugged":   ManagedDevice._state_bool(hass, device.ev_plugged_entity, fallback=True) if device.ev_plugged_entity else device.ev_plugged_manual,
+            "plugged":   ManagedDevice._state_bool(reader, device.ev_plugged_entity, fallback=True) if device.ev_plugged_entity else device.ev_plugged_manual,
         }
 
     if device.device_type == DEVICE_TYPE_WATER_HEATER:
         base["water_heater"] = {
-            "temp":              ManagedDevice._state_float(hass, device.wh_temp_entity) if device.wh_temp_entity else None,
+            "temp":              ManagedDevice._state_float(reader, device.wh_temp_entity) if device.wh_temp_entity else None,
             "temp_target":       device.wh_temp_target,
             "temp_min":          device.wh_temp_min,
-            "temp_min_entity":   ManagedDevice._state_float(hass, device.wh_temp_min_entity) if device.wh_temp_min_entity else None,
+            "temp_min_entity":   ManagedDevice._state_float(reader, device.wh_temp_min_entity) if device.wh_temp_min_entity else None,
             "off_peak_hysteresis_k": device.wh_off_peak_hysteresis_k,
         }
 
