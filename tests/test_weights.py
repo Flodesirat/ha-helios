@@ -115,9 +115,8 @@ class TestScoringEngineWeights:
         Uses data where dimensions score differently so weight shifts matter:
           surplus_w=100  → _score_surplus ≈ 0.2  (small surplus)
           tempo="red"    → _score_tempo   = 0.0
-          soc=50         → _score_soc     = 1.0
-        Before: 0.4×0.2 + 0.3×0.0 + 0.2×1.0 + 0.1×0.5 = 0.33
-        After:  0.1×0.2 + 0.1×0.0 + 0.7×1.0 + 0.1×0.5 = 0.77
+          soc=50         → _score_soc     > 0.5  (above pivot with default soc_min/max)
+        Raising w_soc to 0.7 must increase the final score.
         """
         eng = self._engine()
         data = {"surplus_w": 100, "tempo_color": "red", "battery_soc": 50}
@@ -134,6 +133,64 @@ class TestScoringEngineWeights:
         assert score_after > score_before, (
             "Higher soc weight with soc=1.0 should raise the score"
         )
+
+
+# ---------------------------------------------------------------------------
+# ScoringEngine — SOC scoring
+# ---------------------------------------------------------------------------
+
+class TestSocScoring:
+    """_score_soc parametric curve: monotone increasing, anchored to soc_min/soc_max."""
+
+    def _engine(self, soc_min=10, soc_max=95) -> ScoringEngine:
+        return ScoringEngine({
+            "battery_soc_min": soc_min,
+            "battery_soc_max": soc_max,
+        })
+
+    def test_none_returns_neutral(self):
+        assert self._engine()._score_soc(None) == pytest.approx(0.5)
+
+    def test_below_soc_min_returns_zero(self):
+        eng = self._engine(soc_min=20)
+        assert eng._score_soc(0)  == pytest.approx(0.0)
+        assert eng._score_soc(20) == pytest.approx(0.0)
+
+    def test_at_soc_max_returns_one(self):
+        eng = self._engine(soc_max=95)
+        assert eng._score_soc(95)  == pytest.approx(1.0)
+        assert eng._score_soc(100) == pytest.approx(1.0)
+
+    def test_monotone_increasing(self):
+        """Score must never decrease as SOC rises."""
+        eng = self._engine(soc_min=10, soc_max=95)
+        socs = list(range(0, 101, 5))
+        scores = [eng._score_soc(float(s)) for s in socs]
+        for i in range(len(scores) - 1):
+            assert scores[i] <= scores[i + 1], (
+                f"Score decreased from soc={socs[i]} ({scores[i]:.3f}) "
+                f"to soc={socs[i+1]} ({scores[i+1]:.3f})"
+            )
+
+    def test_pivot_at_midpoint(self):
+        """At the pivot (midpoint), score must be exactly 0.6."""
+        eng = self._engine(soc_min=10, soc_max=90)
+        pivot = (10 + 90) / 2.0  # 50.0
+        assert eng._score_soc(pivot) == pytest.approx(0.6)
+
+    def test_custom_soc_min_shifts_reserve_zone(self):
+        """Raising soc_min must keep score=0 over the wider reserve zone."""
+        eng = self._engine(soc_min=30, soc_max=95)
+        assert eng._score_soc(29) == pytest.approx(0.0)
+        assert eng._score_soc(30) == pytest.approx(0.0)
+        assert eng._score_soc(31) > 0.0
+
+    def test_score_range_always_01(self):
+        for soc_min, soc_max in [(10, 95), (20, 90), (5, 100)]:
+            eng = self._engine(soc_min=soc_min, soc_max=soc_max)
+            for soc in range(0, 101):
+                s = eng._score_soc(float(soc))
+                assert 0.0 <= s <= 1.0, f"soc={soc} → score={s} out of [0,1]"
 
 
 # ---------------------------------------------------------------------------

@@ -7,8 +7,10 @@ from .const import (
     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
     CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
     CONF_BATTERY_CAPACITY_KWH,
+    CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
     DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_FORECAST,
+    DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
     TEMPO_BLUE, TEMPO_WHITE, TEMPO_RED,
     normalize_tempo_color,
 )
@@ -30,6 +32,8 @@ class ScoringEngine:
         self.w_soc      = config.get(CONF_WEIGHT_BATTERY_SOC,  DEFAULT_WEIGHT_BATTERY_SOC)
         self.w_forecast = config.get(CONF_WEIGHT_FORECAST,     DEFAULT_WEIGHT_FORECAST)
         self.capacity_kwh = config.get(CONF_BATTERY_CAPACITY_KWH, 5.0)
+        self.soc_min    = float(config.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
+        self.soc_max    = float(config.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX))
 
     # ------------------------------------------------------------------
     # Public API
@@ -88,28 +92,25 @@ class ScoringEngine:
         return mapping.get(normalize_tempo_color(color) or "", 0.5)
 
     def _score_soc(self, soc: float | None) -> float:
-        """Map battery SOC to [0..1] based on operational zones.
+        """Map battery SOC to [0..1] using configured soc_min / soc_max.
 
-        Réserve   (0–20 %)  → 0.0          coupure des charges non critiques
-        Basse     (20–50 %) → 0.0–0.15     dispatch uniquement si surplus réseau
-        Optimale  (50–75 %) → 0.15–1.0     zone de confort, usage normal
-        Haute     (75–90 %) → 1.0–0.65     stockage suffisant pour la nuit
-        Très haute(90–95 %) → 0.65–0.9     opportunité gros consommateurs
-        Pleine    (95–100%) → 1.0          excédent total, décharger au max
+        Réserve  (0 → soc_min)         → 0.0   dispatch bloqué
+        Basse    (soc_min → pivot)      → 0.0 → 0.6   rampe forte
+        Confort  (pivot   → soc_max)    → 0.6 → 1.0   rampe plate
+        Pleine   (≥ soc_max)            → 1.0
+
+        pivot = (soc_min + soc_max) / 2  — garantit des pentes de largeur égale.
         None → neutre 0.5.
         """
         if soc is None:
             return 0.5
-        if soc <= 20:
+        if soc <= self.soc_min:
             return 0.0
-        if soc <= 50:
-            return 0.15 * (soc - 20) / 30.0
-        if soc <= 75:
-            return 0.15 + 0.85 * (soc - 50) / 25.0
-        if soc <= 90:
-            return 1.0 - 0.35 * (soc - 75) / 15.0
-        if soc <= 95:
-            return 0.65 + 0.25 * (soc - 90) / 5.0
+        pivot = (self.soc_min + self.soc_max) / 2.0
+        if soc <= pivot:
+            return 0.6 * (soc - self.soc_min) / (pivot - self.soc_min)
+        if soc <= self.soc_max:
+            return 0.6 + 0.4 * (soc - pivot) / (self.soc_max - pivot)
         return 1.0
 
     def _score_forecast(self, data: dict[str, Any]) -> float:
