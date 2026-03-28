@@ -7,6 +7,7 @@
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/Flodesirat/ha-helios",
+  "integration_type": "service",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/Flodesirat/ha-helios/issues",
   "requirements": [],
