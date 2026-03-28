@@ -6,6 +6,7 @@ import time
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
@@ -13,6 +14,32 @@ from homeassistant.util import slugify
 from .const import DOMAIN, MODE_AUTO, MODE_OFF, DEVICE_TYPE_POOL, DEVICE_TYPE_EV
 from .coordinator import EnergyOptimizerCoordinator
 from .managed_device import ManagedDevice
+
+
+class _BaseDeviceSwitch(CoordinatorEntity, SwitchEntity):
+    """Base class for per-device switch entities."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: EnergyOptimizerCoordinator,
+        entry: ConfigEntry,
+        device: ManagedDevice,
+    ) -> None:
+        super().__init__(coordinator)
+        self._entry  = entry
+        self._device = device
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry.entry_id)},
+            name="Helios",
+            manufacturer="Community",
+            model="Helios",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
 
 async def async_setup_entry(
@@ -64,15 +91,20 @@ class EnergyOptimizerModeSwitch(CoordinatorEntity, SwitchEntity):
         self.async_write_ha_state()
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Helios",
-        }
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry.entry_id)},
+            name="Helios",
+            manufacturer="Community",
+            model="Helios",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
 
-class PoolForceSwitch(CoordinatorEntity, SwitchEntity):
+class PoolForceSwitch(_BaseDeviceSwitch):
     """Force pool filtration ON for the selected duration, or turn it OFF immediately."""
+
+    _attr_translation_key = "eo_pool_force"
 
     def __init__(
         self,
@@ -80,21 +112,10 @@ class PoolForceSwitch(CoordinatorEntity, SwitchEntity):
         entry: ConfigEntry,
         device: ManagedDevice,
     ) -> None:
-        super().__init__(coordinator)
-        self._entry  = entry
-        self._device = device
+        super().__init__(coordinator, entry, device)
         slug = slugify(device.name)
-        self._attr_has_entity_name = True
-        self._attr_translation_key = "eo_pool_force"
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{slug}_force"
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Helios",
-        }
 
     @property
     def is_on(self) -> bool:
@@ -130,8 +151,10 @@ class PoolForceSwitch(CoordinatorEntity, SwitchEntity):
         await self.coordinator.async_request_refresh()
 
 
-class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
+class DeviceManualSwitch(_BaseDeviceSwitch):
     """Per-device manual mode switch — ON means Helios hands off the device entirely."""
+
+    _attr_translation_key = "eo_device_manual"
 
     def __init__(
         self,
@@ -139,21 +162,10 @@ class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
         entry: ConfigEntry,
         device: ManagedDevice,
     ) -> None:
-        super().__init__(coordinator)
-        self._entry  = entry
-        self._device = device
+        super().__init__(coordinator, entry, device)
         slug = slugify(device.name)
-        self._attr_has_entity_name = True
-        self._attr_translation_key = "eo_device_manual"
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_device_{slug}_manual"
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Helios",
-        }
 
     @property
     def is_on(self) -> bool:
@@ -170,8 +182,10 @@ class DeviceManualSwitch(CoordinatorEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
-class EVPluggedSwitch(CoordinatorEntity, SwitchEntity):
+class EVPluggedSwitch(_BaseDeviceSwitch):
     """Manual 'EV plugged in' indicator — used when no external plugged entity is configured."""
+
+    _attr_translation_key = "eo_ev_plugged"
 
     def __init__(
         self,
@@ -179,21 +193,10 @@ class EVPluggedSwitch(CoordinatorEntity, SwitchEntity):
         entry: ConfigEntry,
         device: ManagedDevice,
     ) -> None:
-        super().__init__(coordinator)
-        self._entry  = entry
-        self._device = device
+        super().__init__(coordinator, entry, device)
         slug = slugify(device.name)
-        self._attr_has_entity_name = True
-        self._attr_translation_key = "eo_ev_plugged"
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_ev_{slug}_plugged"
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Helios",
-        }
 
     @property
     def is_on(self) -> bool:
