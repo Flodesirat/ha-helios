@@ -6,24 +6,24 @@ from datetime import datetime
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPower, PERCENTAGE
+from homeassistant.const import UnitOfPower, UnitOfTime, PERCENTAGE
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
 from homeassistant.util import slugify
 
 from .const import (
     DOMAIN,
-    DEVICE_TYPE_APPLIANCE, APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_READY, APPLIANCE_STATE_PREPARING,
+    DEVICE_TYPE_APPLIANCE, APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_PREPARING,
     DEVICE_TYPE_POOL,
 )
 from .coordinator import EnergyOptimizerCoordinator
+from .managed_device import ManagedDevice
 
 # Appliance state → published state
 _APPLIANCE_STATE_MAP = {
     APPLIANCE_STATE_RUNNING:   "en_route",
-    APPLIANCE_STATE_READY:     "en_attente",
     APPLIANCE_STATE_PREPARING: "en_attente",
 }
 _APPLIANCE_STATE_DEFAULT = "stop"
@@ -65,14 +65,14 @@ class _BaseEOSensor(CoordinatorEntity, SensorEntity):
         self._entry = entry
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Helios",
-            "manufacturer": "Community",
-            "model": "Helios",
-            "entry_type": "service",
-        }
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry.entry_id)},
+            name="Helios",
+            manufacturer="Community",
+            model="Helios",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
 
 class EnergyOptimizerSurplusSensor(_BaseEOSensor):
@@ -353,7 +353,7 @@ class DevicePowerSensor(_BaseEOSensor):
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
+    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device: ManagedDevice) -> None:
         super().__init__(coordinator, entry)
         self._device = device
         slug = slugify(device.name)
@@ -365,7 +365,6 @@ class DevicePowerSensor(_BaseEOSensor):
     def native_value(self) -> float:
         if not self._device.is_on:
             return 0.0
-        from .managed_device import ManagedDevice
         reader = ManagedDevice._make_ha_reader(self.coordinator.hass)
         return float(self._device.actual_power_w(reader))
 
@@ -383,17 +382,13 @@ class ApplianceStateSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
+    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device: ManagedDevice) -> None:
         super().__init__(coordinator, entry)
         self._device = device
         slug = slugify(device.name)
         self._attr_translation_key = "eo_appliance_state"
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_appliance_{slug}_state"
-
-    @property
-    def unique_id(self) -> str:
-        return self._attr_unique_id
 
     @property
     def native_value(self) -> str:
@@ -407,18 +402,14 @@ class ApplianceStateSensor(_BaseEOSensor):
 class _BasePoolSensor(_BaseEOSensor):
     """Base class for pool filtration sensors."""
 
-    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device: ManagedDevice) -> None:
         super().__init__(coordinator, entry)
         self._device = device
         self._slug   = slugify(device.name)
-
-    _attr_has_entity_name = True
-    _attr_native_unit_of_measurement = "min"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def unique_id(self) -> str:
-        return self._attr_unique_id  # set by subclass
 
 
 class PoolFiltrationRequiredSensor(_BasePoolSensor):
