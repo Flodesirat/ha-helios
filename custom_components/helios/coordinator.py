@@ -58,7 +58,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.entry = entry
-        cfg = {**entry.data, **entry.options}
+        cfg = self._cfg
         interval = cfg.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL)
         super().__init__(
             hass,
@@ -256,7 +256,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "battery_power_w": _float(cfg.get(CONF_BATTERY_POWER_ENTITY)) if battery_enabled else None,
             "tempo_color":      normalize_tempo_color(_str(cfg.get(CONF_TEMPO_COLOR_ENTITY))),
             "tempo_next_color": normalize_tempo_color(_str(cfg.get(CONF_TEMPO_NEXT_COLOR_ENTITY))),
-            "forecast_kwh": _float(cfg.get(CONF_FORECAST_ENTITY)) if cfg.get(CONF_FORECAST_ENTITY) else None,
+            "forecast_kwh": _float(entity) if (entity := cfg.get(CONF_FORECAST_ENTITY)) else None,
         }
 
     def _update_state(self, raw: dict[str, Any]) -> None:
