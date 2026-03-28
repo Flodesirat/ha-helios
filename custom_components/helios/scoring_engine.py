@@ -6,7 +6,6 @@ from typing import Any
 from .const import (
     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
     CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
-    CONF_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
     CONF_PEAK_PV_W,
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
@@ -33,7 +32,6 @@ class ScoringEngine:
         self.w_tempo    = config.get(CONF_WEIGHT_TEMPO,        DEFAULT_WEIGHT_TEMPO)
         self.w_soc      = config.get(CONF_WEIGHT_BATTERY_SOC,  DEFAULT_WEIGHT_BATTERY_SOC)
         self.w_forecast = config.get(CONF_WEIGHT_FORECAST,     DEFAULT_WEIGHT_FORECAST)
-        self.capacity_kwh = config.get(CONF_BATTERY_CAPACITY_KWH, 5.0)
         self.soc_min    = float(config.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
         self.soc_max    = float(config.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX))
         self.peak_pv_kw = float(config.get(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W)) / 1000.0
@@ -90,7 +88,6 @@ class ScoringEngine:
         Blue (cheap) → 1.0, White → 0.5, Red (expensive) → 0.0.
         None (no Tempo) → neutral 0.5.
         """
-        # TODO: implement
         mapping = {TEMPO_BLUE: 1.0, TEMPO_WHITE: 0.5, TEMPO_RED: 0.0}
         return mapping.get(normalize_tempo_color(color) or "", 0.5)
 
@@ -137,6 +134,8 @@ class ScoringEngine:
         forecast_kwh = data.get("forecast_kwh")
         if forecast_kwh is None or forecast_kwh <= 0.0:
             return 0.5
+        if self.peak_pv_kw <= 0.0:
+            return 0.5  # PV peak not configured — can't compute density
 
         hour = float(data.get("hour", 12))
         hours_remaining = max(0.5, 20.0 - hour)
