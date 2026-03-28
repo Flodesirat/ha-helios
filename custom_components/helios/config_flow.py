@@ -311,7 +311,6 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(CONF_DEVICE_DEADLINE): selector.TimeSelector(),
             }),
-            errors=errors,
         )
 
     # ------------------------------------------------------------------ Step 3c — Common fields
@@ -860,57 +859,53 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
 
 def _battery_schema(defaults: dict | None = None) -> vol.Schema:
     d = defaults or {}
-
-    def _d(key, fallback):
-        return d.get(key, fallback)
-
     return vol.Schema({
-        vol.Required(CONF_BATTERY_ENABLED, default=_d(CONF_BATTERY_ENABLED, False)): selector.BooleanSelector(),
-        vol.Optional(CONF_BATTERY_SOC_ENTITY, **({'default': d[CONF_BATTERY_SOC_ENTITY]} if CONF_BATTERY_SOC_ENTITY in d else {})): selector.EntitySelector(
+        vol.Required(CONF_BATTERY_ENABLED, default=d.get(CONF_BATTERY_ENABLED, False)): selector.BooleanSelector(),
+        vol.Optional(CONF_BATTERY_SOC_ENTITY, **_opt_default(d, CONF_BATTERY_SOC_ENTITY)): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor")
         ),
-        vol.Optional(CONF_BATTERY_POWER_ENTITY, **({'default': d[CONF_BATTERY_POWER_ENTITY]} if CONF_BATTERY_POWER_ENTITY in d else {})): selector.EntitySelector(
+        vol.Optional(CONF_BATTERY_POWER_ENTITY, **_opt_default(d, CONF_BATTERY_POWER_ENTITY)): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "input_number"])
         ),
-        vol.Optional(CONF_BATTERY_CHARGE_SCRIPT, **({'default': d[CONF_BATTERY_CHARGE_SCRIPT]} if CONF_BATTERY_CHARGE_SCRIPT in d else {})): selector.EntitySelector(
+        vol.Optional(CONF_BATTERY_CHARGE_SCRIPT, **_opt_default(d, CONF_BATTERY_CHARGE_SCRIPT)): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="script")
         ),
-        vol.Optional(CONF_BATTERY_AUTOCONSUM_SCRIPT, **({'default': d[CONF_BATTERY_AUTOCONSUM_SCRIPT]} if CONF_BATTERY_AUTOCONSUM_SCRIPT in d else {})): selector.EntitySelector(
+        vol.Optional(CONF_BATTERY_AUTOCONSUM_SCRIPT, **_opt_default(d, CONF_BATTERY_AUTOCONSUM_SCRIPT)): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="script")
         ),
         vol.Optional(
             CONF_BATTERY_CAPACITY_KWH,
-            default=_d(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH),
+            default=d.get(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0.5, max=100, step=0.5, unit_of_measurement="kWh")
         ),
         vol.Optional(
             CONF_BATTERY_MAX_CHARGE_POWER_W,
-            default=_d(CONF_BATTERY_MAX_CHARGE_POWER_W, 0),
+            default=d.get(CONF_BATTERY_MAX_CHARGE_POWER_W, 0),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=15000, step=100, unit_of_measurement="W")
         ),
         vol.Optional(
             CONF_BATTERY_MAX_DISCHARGE_POWER_W,
-            default=_d(CONF_BATTERY_MAX_DISCHARGE_POWER_W, 0),
+            default=d.get(CONF_BATTERY_MAX_DISCHARGE_POWER_W, 0),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=15000, step=100, unit_of_measurement="W")
         ),
         vol.Optional(
             CONF_BATTERY_SOC_MIN,
-            default=_d(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN),
+            default=d.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=50, step=1, unit_of_measurement="%")
         ),
         vol.Optional(
             CONF_BATTERY_SOC_MAX,
-            default=_d(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX),
+            default=d.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=50, max=100, step=1, unit_of_measurement="%")
         ),
         vol.Optional(
             CONF_BATTERY_SOC_RESERVE_ROUGE,
-            default=_d(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE),
+            default=d.get(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
         ),
@@ -919,99 +914,95 @@ def _battery_schema(defaults: dict | None = None) -> vol.Schema:
 
 def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
     d = defaults or {}
-
-    def _d(key, fallback):
-        return d.get(key, fallback)
-
     return vol.Schema({
         vol.Optional(
             CONF_WEIGHT_PV_SURPLUS,
-            default=_d(CONF_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_PV_SURPLUS),
+            default=d.get(CONF_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_PV_SURPLUS),
         ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
         vol.Optional(
             CONF_WEIGHT_TEMPO,
-            default=_d(CONF_WEIGHT_TEMPO, DEFAULT_WEIGHT_TEMPO),
+            default=d.get(CONF_WEIGHT_TEMPO, DEFAULT_WEIGHT_TEMPO),
         ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
         vol.Optional(
             CONF_WEIGHT_BATTERY_SOC,
-            default=_d(CONF_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_BATTERY_SOC),
+            default=d.get(CONF_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_BATTERY_SOC),
         ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
         vol.Optional(
             CONF_WEIGHT_FORECAST,
-            default=_d(CONF_WEIGHT_FORECAST, DEFAULT_WEIGHT_FORECAST),
+            default=d.get(CONF_WEIGHT_FORECAST, DEFAULT_WEIGHT_FORECAST),
         ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
         vol.Optional(
             CONF_SCAN_INTERVAL_MINUTES,
-            default=_d(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL),
+            default=d.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=1, max=60, step=1, unit_of_measurement="min")
         ),
         vol.Optional(
             CONF_DISPATCH_THRESHOLD,
-            default=_d(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD),
+            default=d.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
         ),
         vol.Optional(
             CONF_GRID_ALLOWANCE_W,
-            default=_d(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W),
+            default=d.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=2000, step=50, unit_of_measurement="W")
         ),
         vol.Optional(
             CONF_MODE,
-            default=_d(CONF_MODE, MODE_AUTO),
+            default=d.get(CONF_MODE, MODE_AUTO),
         ): selector.SelectSelector(
             selector.SelectSelectorConfig(options=MODES, translation_key="mode")
         ),
         vol.Optional(
             CONF_OPTIMIZER_ALPHA,
-            default=_d(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA),
+            default=d.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
         ),
         vol.Optional(
             CONF_BASE_LOAD_NOISE,
-            default=_d(CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE),
+            default=d.get(CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
         ),
         vol.Optional(
             CONF_OPTIMIZER_N_RUNS,
-            default=_d(CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS),
+            default=d.get(CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=1, max=30, step=1, mode=selector.NumberSelectorMode.BOX)
         ),
         vol.Optional(
             CONF_RISK_LAMBDA,
-            default=_d(CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA),
+            default=d.get(CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0.0, max=2.0, step=0.05)
         ),
         vol.Optional(
             CONF_EMA_ALPHA,
-            default=_d(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA),
+            default=d.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0.01, max=0.5, step=0.01)
         ),
         vol.Optional(
             CONF_EMA_ENABLED,
-            default=_d(CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED),
+            default=d.get(CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED),
         ): selector.BooleanSelector(),
         vol.Optional(
             CONF_OFF_PEAK_1_START,
-            default=_d(CONF_OFF_PEAK_1_START, ""),
+            default=d.get(CONF_OFF_PEAK_1_START, ""),
         ): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TIME)),
         vol.Optional(
             CONF_OFF_PEAK_1_END,
-            default=_d(CONF_OFF_PEAK_1_END, ""),
+            default=d.get(CONF_OFF_PEAK_1_END, ""),
         ): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TIME)),
         vol.Optional(
             CONF_OFF_PEAK_2_START,
-            default=_d(CONF_OFF_PEAK_2_START, ""),
+            default=d.get(CONF_OFF_PEAK_2_START, ""),
         ): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TIME)),
         vol.Optional(
             CONF_OFF_PEAK_2_END,
-            default=_d(CONF_OFF_PEAK_2_END, ""),
+            default=d.get(CONF_OFF_PEAK_2_END, ""),
         ): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TIME)),
     })
