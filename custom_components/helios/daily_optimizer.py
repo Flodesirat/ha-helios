@@ -10,8 +10,11 @@ Results are applied to the ScoringEngine and dispatch threshold for the day.
 """
 from __future__ import annotations
 
+import copy
 import logging
 import math
+import pathlib
+from dataclasses import replace as _dc_replace
 from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -55,11 +58,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-try:
-    from .device_manager import ManagedDevice as _CheckManagedDevice  # noqa: F401
-    _HAS_MANAGED_DISPATCH = True
-except ImportError:
-    _HAS_MANAGED_DISPATCH = False
+_BASE_LOAD_PATH = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
 
 # ---------------------------------------------------------------------------
 # Seasonal helpers
@@ -146,11 +145,11 @@ def ha_devices_to_sim(
         try:
             h, m = v.split(":")
             return int(h) + int(m) / 60.0
-        except Exception:
+        except (ValueError, AttributeError):
             pass
         try:
             return float(v)
-        except Exception:
+        except (ValueError, TypeError):
             pass
         h, m = default.split(":")
         return int(h) + int(m) / 60.0
@@ -332,9 +331,8 @@ async def async_run_daily_optimization(
         devices_config, global_cfg=cfg, hass=hass
     )
     _LOGGER.debug(
-        "Helios optimizer: %d devices mapped for simulation (managed dispatch: %s)",
+        "Helios optimizer: %d devices mapped for simulation",
         len(initial_sim_devices),
-        _HAS_MANAGED_DISPATCH,
     )
 
     # ---- Run optimization + capture schedule in executor ----
@@ -349,9 +347,6 @@ async def async_run_daily_optimization(
 
         # Use the EMA-learned profile when available and enabled;
         # fall back to static base_load.json otherwise.
-        import pathlib
-        _base_load_path = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
-
         ema_enabled = cfg.get(CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED)
         learner = coordinator.consumption_learner
         if ema_enabled and learner.profile is not None:
@@ -362,7 +357,7 @@ async def async_run_daily_optimization(
             )
         else:
             try:
-                base_load_fn = load_base_load_from_json(str(_base_load_path))
+                base_load_fn = load_base_load_from_json(str(_BASE_LOAD_PATH))
                 if not ema_enabled:
                     _LOGGER.debug("Helios optimizer: EMA disabled — using static base_load.json")
             except Exception as exc:
@@ -390,7 +385,6 @@ async def async_run_daily_optimization(
         def _devices_fn():
             # Return fresh (sim_devices, managed_devices) pairs each run.
             # SimDevice has mutable runtime state, so we need a fresh copy per run.
-            import copy
             return (
                 copy.deepcopy(initial_sim_devices),
                 copy.deepcopy(initial_managed_devices),
@@ -413,9 +407,8 @@ async def async_run_daily_optimization(
             return None
 
         # Re-run simulation with chosen config to capture the hourly schedule
-        from dataclasses import replace as _replace
         best = results[0]
-        best_cfg = _replace(
+        best_cfg = _dc_replace(
             sim_cfg,
             scoring={
                 "weight_pv_surplus":  best.w_surplus,
