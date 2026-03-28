@@ -37,7 +37,8 @@ from .const import (
 from .scoring_engine import ScoringEngine
 from .battery_strategy import BatteryStrategy
 from .consumption_learner import ConsumptionLearner
-from .device_manager import DeviceManager, ManagedDevice
+from .device_manager import DeviceManager
+from .managed_device import ManagedDevice
 from .daily_optimizer import async_run_daily_optimization
 
 _LOGGER = logging.getLogger(__name__)

@@ -13,7 +13,7 @@ from homeassistant.util import slugify
 
 from .const import DOMAIN, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE
 from .coordinator import EnergyOptimizerCoordinator
-from .device_manager import ManagedDevice
+from .managed_device import ManagedDevice
 
 
 def _epoch_to_iso(ts: float | None) -> str | None:

@@ -138,7 +138,7 @@ def ha_devices_to_sim(
             state (WH temp, EV SOC) from HA to seed the simulation accurately.
     """
     from .simulation.devices import SimDevice
-    from .device_manager import ManagedDevice
+    from .managed_device import ManagedDevice
 
     def _t(v: str, default: str) -> float:
         """Parse 'HH:MM' time string to decimal hours, or return default."""

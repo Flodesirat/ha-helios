@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from custom_components.helios.device_manager import StateReader
+    from custom_components.helios.managed_device import StateReader
 
 
 @dataclass

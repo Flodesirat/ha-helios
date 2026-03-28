@@ -24,7 +24,7 @@ from custom_components.helios.simulation.devices import SimDevice
 from custom_components.helios.simulation.engine import (
     SimConfig, run as simulate, dispatch, STEP_MINUTES,
 )
-from custom_components.helios.device_manager import ManagedDevice
+from custom_components.helios.managed_device import ManagedDevice
 from custom_components.helios.daily_optimizer import ha_devices_to_sim
 from custom_components.helios.const import (
     DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_EV, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE,

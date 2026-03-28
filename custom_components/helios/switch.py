@@ -12,7 +12,7 @@ from homeassistant.util import slugify
 
 from .const import DOMAIN, MODE_AUTO, MODE_OFF, DEVICE_TYPE_POOL, DEVICE_TYPE_EV
 from .coordinator import EnergyOptimizerCoordinator
-from .device_manager import ManagedDevice
+from .managed_device import ManagedDevice
 
 
 async def async_setup_entry(

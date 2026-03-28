@@ -24,7 +24,7 @@ except ImportError:
 
 # Use the real ManagedDevice dispatch logic when available
 try:
-    from custom_components.helios.device_manager import ManagedDevice as _ManagedDevice
+    from custom_components.helios.managed_device import ManagedDevice as _ManagedDevice
     _HAS_MANAGED = True
 except ImportError:
     _ManagedDevice = None  # type: ignore[assignment,misc]

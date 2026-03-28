@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.helios.device_manager import DeviceManager, ManagedDevice
+from custom_components.helios.device_manager import DeviceManager
+from custom_components.helios.managed_device import ManagedDevice
 from custom_components.helios.const import (
     DEVICE_TYPE_POOL,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,

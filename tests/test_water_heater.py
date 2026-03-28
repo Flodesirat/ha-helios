@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.helios.device_manager import ManagedDevice, StateReader, _parse_off_peak_slots
+from custom_components.helios.managed_device import ManagedDevice, StateReader, _parse_off_peak_slots
 from custom_components.helios.const import (
     DEVICE_TYPE_WATER_HEATER,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY, CONF_DEVICE_POWER_W,
@@ -162,7 +162,7 @@ class TestMustRunNow:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(23, 0)),
             )
             assert device.must_run_now(reader) is True
@@ -178,7 +178,7 @@ class TestMustRunNow:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(23, 0)),
             )
             assert device.must_run_now(reader) is False
@@ -190,7 +190,7 @@ class TestMustRunNow:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(23, 0)),
             )
             assert device.must_run_now(reader) is False
@@ -202,7 +202,7 @@ class TestMustRunNow:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(1, 0)),
             )
             assert device.must_run_now(reader) is False
@@ -214,7 +214,7 @@ class TestMustRunNow:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(14, 0)),  # on-peak hour
             )
             assert device.must_run_now(reader) is False
@@ -227,7 +227,7 @@ class TestMustRunNow:
         # On-peak hour
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(14, 0)),
             )
             assert device.must_run_now(reader) is True
@@ -235,7 +235,7 @@ class TestMustRunNow:
         # Off-peak hour — also forces
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(23, 0)),
             )
             assert device.must_run_now(reader) is True
@@ -254,7 +254,7 @@ class TestMustRunNow:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(5, 10)),  # 50 min before 06:00 end < 60 min
             )
             assert device.must_run_now(reader) is False
@@ -268,7 +268,7 @@ class TestMustRunNow:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(5, 0)),  # exactly 60 min before 06:00
             )
             assert device.must_run_now(reader) is True
@@ -282,7 +282,7 @@ class TestMustRunNow:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(2, 0)),  # 4 h before 06:00 end
             )
             assert device.must_run_now(reader) is True
@@ -301,7 +301,7 @@ class TestIsSatisfied:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(23, 0)),
             )
             assert device.is_satisfied(reader) is True
@@ -313,7 +313,7 @@ class TestIsSatisfied:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(3, 0)),
             )
             assert device.is_satisfied(reader) is True
@@ -325,7 +325,7 @@ class TestIsSatisfied:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(23, 0)),
             )
             assert device.is_satisfied(reader) is False
@@ -337,7 +337,7 @@ class TestIsSatisfied:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(14, 0)),
             )
             assert device.is_satisfied(reader) is True
@@ -349,7 +349,7 @@ class TestIsSatisfied:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(14, 0)),
             )
             assert device.is_satisfied(reader) is False
@@ -361,7 +361,7 @@ class TestIsSatisfied:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(23, 0)),
             )
             # During HC the satisfaction threshold is off_peak_min, not target
@@ -382,7 +382,7 @@ class TestUrgencyModifier:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(14, 0)),
             )
             urgency = device.urgency_modifier(reader)
@@ -396,7 +396,7 @@ class TestUrgencyModifier:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(14, 0)),
             )
             urgency = device.urgency_modifier(reader)
@@ -410,7 +410,7 @@ class TestUrgencyModifier:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(23, 0)),
             )
             urgency = device.urgency_modifier(reader)
@@ -423,7 +423,7 @@ class TestUrgencyModifier:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "custom_components.helios.device_manager.datetime",
+                "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(23, 0)),
             )
             urgency = device.urgency_modifier(reader)

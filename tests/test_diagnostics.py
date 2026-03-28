@@ -26,7 +26,7 @@ from custom_components.helios.const import (
     CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET,
 )
-from custom_components.helios.device_manager import ManagedDevice
+from custom_components.helios.managed_device import ManagedDevice
 from custom_components.helios.scoring_engine import ScoringEngine
 
 

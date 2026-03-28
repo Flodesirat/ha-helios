@@ -10,7 +10,7 @@ from homeassistant.util import slugify
 
 from .const import DOMAIN, DEVICE_TYPE_POOL
 from .coordinator import EnergyOptimizerCoordinator
-from .device_manager import ManagedDevice
+from .managed_device import ManagedDevice
 
 _DURATIONS: dict[str, float] = {
     "1h":  1.0,

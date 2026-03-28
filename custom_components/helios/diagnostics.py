@@ -43,7 +43,7 @@ from .const import (
     MODE_AUTO,
 )
 from .coordinator import EnergyOptimizerCoordinator
-from .device_manager import ManagedDevice
+from .managed_device import ManagedDevice
 
 
 def _ts_iso(epoch: float | None) -> str | None:
