@@ -39,7 +39,7 @@ from .const import (
     CONF_APPLIANCE_READY_ENTITY, CONF_APPLIANCE_PREPARE_SCRIPT,
     CONF_APPLIANCE_START_SCRIPT, CONF_APPLIANCE_POWER_ENTITY,
     CONF_APPLIANCE_POWER_THRESHOLD_W, CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
-    APPLIANCE_STATE_IDLE, APPLIANCE_STATE_READY, APPLIANCE_STATE_PREPARING,
+    APPLIANCE_STATE_IDLE, APPLIANCE_STATE_PREPARING,
     APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_DONE,
     # Off-peak slots
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
@@ -114,6 +114,9 @@ class ManagedDevice:
         self.min_on_minutes: int = int(config.get(CONF_DEVICE_MIN_ON_MINUTES, DEFAULT_DEVICE_MIN_ON_MINUTES))
         self.allowed_start: str = config.get(CONF_DEVICE_ALLOWED_START, DEFAULT_ALLOWED_START)
         self.allowed_end: str   = config.get(CONF_DEVICE_ALLOWED_END,   DEFAULT_ALLOWED_END)
+        # Pre-parsed for efficiency (called every dispatch cycle per device)
+        self._allowed_start_t: time | None = _parse_time(self.allowed_start)
+        self._allowed_end_t: time | None   = _parse_time(self.allowed_end)
         self.must_run_daily: bool = bool(config.get(CONF_DEVICE_MUST_RUN_DAILY, False))
         self.deadline: str | None = config.get(CONF_DEVICE_DEADLINE)
 
@@ -133,7 +136,7 @@ class ManagedDevice:
         self.ev_departure_time: str | None   = config.get(CONF_EV_DEPARTURE_TIME)
         self.ev_min_charge_power_w: float    = float(config.get(CONF_EV_MIN_CHARGE_POWER_W, DEFAULT_EV_MIN_CHARGE_POWER_W))
         self.ev_battery_capacity_wh: float | None = (
-            float(config[CONF_EV_BATTERY_CAPACITY_WH]) if config.get(CONF_EV_BATTERY_CAPACITY_WH) else None
+            float(v) if (v := config.get(CONF_EV_BATTERY_CAPACITY_WH)) else None
         )
         self.ev_charge_start_script: str | None = config.get(CONF_EV_CHARGE_START_SCRIPT)
         self.ev_charge_stop_script: str | None  = config.get(CONF_EV_CHARGE_STOP_SCRIPT)
@@ -205,11 +208,10 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     def is_in_allowed_window(self, now: time) -> bool:
         """True if *now* falls within [allowed_start, allowed_end]."""
-        start = _parse_time(self.allowed_start)
-        end   = _parse_time(self.allowed_end)
+        start = self._allowed_start_t
+        end   = self._allowed_end_t
         if start is None or end is None:
             return True
-
         if start <= end:
             return start <= now <= end
         # Overnight window (e.g. 22:00–06:00)
@@ -346,7 +348,7 @@ class ManagedDevice:
             # Earlier, solar production may still cover the deficit naturally.
             _now     = now or datetime.now()
             midnight = datetime.combine(_now.date() + timedelta(days=1), time(0, 0))
-            minutes_left = (_now - midnight).total_seconds() / -60
+            minutes_left = (midnight - _now).total_seconds() / 60
             if minutes_left > _POOL_MUST_RUN_WINDOW_H * 60:
                 return False
             required_m = self._pool_required_minutes(reader)
@@ -532,36 +534,32 @@ class ManagedDevice:
 
         0.3 baseline when no deadline; 1.0 when no time left.
         """
-        if not deadline_str:
+        parsed = _parse_time(deadline_str)
+        if not deadline_str or parsed is None:
             return 0.3
 
-        try:
-            h, m = map(int, deadline_str.split(":"))
-            now         = datetime.now()
-            deadline_dt = datetime.combine(now.date(), time(h, m))
-            if deadline_dt <= now:
-                deadline_dt += timedelta(days=1)  # already passed today → tomorrow
+        now         = datetime.now()
+        deadline_dt = datetime.combine(now.date(), parsed)
+        if deadline_dt <= now:
+            deadline_dt += timedelta(days=1)  # already passed today → tomorrow
 
-            seconds_left = (deadline_dt - now).total_seconds()
+        seconds_left = (deadline_dt - now).total_seconds()
 
-            if energy_wh is not None and power_w:
-                seconds_needed = (energy_wh / power_w) * 3600
-            elif self.appliance_cycle_duration_minutes:
-                seconds_needed = self.appliance_cycle_duration_minutes * 60
-            else:
-                seconds_needed = 3600  # 1 h fallback
+        if energy_wh is not None and power_w:
+            seconds_needed = (energy_wh / power_w) * 3600
+        elif self.appliance_cycle_duration_minutes:
+            seconds_needed = self.appliance_cycle_duration_minutes * 60
+        else:
+            seconds_needed = 3600  # 1 h fallback
 
-            margin = seconds_left - seconds_needed
-            if margin <= 0:
-                return 1.0
-            if margin < 3_600:       # less than 1 h margin
-                return 0.8
-            if margin < 10_800:      # less than 3 h margin — ramp 0.3→0.8
-                return 0.3 + 0.5 * (1.0 - margin / 10_800)
-            return 0.3
-
-        except (ValueError, AttributeError):
-            return 0.3
+        margin = seconds_left - seconds_needed
+        if margin <= 0:
+            return 1.0
+        if margin < 3_600:       # less than 1 h margin
+            return 0.8
+        if margin < 10_800:      # less than 3 h margin — ramp 0.3→0.8
+            return 0.3 + 0.5 * (1.0 - margin / 10_800)
+        return 0.3
 
     # ------------------------------------------------------------------
     # State readers — decoupled from HomeAssistant via StateReader callable
@@ -599,6 +597,6 @@ class ManagedDevice:
         if not entity_id:
             return fallback
         raw = reader(entity_id)
-        if raw is None:
+        if raw is None or raw in ("unavailable", "unknown"):
             return fallback
         return raw in ("on", "true", "home", "connected", "plugged_in", "1")
