@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time as time_mod
-from datetime import datetime
+from datetime import datetime, time
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -53,10 +53,15 @@ def _ts_iso(epoch: float | None) -> str | None:
     return datetime.fromtimestamp(epoch).isoformat()
 
 
-def _device_diag(device: ManagedDevice, hass: HomeAssistant, now_time, surplus_w: float, bat_available_w: float) -> dict:
+def _device_diag(
+    device: ManagedDevice,
+    reader,
+    now_time: time,
+    surplus_w: float,
+    bat_available_w: float,
+) -> dict:
     """Build a rich diagnostic snapshot for one device."""
-    reader = ManagedDevice._make_ha_reader(hass)
-    measured_w = device.actual_power_w(reader)
+    actual_w = device.actual_power_w(reader)
     base = {
         "name":                device.name,
         "type":                device.device_type,
@@ -64,10 +69,10 @@ def _device_diag(device: ManagedDevice, hass: HomeAssistant, now_time, surplus_w
         "manual_mode":         device.manual_mode,
         "priority":            device.priority,
         "power_w":             device.power_w,
-        "actual_power_w":      measured_w if device.is_on else 0.0,
+        "actual_power_w":      actual_w if device.is_on else 0.0,
         "is_satisfied":        device.is_satisfied(reader),
         "is_in_allowed_window": device.is_in_allowed_window(now_time),
-        "fit_score":           round(ManagedDevice.compute_fit_score(measured_w if device.is_on else device.power_w, surplus_w, bat_available_w), 3),
+        "fit_score":           round(ManagedDevice.compute_fit_score(actual_w if device.is_on else device.power_w, surplus_w, bat_available_w), 3),
         "effective_score":     round(device.effective_score(reader, surplus_w, bat_available_w), 3),
         "turned_on_at":        _ts_iso(device.turned_on_at),
         "turned_off_at":       _ts_iso(device.turned_off_at),
@@ -78,7 +83,7 @@ def _device_diag(device: ManagedDevice, hass: HomeAssistant, now_time, surplus_w
 
     if device.device_type == DEVICE_TYPE_EV:
         base["ev"] = {
-            "soc":       ManagedDevice._state_float(reader, device.ev_soc_entity) if device.ev_soc_entity else None,
+            "soc":          ManagedDevice._state_float(reader, device.ev_soc_entity) if device.ev_soc_entity else None,
             "soc_target": device.ev_soc_target,
             "plugged":   ManagedDevice._state_bool(reader, device.ev_plugged_entity, fallback=True) if device.ev_plugged_entity else device.ev_plugged_manual,
         }
@@ -158,9 +163,10 @@ async def async_get_config_entry_diagnostics(
         },
     }
 
+    reader   = ManagedDevice._make_ha_reader(hass)
     now_time = datetime.now().time()
     current_state["devices"] = [
-        _device_diag(d, hass, now_time, coordinator.surplus_w, coordinator.bat_available_w)
+        _device_diag(d, reader, now_time, coordinator.surplus_w, coordinator.bat_available_w)
         for d in dm.devices
     ]
 
