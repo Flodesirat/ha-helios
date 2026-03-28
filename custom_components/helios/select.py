@@ -4,6 +4,7 @@ from __future__ import annotations
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
@@ -37,6 +38,8 @@ class PoolForceDurationSelect(CoordinatorEntity, SelectEntity):
     """Select the duration for pool force mode."""
 
     _attr_options = list(_DURATIONS.keys())
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_pool_force_duration"
 
     def __init__(
         self,
@@ -48,20 +51,18 @@ class PoolForceDurationSelect(CoordinatorEntity, SelectEntity):
         self._entry  = entry
         self._device = device
         slug = slugify(device.name)
-        self._attr_has_entity_name = True
-        self._attr_translation_key = "eo_pool_force_duration"
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{slug}_force_duration"
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Helios",
-            "manufacturer": "Community",
-            "model": "Helios",
-            "entry_type": "service",
-        }
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry.entry_id)},
+            name="Helios",
+            manufacturer="Community",
+            model="Helios",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
     @property
     def current_option(self) -> str:
