@@ -12,6 +12,7 @@ CONF_HOUSE_POWER_ENTITY = "house_power_entity"
 CONF_TEMPO_COLOR_ENTITY      = "tempo_color_entity"
 CONF_TEMPO_NEXT_COLOR_ENTITY = "tempo_next_color_entity"  # "couleur du lendemain" pour l'optimiseur 5h
 CONF_FORECAST_ENTITY         = "forecast_entity"
+CONF_PEAK_PV_W               = "peak_pv_w"               # puissance crête PV (W) — utilisée par l'optimiseur journalier
 
 # ---------------------------------------------------------------------------
 # Config entry keys — battery
@@ -212,11 +213,6 @@ DEFAULT_RISK_LAMBDA                = 0.5    # obj = mean − 0.5 × std  (risque
 DEFAULT_EMA_ALPHA                  = 0.05   # convergence lente (~1 semaine) pour stabilité
 DEFAULT_EMA_ENABLED                = True   # apprentissage activé par défaut
 DEFAULT_PEAK_PV_W                  = 3000.0 # W — used when no real-time data available
-
-# ---------------------------------------------------------------------------
-# Config entry keys — PV peak power (used by daily optimizer)
-# ---------------------------------------------------------------------------
-CONF_PEAK_PV_W = "peak_pv_w"
 
 DEFAULT_BATTERY_SOC_MIN            = 10     # %
 DEFAULT_BATTERY_SOC_MAX            = 95     # %
