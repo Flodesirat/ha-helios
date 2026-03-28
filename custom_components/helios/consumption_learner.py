@@ -16,7 +16,6 @@ which smooths out daily variability without over-fitting to a single outlier day
 from __future__ import annotations
 
 import logging
-import pathlib
 from typing import Callable
 
 from homeassistant.core import HomeAssistant
