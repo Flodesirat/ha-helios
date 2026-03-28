@@ -25,6 +25,7 @@
         "data": {
           "battery_enabled": "Batterie activée",
           "battery_soc_entity": "Entité SOC batterie (%)",
+          "battery_power_entity": "Entité puissance batterie (W)",
           "battery_charge_script": "Script de charge forcée",
           "battery_autoconsum_script": "Script d'autoconsommation",
           "battery_capacity_kwh": "Capacité batterie (kWh)",
@@ -71,7 +72,9 @@
           "ev_soc_target": "SOC cible (%)",
           "ev_departure_time": "Heure de départ (HH:MM)",
           "ev_min_charge_power_w": "Puissance minimale de charge (W)",
-          "ev_battery_capacity_wh": "Capacité batterie véhicule (Wh)"
+          "ev_battery_capacity_wh": "Capacité batterie véhicule (Wh)",
+          "ev_charge_start_script": "Script de démarrage de charge",
+          "ev_charge_stop_script": "Script d'arrêt de charge"
         }
       },
       "device_water_heater": {
@@ -155,11 +158,17 @@
           "mode": "Mode de fonctionnement",
           "dispatch_threshold": "Seuil de déclenchement",
           "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)",
+          "off_peak_1_start": "Heures creuses plage 1 — début (HH:MM)",
+          "off_peak_1_end": "Heures creuses plage 1 — fin (HH:MM)",
+          "off_peak_2_start": "Heures creuses plage 2 — début (HH:MM)",
+          "off_peak_2_end": "Heures creuses plage 2 — fin (HH:MM)",
           "ema_enabled": "Apprentissage de la charge de fond (EMA)"
         },
         "data_description": {
           "dispatch_threshold": "Score global minimum pour piloter les appareils (0–1).",
           "optimizer_alpha": "Équilibre entre minimiser la facture et maximiser l'autoconsommation.",
+          "off_peak_1_start": "Ex : 22:00 pour un contrat HC 22h–6h. Laisser vide si inutilisé.",
+          "off_peak_2_start": "Deuxième plage HC (ex : 12:00–14:00). Laisser vide si inutilisée.",
           "ema_enabled": "Si désactivé, le profil de consommation de fond est figé et ne s'adapte plus aux nouvelles mesures."
         }
       }
@@ -197,6 +206,7 @@
         "data": {
           "battery_enabled": "Batterie activée",
           "battery_soc_entity": "Entité SOC batterie (%)",
+          "battery_power_entity": "Entité puissance batterie (W)",
           "battery_charge_script": "Script de charge forcée",
           "battery_autoconsum_script": "Script d'autoconsommation",
           "battery_capacity_kwh": "Capacité batterie (kWh)",
@@ -208,6 +218,7 @@
         },
         "data_description": {
           "battery_soc_entity": "Capteur retournant l'état de charge de la batterie en pourcentage (0–100).",
+          "battery_power_entity": "Capteur de puissance batterie (W). Négatif = charge, positif = décharge. Utilisé pour affiner le calcul du surplus disponible.",
           "battery_charge_script": "Appelé pendant les heures creuses la veille d'un jour Tempo rouge, pour remplir la batterie avant les heures pleines coûteuses.",
           "battery_autoconsum_script": "Appelé pour revenir en mode autoconsommation. Le BMS/onduleur gère alors la charge et la décharge automatiquement.",
           "battery_capacity_kwh": "Capacité nominale totale. Utilisée pour estimer la puissance disponible depuis la batterie pour alimenter les appareils.",
@@ -228,7 +239,12 @@
           "scan_interval_minutes": "Intervalle de mise à jour (min)",
           "mode": "Mode de fonctionnement",
           "dispatch_threshold": "Seuil de déclenchement",
-          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)"
+          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)",
+          "off_peak_1_start": "Heures creuses plage 1 — début (HH:MM)",
+          "off_peak_1_end": "Heures creuses plage 1 — fin (HH:MM)",
+          "off_peak_2_start": "Heures creuses plage 2 — début (HH:MM)",
+          "off_peak_2_end": "Heures creuses plage 2 — fin (HH:MM)",
+          "ema_enabled": "Apprentissage de la charge de fond (EMA)"
         }
       },
       "devices_select": {
@@ -257,7 +273,9 @@
           "ev_soc_target": "SOC cible (%)",
           "ev_departure_time": "Heure de départ (HH:MM)",
           "ev_min_charge_power_w": "Puissance minimale de charge (W)",
-          "ev_battery_capacity_wh": "Capacité batterie véhicule (Wh)"
+          "ev_battery_capacity_wh": "Capacité batterie véhicule (Wh)",
+          "ev_charge_start_script": "Script de démarrage de charge",
+          "ev_charge_stop_script": "Script d'arrêt de charge"
         }
       },
       "opt_device_water_heater": {
@@ -352,6 +370,20 @@
           "idle": "Inactif"
         }
       },
+      "eo_tempo_next_color": {
+        "name": "Couleur Tempo (demain)",
+        "state": {
+          "blue": "Bleu",
+          "white": "Blanc",
+          "red": "Rouge"
+        }
+      },
+      "eo_battery_soc_level": {
+        "name": "Niveau SOC batterie"
+      },
+      "eo_battery_power": {
+        "name": "Puissance batterie"
+      },
       "eo_pv_power": {
         "name": "Production PV"
       },
@@ -363,6 +395,24 @@
       },
       "eo_bat_available_w": {
         "name": "Puissance batterie disponible"
+      },
+      "eo_device_power": {
+        "name": "Puissance {name}"
+      },
+      "eo_appliance_state": {
+        "name": "État {name}"
+      },
+      "eo_pool_filtration_required": {
+        "name": "Filtration requise {name}"
+      },
+      "eo_pool_filtration_done": {
+        "name": "Filtration journée {name}"
+      },
+      "eo_pool_force_remaining": {
+        "name": "Forçage restant {name}"
+      },
+      "eo_base_load_profile": {
+        "name": "Charge de fond apprise"
       }
     },
     "binary_sensor": {
@@ -383,6 +433,9 @@
       },
       "eo_device_manual": {
         "name": "Mode manuel {name}"
+      },
+      "eo_ev_plugged": {
+        "name": "Véhicule branché {name}"
       }
     },
     "select": {
@@ -395,6 +448,11 @@
           "12h": "12 heures",
           "24h": "24 heures"
         }
+      }
+    },
+    "button": {
+      "force_optimization": {
+        "name": "Lancer l'optimisation"
       }
     }
   }
