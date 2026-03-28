@@ -351,7 +351,7 @@ class TestDispatchThresholdApplication:
             CONF_PEAK_PV_W, CONF_BATTERY_ENABLED, CONF_DEVICES,
             CONF_OPTIMIZER_ALPHA,
         )
-        from simulation.optimizer import OptResult
+        from custom_components.helios.simulation.optimizer import OptResult
 
         fake_result = OptResult(
             w_surplus=0.5, w_tempo=0.1, w_soc=0.3, w_forecast=0.1,

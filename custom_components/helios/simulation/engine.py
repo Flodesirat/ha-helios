@@ -3,32 +3,17 @@ from __future__ import annotations
 
 import json
 import random
-import sys
-import os
 from dataclasses import dataclass, field
-from datetime import datetime, date as _date, time as _time
+from datetime import datetime, date as _date
+from pathlib import Path
 from typing import Callable
 
-# Allow running from repo root or simulation/ directory
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_TARIFF_JSON = Path(__file__).parent / "config" / "tariff.json"
 
 from .profiles import pv_power_w, base_load_w, tempo_color, Season, CloudCover
 from .devices import SimDevice, default_devices
-
-# Use the real ScoringEngine when available
-try:
-    from custom_components.helios.scoring_engine import ScoringEngine as _RealEngine
-    _HAS_ENGINE = True
-except ImportError:
-    _HAS_ENGINE = False
-
-# Use the real ManagedDevice dispatch logic when available
-try:
-    from custom_components.helios.managed_device import ManagedDevice as _ManagedDevice
-    _HAS_MANAGED = True
-except ImportError:
-    _ManagedDevice = None  # type: ignore[assignment,misc]
-    _HAS_MANAGED = False
+from custom_components.helios.scoring_engine import ScoringEngine as _ScoringEngine
+from custom_components.helios.managed_device import ManagedDevice as _ManagedDevice
 
 
 STEP_MINUTES = 5
@@ -41,26 +26,35 @@ STEPS_PER_DAY = 24 * 60 // STEP_MINUTES  # 288
 
 @dataclass
 class Tariff:
-    """EDF Tempo tariff — prices in €/kWh, HC window defined by hc_start/hc_end."""
-    blue_hc: float = 0.1325
-    blue_hp: float = 0.1612
-    white_hc: float = 0.1499
-    white_hp: float = 0.1871
-    red_hc: float = 0.1575
-    red_hp: float = 0.7060
-    hc_start: float = 22.0   # HC begins at 22h
-    hc_end: float = 6.0      # HC ends at 6h
+    """EDF Tempo tariff — prices in €/kWh, HC window defined by hc_start/hc_end.
 
-    @staticmethod
-    def from_json(path: str) -> "Tariff":
+    Use ``Tariff.default()`` to load the bundled config/tariff.json,
+    or ``Tariff.from_json(path)`` for a custom file.
+    """
+    blue_hc: float
+    blue_hp: float
+    white_hc: float
+    white_hp: float
+    red_hc: float
+    red_hp: float
+    hc_start: float   # HC begins at this hour
+    hc_end: float     # HC ends at this hour
+
+    @classmethod
+    def default(cls) -> "Tariff":
+        """Load from the bundled simulation/config/tariff.json."""
+        return cls.from_json(_TARIFF_JSON)
+
+    @classmethod
+    def from_json(cls, path: str | Path) -> "Tariff":
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
-        return Tariff(
+        return cls(
             blue_hc=d["blue"]["hc"],   blue_hp=d["blue"]["hp"],
             white_hc=d["white"]["hc"], white_hp=d["white"]["hp"],
             red_hc=d["red"]["hc"],     red_hp=d["red"]["hp"],
-            hc_start=d.get("hc_start", 22.0),
-            hc_end=d.get("hc_end", 6.0),
+            hc_start=d["hc_start"],
+            hc_end=d["hc_end"],
         )
 
     def price(self, hour: float, tempo: str) -> float:
@@ -71,56 +65,22 @@ class Tariff:
 
 
 # ---------------------------------------------------------------------------
-# Scoring (wraps real engine or inline fallback)
+# Scoring
 # ---------------------------------------------------------------------------
 
 def _score(
     surplus_w: float,
     tempo: str,
     soc: float | None,
-    config: dict,
-    forecast_kwh: float | None = None,
+    forecast_kwh: float | None,
+    engine: _ScoringEngine,
 ) -> float:
-    if _HAS_ENGINE:
-        eng = _RealEngine(config)
-        return eng.compute({
-            "surplus_w":   surplus_w,
-            "tempo_color": tempo,
-            "battery_soc": soc,
-            "forecast_kwh": forecast_kwh,
-        })
-    # Inline fallback — mirrors ScoringEngine logic
-    s_surplus = min(1.0, surplus_w / 500.0) if surplus_w > 0 else 0.0
-    s_tempo = {"blue": 1.0, "white": 0.5, "red": 0.0}.get(tempo, 0.5)
-    if soc is None:
-        s_soc = 0.5
-    elif soc <= 15:
-        s_soc = 0.0
-    elif soc <= 40:
-        s_soc = (soc - 15) / 25.0
-    elif soc <= 60:
-        s_soc = 1.0
-    elif soc <= 85:
-        s_soc = 1.0 - 0.5 * (soc - 60) / 25.0
-    else:
-        s_soc = 0.5
-
-    if forecast_kwh is None or forecast_kwh <= 0.0:
-        s_forecast = 0.5
-    elif forecast_kwh <= 2.0:
-        s_forecast = 0.5 + 0.3 * (forecast_kwh / 2.0)
-    elif forecast_kwh <= 5.0:
-        s_forecast = 0.8 - 0.4 * (forecast_kwh - 2.0) / 3.0
-    elif forecast_kwh <= 10.0:
-        s_forecast = 0.4 - 0.2 * (forecast_kwh - 5.0) / 5.0
-    else:
-        s_forecast = 0.2
-
-    w_s = config.get("weight_pv_surplus", 0.4)
-    w_t = config.get("weight_tempo", 0.3)
-    w_b = config.get("weight_battery_soc", 0.2)
-    w_f = config.get("weight_forecast", 0.1)
-    return w_s * s_surplus + w_t * s_tempo + w_b * s_soc + w_f * s_forecast
+    return engine.compute({
+        "surplus_w":    surplus_w,
+        "tempo_color":  tempo,
+        "battery_soc":  soc,
+        "forecast_kwh": forecast_kwh,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -129,62 +89,36 @@ def _score(
 
 def _effective_score(
     dev: SimDevice,
-    managed: "_ManagedDevice | None",
+    managed: _ManagedDevice | None,
     surplus_w: float,
     bat_available_w: float,
-    sim_now: "datetime",
+    sim_now: datetime,
 ) -> float:
     """Compute effective score using real ManagedDevice logic when available."""
-    if managed is not None and _HAS_MANAGED:
+    if managed is not None:
         reader = dev.make_state_reader()
         return managed.effective_score(reader, surplus_w, bat_available_w, now=sim_now)
-    # Fallback: use static method from ManagedDevice when available, else inline
-    if _HAS_MANAGED:
-        fit = _ManagedDevice.compute_fit_score(dev.power_w, surplus_w, bat_available_w)
-    else:
-        fit = _fit_score_inline(dev, surplus_w, bat_available_w)
+    fit = _ManagedDevice.compute_fit_score(dev.power_w, surplus_w, bat_available_w)
     urg = _urgency_inline(dev)
     pri = dev.priority / 10.0
     total_w = dev.w_priority + dev.w_fit + dev.w_urgency
     return (dev.w_priority * pri + dev.w_fit * fit + dev.w_urgency * urg) / max(total_w, 1e-6)
 
 
-def _is_satisfied(
-    dev: SimDevice,
-    managed: "_ManagedDevice | None",
-    sim_now: "datetime",
-) -> bool:
+def _is_satisfied(dev: SimDevice, managed: _ManagedDevice | None, sim_now: datetime) -> bool:
     """Return True if device has reached its target."""
-    if managed is not None and _HAS_MANAGED:
+    if managed is not None:
         reader = dev.make_state_reader()
         return managed.is_satisfied(reader, now=sim_now)
     return dev.satisfied()
 
 
-def _must_run(
-    dev: SimDevice,
-    managed: "_ManagedDevice | None",
-    sim_now: "datetime",
-) -> bool:
+def _must_run(dev: SimDevice, managed: _ManagedDevice | None, sim_now: datetime) -> bool:
     """Return True if device must run regardless of score."""
-    if managed is not None and _HAS_MANAGED:
+    if managed is not None:
         reader = dev.make_state_reader()
         return managed.must_run_now(reader, now=sim_now)
     return False
-
-
-def _fit_score_inline(device: SimDevice, surplus_w: float, bat_available_w: float) -> float:
-    """Zone 1 / 2 / 3 fit score (fallback when ManagedDevice not available)."""
-    effective = surplus_w + bat_available_w
-    if surplus_w <= 0:
-        return 0.0
-    if device.power_w <= surplus_w:
-        return device.power_w / max(surplus_w, 1.0)
-    if device.power_w <= effective:
-        bat_fraction = (device.power_w - surplus_w) / max(bat_available_w, 1.0)
-        return 1.0 - 0.4 * bat_fraction
-    grid_fraction = (device.power_w - effective) / max(device.power_w, 1.0)
-    return 0.4 * (1.0 - grid_fraction)
 
 
 def _urgency_inline(device: SimDevice) -> float:
@@ -204,8 +138,8 @@ def dispatch(
     bat_available_w: float,
     global_score: float,
     threshold: float,
-    managed_devices: "list[_ManagedDevice | None] | None" = None,
-    sim_now: "datetime | None" = None,
+    managed_devices: list[_ManagedDevice | None] | None = None,
+    sim_now: datetime | None = None,
 ) -> None:
     """Greedy dispatch — turns devices on/off in-place.
 
@@ -213,8 +147,7 @@ def dispatch(
     real ManagedDevice logic (is_satisfied, must_run_now, urgency_modifier,
     effective_score) instead of the simplified inline fallbacks.
     """
-    from datetime import datetime as _dt
-    _now = sim_now or _dt.now()
+    _now = sim_now or datetime.now()
     managed = managed_devices or [None] * len(devices)
 
     # ---- Must-run overrides (forced on regardless of score) ----
@@ -238,7 +171,7 @@ def dispatch(
             dev.turn_off()
 
     # ---- Rank eligible devices ----
-    candidates: list[tuple[float, SimDevice, "_ManagedDevice | None"]] = []
+    candidates: list[tuple[float, SimDevice, _ManagedDevice | None]] = []
     for dev, mgd in zip(devices, managed):
         if dev.active or _is_satisfied(dev, mgd, _now) or not dev.in_window(hour):
             continue
@@ -299,7 +232,7 @@ class SimConfig:
     forecast_noise: float = 0.15    # std-dev of forecast error (0=perfect, 0.15=±15%)
     base_load_noise: float = 0.0   # day-level multiplicative Gaussian noise on base load
     base_load_fn: Callable[[float], float] | None = None
-    tariff: Tariff = field(default_factory=Tariff)
+    tariff: Tariff = field(default_factory=Tariff.default)
     scoring: dict = field(default_factory=lambda: {
         "weight_pv_surplus": 0.4,
         "weight_tempo": 0.3,
@@ -338,8 +271,8 @@ class SimResult:
 def run(
     cfg: SimConfig,
     devices: list[SimDevice] | None = None,
-    managed_devices: "list[_ManagedDevice | None] | None" = None,
-    sim_date: "_date | None" = None,
+    managed_devices: list[_ManagedDevice | None] | None = None,
+    sim_date: _date | None = None,
 ) -> SimResult:
     """Run a full-day simulation.
 
@@ -387,6 +320,8 @@ def run(
         _bl_mult = random.gauss(1.0, cfg.base_load_noise)
         _bl_mult = max(0.5, min(1.8, _bl_mult))
 
+    _engine = _ScoringEngine(cfg.scoring)
+
     e_pv = e_load = e_self = e_import = e_export = cost = cost_no_pv = 0.0
     steps: list[StepResult] = []
     decision_log: list[dict] = []
@@ -409,25 +344,21 @@ def run(
         # ---- Score ----
         # Use base surplus (PV - base load, without Helios devices) so that
         # currently-ON devices do not penalise their own score each cycle.
-        base_surplus_w = max(0.0, pv_w - base_w)
-        surplus_w = base_surplus_w
+        surplus_w = max(0.0, pv_w - base_w)
         global_score = _score(
             surplus_w, t_color,
             bat_soc if cfg.bat_enabled else None,
-            cfg.scoring,
-            forecast_kwh=_forecast_table[i],
+            _forecast_table[i],
+            _engine,
         )
 
         # ---- Snapshot active states before dispatch (for decision log) ----
         _before = {d.name: d.active for d in devices}
 
         # ---- Dispatch ----
-        h_int = int(hour)
-        m_int = int(round((hour - h_int) * 60))
-        sim_now = datetime(
-            _sim_date.year, _sim_date.month, _sim_date.day,
-            h_int, min(m_int, 59),
-        )
+        h = int(hour)
+        m = min(int(round((hour - h) * 60)), 59)
+        sim_now = datetime(_sim_date.year, _sim_date.month, _sim_date.day, h, m)
         dispatch(
             devices, hour, pv_w - base_w, bat_available_w, global_score, cfg.dispatch_threshold,
             managed_devices=managed_devices,
@@ -435,8 +366,6 @@ def run(
         )
 
         # ---- Record state changes ----
-        h = int(hour)
-        m = int(round((hour - h) * 60))
         ts = f"{h:02d}:{m:02d}"
         for d in devices:
             was_on = _before[d.name]

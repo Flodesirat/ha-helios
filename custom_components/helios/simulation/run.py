@@ -14,10 +14,6 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from .engine import SimConfig, SimResult, Tariff, run
 from .devices import default_devices, load_devices_from_json
@@ -321,7 +317,7 @@ def main() -> None:
 
     base_load_fn = load_base_load_from_json(args.base_load) if args.base_load else None
     devices = load_devices_from_json(args.devices) if args.devices else None
-    tariff = Tariff.from_json(args.tariff) if args.tariff else Tariff()
+    tariff = Tariff.from_json(args.tariff) if args.tariff else Tariff.default()
 
     # Build scoring dict — only override keys that were explicitly passed
     scoring = {
