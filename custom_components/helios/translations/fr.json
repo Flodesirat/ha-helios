@@ -389,7 +389,12 @@
         "name": "Puissance {name}"
       },
       "eo_appliance_state": {
-        "name": "État {name}"
+        "name": "État {name}",
+        "state": {
+          "stop": "Arrêt",
+          "en_attente": "En attente",
+          "en_route": "En route"
+        }
       },
       "eo_pool_filtration_required": {
         "name": "Filtration requise {name}"

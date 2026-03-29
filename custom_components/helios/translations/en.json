@@ -389,7 +389,12 @@
         "name": "{name} power"
       },
       "eo_appliance_state": {
-        "name": "{name} state"
+        "name": "{name} state",
+        "state": {
+          "stop": "Off",
+          "en_attente": "Waiting",
+          "en_route": "Running"
+        }
       },
       "eo_pool_filtration_required": {
         "name": "{name} required filtration"

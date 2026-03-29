@@ -42,6 +42,7 @@ class DeviceManager:
         self.devices: list[ManagedDevice] = [ManagedDevice(c, config) for c in devices_config]
         self._hass = hass
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self._coordinator = None  # Set by EnergyOptimizerCoordinator after construction
         self._scan_interval: float = float(config.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL))
         self._dispatch_threshold: float = float(config.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD))
         # Decision log — rolling buffer, max 100 entries
@@ -138,6 +139,8 @@ class DeviceManager:
                     dev.name,
                 )
                 await self._async_appliance_to_preparing(self._hass, dev, ready_entity)
+                if self._coordinator is not None:
+                    await self._coordinator.async_request_refresh()
             return _on_ready_change
 
         unsub = async_track_state_change_event(

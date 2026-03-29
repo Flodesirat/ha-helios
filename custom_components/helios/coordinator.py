@@ -71,6 +71,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.battery_strategy  = BatteryStrategy(cfg)
         devices = cfg.get(CONF_DEVICES, [])
         self.device_manager    = DeviceManager(hass, devices, cfg)
+        self.device_manager._coordinator = self
         ema_alpha = float(cfg.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA))
         self.consumption_learner = ConsumptionLearner(hass, entry.entry_id, alpha=ema_alpha)
         self._optimizer_store  = Store(hass, STORAGE_VERSION, STORAGE_KEY_OPTIMIZER)
