@@ -22,9 +22,11 @@ import pytest
 from custom_components.helios.device_manager import DeviceManager
 from custom_components.helios.managed_device import ManagedDevice
 from custom_components.helios.const import (
-    DEVICE_TYPE_POOL,
+    DEVICE_TYPE_POOL, DEVICE_TYPE_WATER_HEATER,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
     CONF_DEVICE_POWER_W, CONF_POOL_FILTRATION_ENTITY,
+    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
+    CONF_DEVICE_MIN_ON_MINUTES,
     DEFAULT_DISPATCH_THRESHOLD,
 )
 
@@ -58,6 +60,8 @@ def _make_manager(devices, init_threshold=DEFAULT_DISPATCH_THRESHOLD, scan_inter
     mgr._scan_interval = scan_interval
     mgr._dispatch_threshold = init_threshold
     mgr.decision_log = deque(maxlen=500)
+    mgr._coordinator = None
+    mgr._unsub_ready_listeners = []
     return mgr
 
 
@@ -310,3 +314,122 @@ class TestDispatchThreshold_FromScoreInput:
         )
 
 
+# ---------------------------------------------------------------------------
+# Bug 3 — min_on_minutes must be respected on "satisfied" and "score_too_low" shutoff
+# ---------------------------------------------------------------------------
+# Root cause: when a water heater was forced on by must_run (e.g. legionella floor or
+# sensor glitch), it could be turned off in the very next dispatch cycle if is_satisfied
+# returned True or the score gate fired — without checking min_on_minutes.
+#
+# Fix: both the gate path (score < threshold) and the normal dispatch path
+# now always check _min_on_elapsed before issuing any shutoff.
+# ---------------------------------------------------------------------------
+
+_WH_TEMP   = "sensor.wh_temp"
+_WH_SWITCH = "switch.wh"
+
+
+def _wh_device(min_on_minutes: int = 30) -> ManagedDevice:
+    """Water heater with a 30-minute minimum on time."""
+    return ManagedDevice(
+        {
+            CONF_DEVICE_NAME:          "Chauffe-eau",
+            CONF_DEVICE_TYPE:          DEVICE_TYPE_WATER_HEATER,
+            CONF_DEVICE_SWITCH_ENTITY: _WH_SWITCH,
+            CONF_DEVICE_POWER_W:       2000,
+            CONF_WH_TEMP_ENTITY:       _WH_TEMP,
+            CONF_WH_TEMP_TARGET:       61.0,
+            CONF_WH_TEMP_MIN:          10.0,
+            CONF_DEVICE_MIN_ON_MINUTES: min_on_minutes,
+        },
+        {},  # no off-peak slots → outside HC at all times
+    )
+
+
+def _wh_hass(temp: float) -> MagicMock:
+    hass = MagicMock()
+    hass.services = AsyncMock()
+
+    def _state(entity_id):
+        s = MagicMock()
+        s.state = str(temp) if entity_id == _WH_TEMP else "unavailable"
+        return s
+
+    hass.states.get.side_effect = _state
+    return hass
+
+
+class TestMinOnMinutes_SatisfiedShutoff:
+    """min_on_minutes must gate ALL shutoffs — satisfied, score_too_low, and fit_negligible."""
+
+    @pytest.mark.asyncio
+    async def test_gate_path_does_not_shut_off_before_min_on(self):
+        """Gate path (score < threshold): device on for < min_on_minutes → stays ON.
+
+        Scenario: device was just turned on via must_run (sensor glitch).
+        Next cycle: score is low, sensor now reads temp >= target (satisfied).
+        Without the fix the gate would turn it off immediately; with the fix
+        it must wait until min_on_minutes has elapsed.
+        """
+        device = _wh_device(min_on_minutes=30)
+        device.is_on = True
+        device.turned_on_at = time.time() - 60  # only 1 minute ago
+
+        mgr = _make_manager([device])
+        # temp=65 > target=61 → is_satisfied=True; score 0.1 < threshold 0.4 → gate fires
+        hass = _wh_hass(temp=65.0)
+
+        await mgr.async_dispatch(hass, _score(global_score=0.1, surplus_w=0.0, dispatch_threshold=0.4))
+
+        assert device.is_on is True, (
+            "Device must not be turned off before min_on_minutes has elapsed"
+        )
+
+    @pytest.mark.asyncio
+    async def test_gate_path_shuts_off_after_min_on_elapsed(self):
+        """Gate path: device on for > min_on_minutes → turned OFF when satisfied."""
+        device = _wh_device(min_on_minutes=30)
+        device.is_on = True
+        device.turned_on_at = time.time() - 31 * 60  # 31 minutes ago
+
+        mgr = _make_manager([device])
+        hass = _wh_hass(temp=65.0)  # satisfied
+
+        await mgr.async_dispatch(hass, _score(global_score=0.1, surplus_w=0.0, dispatch_threshold=0.4))
+
+        assert device.is_on is False, (
+            "Device must be turned off once min_on_minutes has elapsed and it is satisfied"
+        )
+
+    @pytest.mark.asyncio
+    async def test_normal_dispatch_path_does_not_shut_off_before_min_on(self):
+        """Normal dispatch path (score >= threshold): satisfied device stays ON if min_on not met."""
+        device = _wh_device(min_on_minutes=30)
+        device.is_on = True
+        device.turned_on_at = time.time() - 60  # only 1 minute ago
+
+        mgr = _make_manager([device])
+        # score 0.9 > threshold 0.4 → normal dispatch path; temp=65 → satisfied
+        hass = _wh_hass(temp=65.0)
+
+        await mgr.async_dispatch(hass, _score(global_score=0.9, surplus_w=0.0, dispatch_threshold=0.4))
+
+        assert device.is_on is True, (
+            "Normal dispatch path must also respect min_on_minutes on satisfied shutoff"
+        )
+
+    @pytest.mark.asyncio
+    async def test_normal_dispatch_path_shuts_off_after_min_on_elapsed(self):
+        """Normal dispatch path: device satisfied + min_on elapsed → turned OFF."""
+        device = _wh_device(min_on_minutes=30)
+        device.is_on = True
+        device.turned_on_at = time.time() - 31 * 60  # 31 minutes ago
+
+        mgr = _make_manager([device])
+        hass = _wh_hass(temp=65.0)
+
+        await mgr.async_dispatch(hass, _score(global_score=0.9, surplus_w=0.0, dispatch_threshold=0.4))
+
+        assert device.is_on is False, (
+            "Device must be turned off once min_on_minutes elapsed and score path reaches satisfied"
+        )

@@ -298,7 +298,10 @@ class ManagedDevice:
             return self._state_float(reader, self.ev_soc_entity) >= self.ev_soc_target
 
         if self.device_type == DEVICE_TYPE_WATER_HEATER:
-            temp = self._state_float(reader, self.wh_temp_entity)
+            raw = reader(self.wh_temp_entity) if self.wh_temp_entity else None
+            if raw is None or raw in ("unavailable", "unknown"):
+                return False  # Unknown temp → never claim satisfied; keep device running.
+            temp = float(raw)
             if self._is_off_peak((now or datetime.now()).time()):
                 # During off-peak: satisfied when the off-peak minimum is reached.
                 # must_run_now() forced us here; once the target is met we stop.
@@ -326,22 +329,32 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     def must_run_now(self, reader: StateReader, now: datetime | None = None) -> bool:
         if self.device_type == DEVICE_TYPE_WATER_HEATER:
-            temp = self._state_float(reader, self.wh_temp_entity)
+            # If the temperature sensor is unavailable, preserve the current state:
+            # don't start if the device is off (unknown temp → no spurious must_run),
+            # keep running if already on (don't cut heating mid-cycle).
+            raw = reader(self.wh_temp_entity) if self.wh_temp_entity else None
+            if raw is None or raw in ("unavailable", "unknown"):
+                return self.is_on
+            temp = float(raw)
             # Safety: always force on below the static legionella floor.
             if temp < self.wh_temp_min:
                 return True
-            # Off-peak: force on only when temperature is significantly below the target.
-            # A hysteresis band prevents repeated short cycles when temp hovers near the minimum.
-            # Trigger threshold = off_peak_min − hysteresis_k  (default 3 °C).
+            off_peak_min = self._wh_off_peak_min(reader)
             _now_t = (now or datetime.now()).time()
             if self._is_off_peak(_now_t):
+                # Off-peak: force on when temperature is significantly below the configured
+                # minimum.  A hysteresis band prevents short cycles near the threshold.
+                # Trigger threshold = off_peak_min − hysteresis_k  (default 3 °C).
                 minutes_left = self._minutes_to_off_peak_end(_now_t)
                 # Don't start if there's less than min_on_minutes remaining in the
                 # off-peak slot: the heater would spill into peak hours.
                 if minutes_left is not None and minutes_left < self.min_on_minutes:
                     return False
-                return temp < self._wh_off_peak_min(reader) - self.wh_off_peak_hysteresis_k
-            return False
+                return temp < off_peak_min - self.wh_off_peak_hysteresis_k
+            # Peak hours: force on when temperature is below the configured minimum.
+            # temp_min_entity (e.g. a thermostat setpoint) is used when available;
+            # otherwise falls back to the static wh_temp_min.
+            return temp < off_peak_min
 
         if self.device_type == DEVICE_TYPE_POOL:
             # Only considered in the last _POOL_MUST_RUN_WINDOW_H hours of the day.

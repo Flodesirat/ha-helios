@@ -327,11 +327,10 @@ class DeviceManager:
                     continue
                 if not _helios_manages(device):
                     continue  # manual / force / inhibit — hands off
-                if device.is_on and device.interruptible:
+                if device.is_on and device.interruptible and self._min_on_elapsed(device):
                     satisfied = device.is_satisfied(reader)
-                    if satisfied or self._min_on_elapsed(device):
-                        reason = "satisfied" if satisfied else "score_too_low"
-                        await self._async_set_switch(hass, device, False, reason=reason, context=_base_ctx)
+                    reason = "satisfied" if satisfied else "score_too_low"
+                    await self._async_set_switch(hass, device, False, reason=reason, context=_base_ctx)
             return
 
         # ---- Priority preemption for PREPARING appliances ----
@@ -418,9 +417,10 @@ class DeviceManager:
                     await self._async_set_switch(hass, device, False, reason="outside_window", context=_base_ctx)
                 continue
 
-            # Already satisfied → turn off immediately (reaching target is always a valid stop)
+            # Already satisfied → turn off, but still respect min_on_minutes so a device
+            # that was just forced on (e.g. must_run) isn't killed after one cycle.
             if device.is_satisfied(reader):
-                if device.is_on and device.interruptible:
+                if device.is_on and device.interruptible and self._min_on_elapsed(device):
                     await self._async_set_switch(hass, device, False, reason="satisfied", context=_base_ctx)
                 continue
 

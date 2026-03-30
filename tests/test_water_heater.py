@@ -207,15 +207,50 @@ class TestMustRunNow:
             )
             assert device.must_run_now(reader) is False
 
-    def test_on_peak_below_target_no_force(self):
-        """Outside HC, temp below target → must_run = False (normal scoring applies)."""
+    def test_on_peak_above_off_peak_min_below_target_no_force(self):
+        """Outside HC, temp above off-peak min but below full target → must_run = False.
+
+        Normal scoring applies — the device is above the configured minimum so
+        there is no hygiene/safety obligation to force it on.
+        """
         device = _make_device()
-        reader = _reader(temp=48.0)
+        # temp=52 > off_peak_min=50 → not below minimum → must_run stays False
+        reader = _reader(temp=52.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(14, 0)),  # on-peak hour
+            )
+            assert device.must_run_now(reader) is False
+
+    def test_on_peak_below_off_peak_min_forces_on(self):
+        """Outside HC, temp below the configured off-peak minimum → must_run = True.
+
+        temp_min_entity (53°C in real config, here OFF_PEAK_MIN=50°C) must
+        also protect the water heater during on-peak hours so the temperature
+        doesn't stay below the configured minimum all day.
+        """
+        device = _make_device()
+        # temp=48 < off_peak_min=50 → must force on even outside HC
+        reader = _reader(temp=48.0, off_peak_min=50.0)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "custom_components.helios.managed_device.datetime",
+                _fixed_datetime(time(14, 0)),  # on-peak hour
+            )
+            assert device.must_run_now(reader) is True
+
+    def test_on_peak_exactly_at_off_peak_min_no_force(self):
+        """Outside HC, temp exactly at off-peak minimum → must_run = False (threshold is exclusive)."""
+        device = _make_device()
+        reader = _reader(temp=50.0, off_peak_min=50.0)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "custom_components.helios.managed_device.datetime",
+                _fixed_datetime(time(14, 0)),
             )
             assert device.must_run_now(reader) is False
 
@@ -428,6 +463,83 @@ class TestUrgencyModifier:
             )
             urgency = device.urgency_modifier(reader)
             assert urgency == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Sensor unavailability — must_run and is_satisfied must handle gracefully
+# ---------------------------------------------------------------------------
+
+def _unavailable_reader(state: str = "unavailable", off_peak_min: float = OFF_PEAK_MIN) -> StateReader:
+    """StateReader where the temp entity returns *state* (unavailable/unknown/None)."""
+    states = {MIN_ENTITY: str(off_peak_min)}
+    if state == "none":
+        return lambda eid: states.get(eid)  # TEMP_ENTITY → None
+    return lambda eid: state if eid == TEMP_ENTITY else states.get(eid)
+
+
+class TestSensorUnavailable:
+    """Regression: unavailable/unknown temp sensor must not trigger spurious must_run
+    or premature is_satisfied.
+
+    Rule: if sensor is unavailable, preserve current device state —
+      - device OFF  → must_run=False (don't start blindly)
+      - device ON   → must_run=True  (keep running, don't cut mid-cycle)
+      - any state   → is_satisfied=False (never claim satisfied without data)
+    """
+
+    @pytest.mark.parametrize("state", ["unavailable", "unknown", "none"])
+    def test_device_off_unavailable_sensor_no_must_run(self, state):
+        """Unavailable sensor + device OFF → must_run = False (no spurious start)."""
+        device = _make_device()
+        device.is_on = False
+        reader = _unavailable_reader(state)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "custom_components.helios.managed_device.datetime",
+                _fixed_datetime(time(14, 0)),
+            )
+            assert device.must_run_now(reader) is False
+
+    @pytest.mark.parametrize("state", ["unavailable", "unknown", "none"])
+    def test_device_on_unavailable_sensor_keeps_must_run(self, state):
+        """Unavailable sensor + device ON → must_run = True (don't cut a running cycle)."""
+        device = _make_device()
+        device.is_on = True
+        reader = _unavailable_reader(state)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "custom_components.helios.managed_device.datetime",
+                _fixed_datetime(time(14, 0)),
+            )
+            assert device.must_run_now(reader) is True
+
+    @pytest.mark.parametrize("state", ["unavailable", "unknown", "none"])
+    def test_unavailable_sensor_is_satisfied_false(self, state):
+        """Unavailable sensor → is_satisfied = False (never stop a running device blindly)."""
+        device = _make_device()
+        reader = _unavailable_reader(state)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "custom_components.helios.managed_device.datetime",
+                _fixed_datetime(time(14, 0)),
+            )
+            assert device.is_satisfied(reader) is False
+
+    @pytest.mark.parametrize("state", ["unavailable", "unknown", "none"])
+    def test_unavailable_sensor_is_satisfied_false_during_off_peak(self, state):
+        """Same guarantee holds during off-peak hours."""
+        device = _make_device()
+        reader = _unavailable_reader(state)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "custom_components.helios.managed_device.datetime",
+                _fixed_datetime(time(23, 0)),
+            )
+            assert device.is_satisfied(reader) is False
 
 
 # ---------------------------------------------------------------------------
