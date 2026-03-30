@@ -225,8 +225,8 @@ class TestForecastScoring:
     def test_low_density_high_urgency(self):
         """Near sunset with little left → density low → score near 0.9."""
         eng = self._engine(peak_pv_w=3000)
-        # hour=19, hours_remaining=1h, forecast=0.2 kWh → density=0.2/(3×1)=0.067
-        score = eng.compute({"forecast_kwh": 0.2, "hour": 19})
+        # hour=18.5, hours_remaining=1.5h, forecast=0.2 kWh → density=0.2/(3×1.5)=0.044
+        score = eng.compute({"forecast_kwh": 0.2, "hour": 18.5})
         assert score >= 0.85, f"Expected urgency score ≥ 0.85, got {score}"
 
     def test_high_density_strong_defer(self):
@@ -275,6 +275,27 @@ class TestForecastScoring:
             for kwh in (0.0, 0.5, 2.0, 5.0, 15.0, 30.0):
                 s = eng.compute({"forecast_kwh": kwh, "hour": hour})
                 assert 0.0 <= s <= 1.0, f"hour={hour}, kwh={kwh} → score={s}"
+
+    def test_after_sunset_residual_returns_neutral(self):
+        """Regression: a tiny forecast residual at night must not produce urgency score.
+
+        At 22:00 the forecast entity may still carry a residual (e.g. 0.03 kWh)
+        instead of 0. With the old code this produced density=0.022 → score=0.90.
+        After the fix, hour ≥ 20 returns 0.5 regardless of the residual.
+        """
+        eng = self._engine(peak_pv_w=2700)
+        for hour in (19.0, 20.0, 21.0, 22.0, 23.0):
+            score = eng.compute({"forecast_kwh": 0.03, "hour": hour})
+            assert score == pytest.approx(0.5), (
+                f"Expected neutral 0.5 at hour={hour} with residual forecast, got {score}"
+            )
+
+    def test_just_before_cutoff_still_active(self):
+        """hour=18.9 is still before the 19h cutoff — forecast score is computed normally."""
+        eng = self._engine(peak_pv_w=2700)
+        # density = 0.5 / (2.7 × 1.1) = 0.17 → between 0.1 and 0.5 → urgency > 0.5
+        score = eng.compute({"forecast_kwh": 0.5, "hour": 18.9})
+        assert score > 0.5, f"Expected urgency score before 19h cutoff, got {score}"
 
 
 # ---------------------------------------------------------------------------

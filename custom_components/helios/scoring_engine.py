@@ -127,6 +127,7 @@ class ScoringEngine:
           d < 0.1        → 0.90  last scraps / near sunset → urgency
 
           forecast None or 0 → 0.5  neutral (night: surplus scoring takes over)
+          hour ≥ 19         → 0.5  production negligible — sensor residuals meaningless
 
         Sunset is approximated at 20 h; remaining window is clamped to ≥ 0.5 h
         to avoid division by zero near nightfall.
@@ -138,6 +139,8 @@ class ScoringEngine:
             return 0.5  # PV peak not configured — can't compute density
 
         hour = float(data.get("hour", 12))
+        if hour >= 19.0:
+            return 0.5  # After 19h — production negligible, sensor residuals meaningless
         hours_remaining = max(0.5, 20.0 - hour)
         density = forecast_kwh / (self.peak_pv_kw * hours_remaining)
 
