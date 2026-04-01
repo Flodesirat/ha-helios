@@ -32,6 +32,13 @@ class _BaseDeviceSwitch(CoordinatorEntity, SwitchEntity):
         self._device = device
 
     @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "last_effective_score": self._device.last_effective_score,
+            "last_decision_reason": self._device.last_decision_reason,
+        }
+
+    @property
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
             identifiers={(DOMAIN, self._entry.entry_id)},

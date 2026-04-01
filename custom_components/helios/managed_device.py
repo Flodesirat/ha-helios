@@ -184,6 +184,10 @@ class ManagedDevice:
         self.turned_off_at: float | None      = None
         self.manual_mode: bool                = False  # True → Helios hands off entirely
 
+        # Diagnostics — updated every dispatch cycle, exposed via switch extra_state_attributes
+        self.last_effective_score: float      = 0.0
+        self.last_decision_reason: str        = ""
+
         # Pool — daily run tracking (persisted externally)
         self.pool_daily_run_minutes: float       = 0.0
         self.pool_last_date: date | None         = None

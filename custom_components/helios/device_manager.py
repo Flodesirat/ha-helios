@@ -407,12 +407,14 @@ class DeviceManager:
             # Safety overrides (legionella, off-peak HC heating) must not be blocked
             # by a misconfigured or too-narrow allowed window.
             if device in must_run:
+                device.last_effective_score = 1.0
                 if not device.is_on:
                     await self._async_set_switch(hass, device, True, reason="must_run", context=_base_ctx)
                 continue
 
             # Outside allowed window → turn off
             if not device.is_in_allowed_window(now):
+                device.last_effective_score = 0.0
                 if device.is_on and device.interruptible and self._min_on_elapsed(device):
                     await self._async_set_switch(hass, device, False, reason="outside_window", context=_base_ctx)
                 continue
@@ -420,11 +422,13 @@ class DeviceManager:
             # Already satisfied → turn off, but still respect min_on_minutes so a device
             # that was just forced on (e.g. must_run) isn't killed after one cycle.
             if device.is_satisfied(reader):
+                device.last_effective_score = 0.0
                 if device.is_on and device.interruptible and self._min_on_elapsed(device):
                     await self._async_set_switch(hass, device, False, reason="satisfied", context=_base_ctx)
                 continue
 
             score = device.effective_score(reader, surplus_w, bat_available_w)
+            device.last_effective_score = round(score, 3)
             scored.append((score, device))
 
         # ---- Greedy allocation (highest score first) ----
@@ -518,6 +522,7 @@ class DeviceManager:
         if device.appliance_state == APPLIANCE_STATE_PREPARING:
             fit     = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
             urgency = device.urgency_modifier(reader)
+            device.last_effective_score = round(min(global_score * fit + urgency * 0.3, 1.0), 3)
 
             should_start = (
                 (global_score >= 0.4 and fit >= 0.3)
@@ -610,6 +615,7 @@ class DeviceManager:
         }
         if context:
             entry.update(context)
+        device.last_decision_reason = reason or "unknown"
         self.decision_log.append(entry)
         if device.device_type == DEVICE_TYPE_EV:
             script = device.ev_charge_start_script if on else device.ev_charge_stop_script
