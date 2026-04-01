@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
@@ -24,11 +23,33 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Register the Helios Lovelace card JS module."""
     try:
         hass.http.register_static_path(_CARD_URL, str(_CARD_PATH), cache_headers=False)
-        add_extra_js_url(hass, _CARD_URL, es5=False)
-        _LOGGER.debug("Helios card registered as extra JS module at %s", _CARD_URL)
+        _LOGGER.debug("Helios card served at %s", _CARD_URL)
     except Exception:  # noqa: BLE001
-        _LOGGER.debug("Could not register Helios card (expected in tests)")
+        _LOGGER.debug("Could not register Helios card static path (expected in tests)")
     return True
+
+
+async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Add the Helios card to Lovelace resources if not already present.
+
+    This makes the resource visible in Settings → Dashboards → Resources
+    and loads it automatically in all Lovelace dashboards.
+    """
+    try:
+        lovelace_data = hass.data.get("lovelace")
+        if lovelace_data is None:
+            return
+        res_coll = lovelace_data.get("resources")
+        if res_coll is None:
+            return
+        await res_coll.async_load()
+        for item in res_coll.async_items():
+            if item.get("url") == _CARD_URL:
+                return  # Already registered
+        await res_coll.async_create_item({"res_type": "module", "url": _CARD_URL})
+        _LOGGER.info("Helios: Lovelace resource registered (%s)", _CARD_URL)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Helios: could not auto-register Lovelace resource: %s", err)
 
 
 def _load_base_load_fallback():
@@ -44,6 +65,7 @@ def _load_base_load_fallback():
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Energy Optimizer from a config entry."""
+    await _async_register_lovelace_resource(hass)
     coordinator = EnergyOptimizerCoordinator(hass, entry)
     await coordinator.device_manager.async_setup()
     await coordinator.async_setup()
