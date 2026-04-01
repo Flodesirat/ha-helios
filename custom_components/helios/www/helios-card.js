@@ -11,6 +11,27 @@
  *     score:          sensor.helios_global_score
  *     battery_action: sensor.helios_battery_action
  *     auto_mode:      switch.helios_auto_mode
+ *   devices:                                      # optional
+ *     - name: Piscine
+ *       type: pool
+ *       entity: switch.helios_piscine_manuel
+ *       filtration_done:     sensor.helios_pool_filtration_done
+ *       filtration_required: sensor.helios_pool_filtration_required
+ *       force_remaining:     sensor.helios_pool_force_remaining  # optional
+ *     - name: Chauffe-eau
+ *       type: water_heater
+ *       entity: switch.helios_chauffe_eau_manuel
+ *       temp_entity:   sensor.temperature_chauffe_eau
+ *       temp_target:   61   # optional — fallback if no entity
+ *     - name: Lave-vaisselle
+ *       type: appliance
+ *       entity:       switch.helios_lave_vaisselle_manuel
+ *       state_entity: sensor.helios_lave_vaisselle_etat
+ *     - name: Voiture
+ *       type: ev
+ *       entity:         switch.helios_voiture_manuel
+ *       soc_entity:     sensor.ev_soc
+ *       plugged_entity: binary_sensor.ev_branche   # optional
  */
 
 class HeliosCard extends HTMLElement {
@@ -81,6 +102,7 @@ class HeliosCard extends HTMLElement {
           color: var(--primary-text-color);
         }
 
+        /* ---- Header ---- */
         .header {
           display: flex;
           justify-content: space-between;
@@ -101,6 +123,7 @@ class HeliosCard extends HTMLElement {
           transition: background 0.3s;
         }
 
+        /* ---- Power flow ---- */
         .flow-wrap { width: 100%; margin: 4px 0 8px; }
         svg { width: 100%; height: auto; display: block; }
 
@@ -116,6 +139,7 @@ class HeliosCard extends HTMLElement {
         }
         @keyframes flowDash { to { stroke-dashoffset: -26; } }
 
+        /* ---- Score / chips ---- */
         .footer {
           padding-top: 10px;
           border-top: 1px solid var(--divider-color, #e0e0e0);
@@ -166,6 +190,71 @@ class HeliosCard extends HTMLElement {
           width: 8px; height: 8px;
           border-radius: 50%;
           flex-shrink: 0;
+        }
+
+        /* ---- Devices section ---- */
+        .devices {
+          margin-top: 10px;
+          padding-top: 10px;
+          border-top: 1px solid var(--divider-color, #e0e0e0);
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .dev-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 8px;
+          border-radius: 8px;
+          background: var(--secondary-background-color, #f5f5f5);
+        }
+        .dev-icon {
+          font-size: 17px;
+          width: 24px;
+          text-align: center;
+          flex-shrink: 0;
+        }
+        .dev-info {
+          flex: 1;
+          min-width: 0;
+        }
+        .dev-name {
+          font-size: 12px;
+          font-weight: 600;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .dev-detail {
+          font-size: 11px;
+          color: var(--secondary-text-color);
+          margin-top: 1px;
+        }
+        .dev-status {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          flex-shrink: 0;
+        }
+        .dev-status-text {
+          font-size: 11px;
+          font-weight: 600;
+          min-width: 54px;
+        }
+        .dev-score-col {
+          text-align: right;
+          flex-shrink: 0;
+          min-width: 38px;
+        }
+        .dev-score-val {
+          font-size: 12px;
+          font-weight: 700;
+        }
+        .dev-reason {
+          font-size: 9px;
+          color: var(--secondary-text-color);
+          margin-top: 1px;
         }
       </style>
 
@@ -226,6 +315,8 @@ class HeliosCard extends HTMLElement {
           </div>
           <div class="chips" id="h-chips"></div>
         </div>
+
+        <div class="devices" id="h-devices" style="display:none"></div>
       </div>
     `;
 
@@ -247,7 +338,6 @@ class HeliosCard extends HTMLElement {
   // ------------------------------------------------------------------ Update
   _update() {
     if (!this._initialized) return;
-
     try {
       this._doUpdate();
     } catch (e) {
@@ -361,6 +451,141 @@ class HeliosCard extends HTMLElement {
     }
     const chipsEl = this.shadowRoot.getElementById("h-chips");
     if (chipsEl) chipsEl.innerHTML = chips.join("");
+
+    // Devices section
+    this._updateDevices();
+  }
+
+  // ------------------------------------------------------------------ Devices
+  _updateDevices() {
+    const devicesEl = this.shadowRoot.getElementById("h-devices");
+    if (!devicesEl) return;
+
+    const devCfgs = this._config?.devices;
+    if (!devCfgs || devCfgs.length === 0) {
+      devicesEl.style.display = "none";
+      return;
+    }
+
+    devicesEl.style.display = "flex";
+    devicesEl.innerHTML = devCfgs.map(d => this._renderDevice(d)).join("");
+  }
+
+  _renderDevice(dev) {
+    const icon   = dev.icon || this._defaultIcon(dev.type);
+    const isOn   = this._deviceIsOn(dev);
+    const score  = this._attr(dev.entity, "last_effective_score") ?? null;
+    const reason = this._attr(dev.entity, "last_decision_reason") ?? "";
+    const detail = this._deviceDetail(dev);
+
+    // Status dot + label
+    const { dotColor, statusText } = this._deviceStatus(dev, isOn);
+
+    // Score color
+    const scoreColor = score === null ? "#9E9E9E"
+                     : score > 0.6   ? "#4CAF50"
+                     : score > 0.3   ? "#FF9800"
+                     : "#F44336";
+    const scoreHtml = score !== null
+      ? `<div class="dev-score-val" style="color:${scoreColor}">${score.toFixed(2)}</div>
+         ${reason ? `<div class="dev-reason">${this._reasonLabel(reason)}</div>` : ""}`
+      : "";
+
+    return `
+      <div class="dev-row">
+        <div class="dev-icon">${icon}</div>
+        <div class="dev-info">
+          <div class="dev-name">${dev.name || ""}</div>
+          ${detail ? `<div class="dev-detail">${detail}</div>` : ""}
+        </div>
+        <div class="dev-status">
+          <div class="dot" style="background:${dotColor}"></div>
+          <span class="dev-status-text">${statusText}</span>
+        </div>
+        <div class="dev-score-col">${scoreHtml}</div>
+      </div>
+    `;
+  }
+
+  _deviceIsOn(dev) {
+    if (dev.type === "appliance") {
+      return this._str(dev.state_entity) === "en_route";
+    }
+    // For all other types, read the helios_device_on attribute from the manual switch
+    const attr = this._attr(dev.entity, "helios_device_on");
+    if (attr !== null) return attr === true || attr === "true";
+    return false;
+  }
+
+  _deviceStatus(dev, isOn) {
+    if (dev.type === "appliance") {
+      const state = this._str(dev.state_entity);
+      const map = {
+        en_route:   { dotColor: "#4CAF50", statusText: "En route" },
+        en_attente: { dotColor: "#FF9800", statusText: "En attente" },
+        stop:       { dotColor: "#9E9E9E", statusText: "Arrêt" },
+      };
+      return map[state] ?? { dotColor: "#9E9E9E", statusText: state ?? "—" };
+    }
+    if (dev.type === "ev") {
+      const pluggedEntity = dev.plugged_entity ? this._str(dev.plugged_entity) : null;
+      if (pluggedEntity === "off") return { dotColor: "#9E9E9E", statusText: "Non branché" };
+    }
+    return isOn
+      ? { dotColor: "#4CAF50", statusText: "ON" }
+      : { dotColor: "#9E9E9E", statusText: "OFF" };
+  }
+
+  _deviceDetail(dev) {
+    switch (dev.type) {
+      case "pool": {
+        const done = this._num(dev.filtration_done, null);
+        const req  = this._num(dev.filtration_required, null);
+        if (done === null || req === null) return "";
+        let s = `${done.toFixed(1)}h / ${req.toFixed(1)}h`;
+        const forceRem = dev.force_remaining ? this._num(dev.force_remaining, 0) : 0;
+        if (forceRem > 1) s += ` 🔒 ${Math.round(forceRem)} min`;
+        return s;
+      }
+      case "water_heater": {
+        const temp = this._num(dev.temp_entity, null);
+        if (temp === null) return "";
+        const target = dev.temp_target ?? null;
+        return target !== null
+          ? `${temp.toFixed(1)}°C / ${target}°C`
+          : `${temp.toFixed(1)}°C`;
+      }
+      case "ev": {
+        const pluggedEntity = dev.plugged_entity ? this._str(dev.plugged_entity) : null;
+        if (pluggedEntity === "off") return "";
+        const soc = this._num(dev.soc_entity, null);
+        return soc !== null ? `SOC : ${Math.round(soc)}%` : "";
+      }
+      case "appliance":
+        // Status already shown in statusText
+        return "";
+      default:
+        return "";
+    }
+  }
+
+  _defaultIcon(type) {
+    const icons = { pool: "🏊", water_heater: "🌡️", appliance: "🫧", ev: "🚗" };
+    return icons[type] ?? "🔌";
+  }
+
+  _reasonLabel(reason) {
+    const map = {
+      dispatch:       "Surplus",
+      must_run:       "Forcé",
+      satisfied:      "Satisfait",
+      score_too_low:  "Score faible",
+      no_budget:      "Budget",
+      fit_negligible: "Fit faible",
+      outside_window: "Hors plage",
+      manual:         "Manuel",
+    };
+    return map[reason] ?? reason;
   }
 
   // ------------------------------------------------------------------ SVG helpers
@@ -425,6 +650,7 @@ class HeliosCard extends HTMLElement {
         battery_action: "sensor.helios_battery_action",
         auto_mode:      "switch.helios_auto_mode",
       },
+      devices: [],
     };
   }
 
@@ -441,6 +667,6 @@ if (!window.customCards.find((c) => c.type === "helios-card")) {
   window.customCards.push({
     type:        "helios-card",
     name:        "Helios Energy Flow",
-    description: "Flux d'énergie solaire, batterie et réseau avec score de décision.",
+    description: "Flux d'énergie solaire, batterie et réseau avec score et état des appareils.",
   });
 }

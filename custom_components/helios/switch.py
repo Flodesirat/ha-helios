@@ -34,6 +34,7 @@ class _BaseDeviceSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def extra_state_attributes(self) -> dict:
         return {
+            "helios_device_on":     self._device.is_on,
             "last_effective_score": self._device.last_effective_score,
             "last_decision_reason": self._device.last_decision_reason,
         }

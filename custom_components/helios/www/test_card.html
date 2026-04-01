@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Helios Card — Test</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #f0f0f0;
+      font-family: Roboto, sans-serif;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      width: 360px;
+    }
+    h3 {
+      margin: 0 0 4px;
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="col">
+  <h3>Flux + appareils</h3>
+  <helios-card id="card-full"></helios-card>
+</div>
+
+<div class="col">
+  <h3>Sans batterie — nuit</h3>
+  <helios-card id="card-night"></helios-card>
+</div>
+
+<script src="./helios-card.js" type="module"></script>
+<script type="module">
+// ---------------------------------------------------------------------------
+// Mock hass helper
+// ---------------------------------------------------------------------------
+function makeHass(states) {
+  return {
+    states,
+    callService(domain, service, data) {
+      console.log(`callService: ${domain}.${service}`, data);
+    },
+  };
+}
+
+function state(value, attributes = {}) {
+  return { state: String(value), attributes };
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 1 — sunny day, pool running, WH heating, appliance waiting
+// ---------------------------------------------------------------------------
+const hassDay = makeHass({
+  "sensor.helios_pv_power":                   state(2800),
+  "sensor.helios_grid_power":                 state(-300),   // export
+  "sensor.helios_house_power":                state(1200),
+  "sensor.helios_global_score":               state(0.74, { tempo_color: "blue", mode: "auto" }),
+  "sensor.helios_battery_action":             state("charge"),
+  "switch.helios_auto_mode":                  state("on"),
+  "sensor.my_battery_soc":                    state(58),
+
+  // Devices
+  "switch.helios_piscine_manuel":             state("off", {
+    helios_device_on: true,
+    last_effective_score: 0.82,
+    last_decision_reason: "dispatch",
+  }),
+  "sensor.helios_pool_filtration_done":       state(2.5),
+  "sensor.helios_pool_filtration_required":   state(4.0),
+  "sensor.helios_pool_force_remaining":       state(0),
+
+  "switch.helios_chauffe_eau_manuel":         state("off", {
+    helios_device_on: true,
+    last_effective_score: 0.45,
+    last_decision_reason: "dispatch",
+  }),
+  "sensor.temperature_chauffe_eau":           state(54.2),
+
+  "switch.helios_lave_vaisselle_manuel":      state("off", {
+    helios_device_on: false,
+    last_effective_score: 0.31,
+    last_decision_reason: "score_too_low",
+  }),
+  "sensor.helios_lave_vaisselle_etat":        state("en_attente"),
+
+  "switch.helios_voiture_manuel":             state("off", {
+    helios_device_on: true,
+    last_effective_score: 0.68,
+    last_decision_reason: "dispatch",
+  }),
+  "sensor.ev_soc":                            state(72),
+  "binary_sensor.ev_branche":                 state("on"),
+});
+
+// ---------------------------------------------------------------------------
+// Scenario 2 — night, no PV, battery discharging
+// ---------------------------------------------------------------------------
+const hassNight = makeHass({
+  "sensor.helios_pv_power":                   state(0),
+  "sensor.helios_grid_power":                 state(450),    // import
+  "sensor.helios_house_power":                state(900),
+  "sensor.helios_global_score":               state(0.22, { tempo_color: "red", mode: "auto" }),
+  "sensor.helios_battery_action":             state("reserve"),
+  "switch.helios_auto_mode":                  state("on"),
+  // no battery_soc entity configured → hidden
+
+  "switch.helios_piscine_manuel":             state("off", {
+    helios_device_on: false,
+    last_effective_score: 0.0,
+    last_decision_reason: "outside_window",
+  }),
+  "sensor.helios_pool_filtration_done":       state(4.0),
+  "sensor.helios_pool_filtration_required":   state(4.0),
+
+  "switch.helios_chauffe_eau_manuel":         state("off", {
+    helios_device_on: false,
+    last_effective_score: 0.0,
+    last_decision_reason: "satisfied",
+  }),
+  "sensor.temperature_chauffe_eau":           state(62.1),
+
+  "switch.helios_lave_vaisselle_manuel":      state("off", {
+    helios_device_on: true,
+    last_effective_score: 0.55,
+    last_decision_reason: "dispatch",
+  }),
+  "sensor.helios_lave_vaisselle_etat":        state("en_route"),
+});
+
+// ---------------------------------------------------------------------------
+// Inject config + hass into each card
+// ---------------------------------------------------------------------------
+const configFull = {
+  entities: {
+    pv_power:       "sensor.helios_pv_power",
+    grid_power:     "sensor.helios_grid_power",
+    house_power:    "sensor.helios_house_power",
+    battery_soc:    "sensor.my_battery_soc",
+    score:          "sensor.helios_global_score",
+    battery_action: "sensor.helios_battery_action",
+    auto_mode:      "switch.helios_auto_mode",
+  },
+  devices: [
+    {
+      name: "Piscine", type: "pool",
+      entity:              "switch.helios_piscine_manuel",
+      filtration_done:     "sensor.helios_pool_filtration_done",
+      filtration_required: "sensor.helios_pool_filtration_required",
+      force_remaining:     "sensor.helios_pool_force_remaining",
+    },
+    {
+      name: "Chauffe-eau", type: "water_heater",
+      entity:      "switch.helios_chauffe_eau_manuel",
+      temp_entity: "sensor.temperature_chauffe_eau",
+      temp_target: 61,
+    },
+    {
+      name: "Lave-vaisselle", type: "appliance",
+      entity:       "switch.helios_lave_vaisselle_manuel",
+      state_entity: "sensor.helios_lave_vaisselle_etat",
+    },
+    {
+      name: "Voiture", type: "ev",
+      entity:         "switch.helios_voiture_manuel",
+      soc_entity:     "sensor.ev_soc",
+      plugged_entity: "binary_sensor.ev_branche",
+    },
+  ],
+};
+
+const configNight = {
+  entities: {
+    pv_power:       "sensor.helios_pv_power",
+    grid_power:     "sensor.helios_grid_power",
+    house_power:    "sensor.helios_house_power",
+    // no battery_soc
+    score:          "sensor.helios_global_score",
+    battery_action: "sensor.helios_battery_action",
+    auto_mode:      "switch.helios_auto_mode",
+  },
+  devices: [
+    {
+      name: "Piscine", type: "pool",
+      entity:              "switch.helios_piscine_manuel",
+      filtration_done:     "sensor.helios_pool_filtration_done",
+      filtration_required: "sensor.helios_pool_filtration_required",
+    },
+    {
+      name: "Chauffe-eau", type: "water_heater",
+      entity:      "switch.helios_chauffe_eau_manuel",
+      temp_entity: "sensor.temperature_chauffe_eau",
+      temp_target: 61,
+    },
+    {
+      name: "Lave-vaisselle", type: "appliance",
+      entity:       "switch.helios_lave_vaisselle_manuel",
+      state_entity: "sensor.helios_lave_vaisselle_etat",
+    },
+  ],
+};
+
+// Wait for custom elements to be defined
+await customElements.whenDefined("helios-card");
+
+const cardFull  = document.getElementById("card-full");
+const cardNight = document.getElementById("card-night");
+
+cardFull.setConfig(configFull);
+cardFull.hass = hassDay;
+
+cardNight.setConfig(configNight);
+cardNight.hass = hassNight;
+</script>
+</body>
+</html>
