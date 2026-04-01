@@ -1,13 +1,17 @@
 /**
  * helios-card — Lovelace card for the Helios Energy Optimizer
  *
+ * La resource est enregistrée automatiquement dans Lovelace au démarrage de HA.
+ * URL : /helios/helios-card.js
+ *
  * Config example:
  *   type: custom:helios-card
  *   entities:
  *     pv_power:       sensor.helios_pv_power
- *     grid_power:     sensor.helios_grid_power    # positive=import, negative=export
+ *     grid_power:     sensor.helios_grid_power    # positif=import, négatif=export
  *     house_power:    sensor.helios_house_power
- *     battery_soc:    sensor.my_battery_soc       # optional
+ *     battery_soc:    sensor.my_battery_soc       # optionnel
+ *     battery_power:  sensor.helios_battery_power # optionnel — négatif=charge, positif=décharge
  *     score:          sensor.helios_global_score
  *     battery_action: sensor.helios_battery_action
  *     auto_mode:      switch.helios_auto_mode
@@ -399,15 +403,27 @@ class HeliosCard extends HTMLElement {
       this._flowOff("h-line-grid", "h-lbl-grid", 73, 125, 122, 125);
     }
 
-    // Battery flow
-    const batPow = Math.abs(pv - house - grid);
-    if (battAction === "charge" && batPow > 10) {
+    // Battery flow — négatif = charge, positif = décharge
+    // Si battery_power est configuré : le signe donne la direction.
+    // Sinon : fallback sur battAction pour la direction.
+    let batIsCharge, batIsDischarge, batPow;
+    if (e.battery_power) {
+      const raw = this._num(e.battery_power, 0);
+      batPow        = Math.abs(raw);
+      batIsCharge   = raw < -10;
+      batIsDischarge = raw > 10;
+    } else {
+      batPow        = Math.abs(pv - house - grid);
+      batIsCharge   = battAction === "charge"    && batPow > 10;
+      batIsDischarge = battAction === "discharge" && batPow > 10;
+    }
+    if (batIsCharge) {
       this._flow("h-line-bat", "h-lbl-bat", {
         active: true, power: batPow, color: "#1565C0", marker: "h-arr-bat-chg",
         x1: 178, y1: 125, x2: 227, y2: 125,
         lblX: 203, lblY: 119, lblAnchor: "middle", lblColor: "#1565C0",
       });
-    } else if (battAction === "discharge" && batPow > 10) {
+    } else if (batIsDischarge) {
       this._flow("h-line-bat", "h-lbl-bat", {
         active: true, power: batPow, color: "#0288D1", marker: "h-arr-bat-dch",
         x1: 227, y1: 125, x2: 178, y2: 125,
@@ -646,6 +662,7 @@ class HeliosCard extends HTMLElement {
         grid_power:     "sensor.helios_grid_power",
         house_power:    "sensor.helios_house_power",
         battery_soc:    "",
+        battery_power:  "",
         score:          "sensor.helios_global_score",
         battery_action: "sensor.helios_battery_action",
         auto_mode:      "switch.helios_auto_mode",
