@@ -55,16 +55,16 @@ class HeliosCard extends HTMLElement {
   // ------------------------------------------------------------------ Layout (full vs compact)
   _makeLayout(_compact) {
     return {
-      viewBox: "0 0 300 160", r: 27, fs: 18, fsVal: 9, ringR: 32, ringSW: 3,
-      pv:   { cx: 150, cy: 38,  emojiY: 32,  valY: 48  },
-      house:{ cx: 150, cy: 125, emojiY: 120, valY: 133 },
-      grid: { cx: 45,  cy: 125, emojiY: 120, valY: 133 },
-      bat:  { cx: 255, cy: 125 },
-      bat_ico_y:     120, bat_soc_y:  131, bat_act_y: 142,
-      bat_ico_y_pw:  116, bat_soc_y_pw: 128, bat_act_y_pw: 139,
-      linePv:  { x1:150, y1:64,  x2:150, y2:97,  lblX:157, lblY:83  },
-      lineGrid:{ x1:73,  y1:125, x2:122, y2:125, lblX:97,  lblY:119 },
-      lineBat: { x1:178, y1:125, x2:227, y2:125, lblX:203, lblY:119 },
+      viewBox: "0 0 300 162", r: 20, fs: 17, fsVal: 9, ringR: 24, ringSW: 2.5,
+      pv:   { cx: 150, cy: 32,  emojiY: 39  },
+      house:{ cx: 150, cy: 114, emojiY: 121 },
+      houseValBelowY: 151,
+      grid: { cx: 45,  cy: 114, emojiY: 121 },
+      bat:  { cx: 255, cy: 114 },
+      bat_ico_y: 109, bat_soc_y: 126,
+      linePv:  { x1:150, y1:56,  x2:150, y2:90,  lblX:157, lblY:75  },
+      lineGrid:{ x1:70,  y1:114, x2:129, y2:114, lblX:95,  lblY:108 },
+      lineBat: { x1:175, y1:114, x2:230, y2:114, lblX:204, lblY:108 },
     };
   }
 
@@ -161,19 +161,18 @@ class HeliosCard extends HTMLElement {
         <text id="h-lbl-bat"  x="${L.lineBat.lblX}"  y="${L.lineBat.lblY}"  font-size="${fsVal}" text-anchor="middle"></text>
         <circle cx="${pv.cx}" cy="${pv.cy}" r="${r}" fill="#FFF8E1" stroke="#F9A825" stroke-width="2"/>
         <text x="${pv.cx}" y="${pv.emojiY}" text-anchor="middle" font-size="${fs}">☀️</text>
-        <text id="h-val-pv" x="${pv.cx}" y="${pv.valY}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#E65100"></text>
         ${ring("h-ring-pv", pv.cx, pv.cy, "#F9A825")}
         <circle cx="${house.cx}" cy="${house.cy}" r="${r}" fill="#E8F5E9" stroke="#388E3C" stroke-width="2"/>
         <text x="${house.cx}" y="${house.emojiY}" text-anchor="middle" font-size="${fs}">🏠</text>
-        <text id="h-val-house" x="${house.cx}" y="${house.valY}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#1B5E20"></text>
+        <text id="h-val-house" x="${house.cx}" y="${L.houseValBelowY}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#1B5E20"></text>
         <circle id="h-node-grid" cx="${grid.cx}" cy="${grid.cy}" r="${r}" fill="#F3E5F5" stroke="#7B1FA2" stroke-width="2"/>
         <text x="${grid.cx}" y="${grid.emojiY}" text-anchor="middle" font-size="${fs}">⚡</text>
-        <text id="h-val-grid" x="${grid.cx}" y="${grid.valY}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#6A1B9A"></text>
         ${ring("h-ring-grid", grid.cx, grid.cy, "#7B1FA2")}
         <circle id="h-node-bat" cx="${bcx}" cy="${bcy}" r="${r}" fill="#E3F2FD" stroke="#1565C0" stroke-width="2"/>
-        <text id="h-ico-bat"        x="${bcx}" y="${L.bat_ico_y}"  text-anchor="middle" font-size="${fs - 2}">🔋</text>
-        <text id="h-val-bat-soc"    x="${bcx}" y="${L.bat_soc_y}"  text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#0D47A1"></text>
-        <text id="h-val-bat-action" x="${bcx}" y="${L.bat_act_y}"  text-anchor="middle" font-size="${fsVal - 1}" fill="#1565C0"></text>
+        <rect id="h-bat-body"     x="${bcx - 9}" y="${L.bat_ico_y - 6}" width="18" height="12" rx="2" fill="none" stroke="#1565C0" stroke-width="1.5"/>
+        <rect id="h-bat-terminal" x="${bcx - 2.5}" y="${L.bat_ico_y - 9}" width="5" height="3" rx="1" fill="#1565C0"/>
+        <rect id="h-bat-fill"     x="${bcx - 7}" y="${L.bat_ico_y - 4}" width="0" height="8" rx="1" fill="#1565C0"/>
+        <text id="h-val-bat-soc" x="${bcx}" y="${L.bat_soc_y}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#0D47A1"></text>
         ${ring("h-ring-bat", bcx, bcy, "#4CAF50")}
       </svg>`;
   }
@@ -398,36 +397,23 @@ class HeliosCard extends HTMLElement {
     const battAction = this._str(e.battery_action) ?? "idle";
     const tempo      = this._attr(e.score, "tempo_color");
     // Node values
-    this._txt("h-val-pv",    this._fmt(pv));
     this._txt("h-val-house", this._fmt(house));
 
-    const gridSign = grid > 0 ? "+" : "";
-    this._txt("h-val-grid", `${gridSign}${this._fmt(grid)}`);
     const tempoFill   = tempo === "red" ? "#FFEBEE" : tempo === "white" ? "#F5F5F5" : "#E3F2FD";
     const tempoStroke = tempo === "red" ? "#F44336" : tempo === "white" ? "#9E9E9E" : "#2196F3";
-    const tempoText   = tempo === "red" ? "#B71C1C" : tempo === "white" ? "#616161" : "#0D47A1";
     this._svgAttr("h-node-grid", "fill",   tempoFill);
     this._svgAttr("h-node-grid", "stroke", tempoStroke);
-    this._svgAttr("h-val-grid",  "fill",   tempoText);
 
     const L = this._layout;
     this._txt("h-val-bat-soc", soc !== null ? `${Math.round(soc)}%` : "—");
-    if (e.battery_power) {
-      const rawBatW = this._num(e.battery_power, null);
-      this._svgAttr("h-ico-bat",        "y", String(L.bat_ico_y_pw));
-      this._svgAttr("h-val-bat-soc",    "y", String(L.bat_soc_y_pw));
-      this._svgAttr("h-val-bat-action", "y", String(L.bat_act_y_pw));
-      const sign = rawBatW !== null && rawBatW > 0 ? "+" : "";
-      this._txt("h-val-bat-action", rawBatW !== null ? `${sign}${this._fmt(rawBatW)}` : "—");
-      this._svgAttr("h-val-bat-action", "fill", rawBatW !== null && rawBatW < 0 ? "#1565C0" : "#0288D1");
-    } else {
-      this._svgAttr("h-ico-bat",        "y", String(L.bat_ico_y));
-      this._svgAttr("h-val-bat-soc",    "y", String(L.bat_soc_y));
-      this._svgAttr("h-val-bat-action", "y", String(L.bat_act_y));
-      const batLabels = { charge: "↑ charge", discharge: "↓ décharge", reserve: "🔒 réserve", idle: "—" };
-      this._txt("h-val-bat-action", batLabels[battAction] ?? battAction);
-      this._svgAttr("h-val-bat-action", "fill", "#1565C0");
-    }
+    const batColor = soc !== null
+      ? (soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336")
+      : "#1565C0";
+    this._svgAttr("h-bat-body",     "stroke", batColor);
+    this._svgAttr("h-bat-terminal", "fill",   batColor);
+    this._svgAttr("h-bat-fill",     "fill",   batColor);
+    this._svgAttr("h-bat-fill",     "width",  soc !== null ? Math.max(1, 14 * soc / 100).toFixed(1) : "0");
+    this._svgAttr("h-val-bat-soc",  "fill",   batColor);
     this._svgAttr("h-node-bat", "stroke", battAction === "discharge" ? "#0288D1" : "#1565C0");
 
     // PV → House
@@ -696,7 +682,7 @@ class HeliosCard extends HTMLElement {
       const speed = Math.max(0.4, Math.min(3.0, 2000 / Math.max(power, 100)));
       line.setAttribute("x1", x1); line.setAttribute("y1", y1);
       line.setAttribute("x2", x2); line.setAttribute("y2", y2);
-      line.setAttribute("stroke", color);
+      line.style.stroke = color;
       line.setAttribute("marker-end", `url(#${marker})`);
       line.classList.add("fl-on");
       line.style.animationDuration = `${speed}s`;
@@ -717,7 +703,7 @@ class HeliosCard extends HTMLElement {
     if (line) {
       line.setAttribute("x1", x1); line.setAttribute("y1", y1);
       line.setAttribute("x2", x2); line.setAttribute("y2", y2);
-      line.setAttribute("stroke", "#e0e0e0");
+      line.style.stroke = "var(--divider-color, #e0e0e0)";
       line.removeAttribute("marker-end");
       line.classList.remove("fl-on");
       line.style.animationDuration = "";
