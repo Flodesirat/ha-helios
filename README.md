@@ -147,6 +147,16 @@ entities:
 
 Une carte SVG animée visualisant les flux d'énergie est disponible. Ajouter manuellement dans **Paramètres → Tableau de bord → Ressources** :
 
+#### Test visuel en local
+
+Pour prévisualiser la carte sans Home Assistant (3 scénarios : jour, nuit, compact) :
+
+```bash
+python3 -m http.server 8765 --directory custom_components/helios/www/
+```
+
+Puis ouvrir [http://localhost:8765/test_card.html](http://localhost:8765/test_card.html) dans un navigateur.
+
 ```
 URL : /helios/helios-card.js
 Type : Module JavaScript

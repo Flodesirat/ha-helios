@@ -42,6 +42,11 @@
   <helios-card id="card-night"></helios-card>
 </div>
 
+<div class="col">
+  <h3>Compact — jour Tempo rouge</h3>
+  <helios-card id="card-compact"></helios-card>
+</div>
+
 <script src="./helios-card.js" type="module"></script>
 <script type="module">
 // ---------------------------------------------------------------------------
@@ -144,6 +149,8 @@ const hassNight = makeHass({
 // Inject config + hass into each card
 // ---------------------------------------------------------------------------
 const configFull = {
+  max_power: 3500,          // pour tester les anneaux PV/maison
+  grid_subscription_w: 6000,
   entities: {
     pv_power:       "sensor.helios_pv_power",
     grid_power:     "sensor.helios_grid_power",
@@ -212,17 +219,92 @@ const configNight = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// Scenario 3 — compact, Tempo rouge, batterie faible, voiture branchée
+// ---------------------------------------------------------------------------
+const hassCompact = makeHass({
+  "sensor.helios_pv_power":                   state(1500),
+  "sensor.helios_grid_power":                 state(800),    // import
+  "sensor.helios_house_power":                state(2200),
+  "sensor.helios_global_score":               state(0.15, { tempo_color: "red", mode: "auto" }),
+  "sensor.helios_battery_action":             state("reserve"),
+  "switch.helios_auto_mode":                  state("on"),
+  "sensor.my_battery_soc":                    state(18),
+
+  "switch.helios_piscine_manuel":             state("off", {
+    helios_device_on: false,
+    last_effective_score: 0.0,
+    last_decision_reason: "outside_window",
+  }),
+  "sensor.helios_pool_filtration_done":       state(60),
+  "sensor.helios_pool_filtration_required":   state(240),
+
+  "switch.helios_chauffe_eau_manuel":         state("off", {
+    helios_device_on: false,
+    last_effective_score: 0.0,
+    last_decision_reason: "score_too_low",
+  }),
+  "sensor.temperature_chauffe_eau":           state(48.0),
+
+  "switch.helios_voiture_manuel":             state("off", {
+    helios_device_on: false,
+    last_effective_score: 0.05,
+    last_decision_reason: "no_budget",
+  }),
+  "sensor.ev_soc":                            state(31),
+  "binary_sensor.ev_branche":                 state("on"),
+});
+
+const configCompact = {
+  compact: true,
+  max_power: 3500,
+  grid_subscription_w: 6000,
+  entities: {
+    pv_power:       "sensor.helios_pv_power",
+    grid_power:     "sensor.helios_grid_power",
+    house_power:    "sensor.helios_house_power",
+    battery_soc:    "sensor.my_battery_soc",
+    score:          "sensor.helios_global_score",
+    battery_action: "sensor.helios_battery_action",
+    auto_mode:      "switch.helios_auto_mode",
+  },
+  devices: [
+    {
+      name: "Piscine", type: "pool",
+      entity:              "switch.helios_piscine_manuel",
+      filtration_done:     "sensor.helios_pool_filtration_done",
+      filtration_required: "sensor.helios_pool_filtration_required",
+    },
+    {
+      name: "Chauffe-eau", type: "water_heater",
+      entity:      "switch.helios_chauffe_eau_manuel",
+      temp_entity: "sensor.temperature_chauffe_eau",
+      temp_target: 61,
+    },
+    {
+      name: "Voiture", type: "ev_charger",
+      entity:         "switch.helios_voiture_manuel",
+      soc_entity:     "sensor.ev_soc",
+      plugged_entity: "binary_sensor.ev_branche",
+    },
+  ],
+};
+
 // Wait for custom elements to be defined
 await customElements.whenDefined("helios-card");
 
-const cardFull  = document.getElementById("card-full");
-const cardNight = document.getElementById("card-night");
+const cardFull    = document.getElementById("card-full");
+const cardNight   = document.getElementById("card-night");
+const cardCompact = document.getElementById("card-compact");
 
 cardFull.setConfig(configFull);
 cardFull.hass = hassDay;
 
 cardNight.setConfig(configNight);
 cardNight.hass = hassNight;
+
+cardCompact.setConfig(configCompact);
+cardCompact.hass = hassCompact;
 </script>
 </body>
 </html>

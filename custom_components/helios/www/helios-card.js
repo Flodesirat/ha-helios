@@ -7,6 +7,8 @@
  * Config example:
  *   type: custom:helios-card
  *   compact: true                                 # optionnel — vue flux condensée
+ *   max_power: 6000                               # optionnel — puissance max PV/maison pour les anneaux (W, défaut 6000)
+ *   grid_subscription_w: 9000                     # optionnel — puissance d'abonnement réseau pour l'anneau réseau (W, défaut = max_power)
  *   entities:
  *     pv_power:       sensor.helios_pv_power
  *     grid_power:     sensor.helios_grid_power    # positif=import, négatif=export
@@ -51,21 +53,9 @@ class HeliosCard extends HTMLElement {
   }
 
   // ------------------------------------------------------------------ Layout (full vs compact)
-  _makeLayout(compact) {
-    if (compact) return {
-      viewBox: "0 0 300 128", r: 18, fs: 14, fsVal: 8,
-      pv:   { cx: 150, cy: 22, emojiY: 17, valY: 31 },
-      house:{ cx: 150, cy: 95, emojiY: 90, valY: 103 },
-      grid: { cx: 38,  cy: 95, emojiY: 90, valY: 103 },
-      bat:  { cx: 262, cy: 95 },
-      bat_ico_y:     90,  bat_soc_y:  100, bat_act_y: 109,
-      bat_ico_y_pw:  87,  bat_soc_y_pw: 97, bat_act_y_pw: 106,
-      linePv:  { x1:150, y1:40, x2:150, y2:77, lblX:156, lblY:61 },
-      lineGrid:{ x1:56,  y1:95, x2:132, y2:95, lblX:94,  lblY:89 },
-      lineBat: { x1:168, y1:95, x2:244, y2:95, lblX:206, lblY:89 },
-    };
+  _makeLayout(_compact) {
     return {
-      viewBox: "0 0 300 185", r: 27, fs: 18, fsVal: 9,
+      viewBox: "0 0 300 160", r: 27, fs: 18, fsVal: 9, ringR: 32, ringSW: 3,
       pv:   { cx: 150, cy: 38,  emojiY: 32,  valY: 48  },
       house:{ cx: 150, cy: 125, emojiY: 120, valY: 133 },
       grid: { cx: 45,  cy: 125, emojiY: 120, valY: 133 },
@@ -76,6 +66,24 @@ class HeliosCard extends HTMLElement {
       lineGrid:{ x1:73,  y1:125, x2:122, y2:125, lblX:97,  lblY:119 },
       lineBat: { x1:178, y1:125, x2:227, y2:125, lblX:203, lblY:119 },
     };
+  }
+
+  // ------------------------------------------------------------------ Ring helper
+  _ringCirc() { return 2 * Math.PI * this._layout.ringR; }
+
+  _updateRing(id, fraction, color) {
+    const el = this.shadowRoot.getElementById(id);
+    if (!el) return;
+    const circ = this._ringCirc();
+    const off  = circ * (1 - Math.max(0, Math.min(1, fraction)));
+    el.style.strokeDashoffset = off.toFixed(2);
+    el.style.stroke = color;
+  }
+
+  _hideRing(id) {
+    const el = this.shadowRoot.getElementById(id);
+    if (!el) return;
+    el.style.strokeDashoffset = this._ringCirc().toFixed(2);
   }
 
   // ------------------------------------------------------------------ Config
@@ -128,16 +136,22 @@ class HeliosCard extends HTMLElement {
   // ------------------------------------------------------------------ SVG builder
   _buildSvg() {
     const L = this._layout;
-    const { pv, house, grid, bat, r, fs, fsVal } = L;
+    const { pv, house, grid, bat, r, fs, fsVal, ringR, ringSW } = L;
     const bcx = bat.cx, bcy = bat.cy;
+    const circ = (2 * Math.PI * ringR).toFixed(2);
+    const ring = (id, cx, cy, color) =>
+      `<circle id="${id}" cx="${cx}" cy="${cy}" r="${ringR}"
+        fill="none" stroke="${color}" stroke-width="${ringSW}" stroke-linecap="round"
+        stroke-dasharray="${circ}" stroke-dashoffset="${circ}"
+        transform="rotate(-90 ${cx} ${cy})" class="h-ring"/>`;
     return `
       <svg viewBox="${L.viewBox}" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <marker id="h-arr-pv"      markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7Z" fill="#F9A825"/></marker>
-          <marker id="h-arr-gin"     markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7Z" fill="#7B1FA2"/></marker>
-          <marker id="h-arr-gout"    markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7Z" fill="#388E3C"/></marker>
-          <marker id="h-arr-bat-chg" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7Z" fill="#1565C0"/></marker>
-          <marker id="h-arr-bat-dch" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7Z" fill="#0288D1"/></marker>
+          <marker id="h-arr-pv"      markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5Z" fill="#F9A825"/></marker>
+          <marker id="h-arr-gin"     markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5Z" fill="#7B1FA2"/></marker>
+          <marker id="h-arr-gout"    markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5Z" fill="#388E3C"/></marker>
+          <marker id="h-arr-bat-chg" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5Z" fill="#1565C0"/></marker>
+          <marker id="h-arr-bat-dch" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5Z" fill="#0288D1"/></marker>
         </defs>
         <line id="h-line-pv"   class="fl" x1="${L.linePv.x1}"   y1="${L.linePv.y1}"   x2="${L.linePv.x2}"   y2="${L.linePv.y2}"/>
         <line id="h-line-grid" class="fl" x1="${L.lineGrid.x1}" y1="${L.lineGrid.y1}" x2="${L.lineGrid.x2}" y2="${L.lineGrid.y2}"/>
@@ -148,16 +162,19 @@ class HeliosCard extends HTMLElement {
         <circle cx="${pv.cx}" cy="${pv.cy}" r="${r}" fill="#FFF8E1" stroke="#F9A825" stroke-width="2"/>
         <text x="${pv.cx}" y="${pv.emojiY}" text-anchor="middle" font-size="${fs}">☀️</text>
         <text id="h-val-pv" x="${pv.cx}" y="${pv.valY}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#E65100"></text>
+        ${ring("h-ring-pv", pv.cx, pv.cy, "#F9A825")}
         <circle cx="${house.cx}" cy="${house.cy}" r="${r}" fill="#E8F5E9" stroke="#388E3C" stroke-width="2"/>
         <text x="${house.cx}" y="${house.emojiY}" text-anchor="middle" font-size="${fs}">🏠</text>
         <text id="h-val-house" x="${house.cx}" y="${house.valY}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#1B5E20"></text>
         <circle id="h-node-grid" cx="${grid.cx}" cy="${grid.cy}" r="${r}" fill="#F3E5F5" stroke="#7B1FA2" stroke-width="2"/>
         <text x="${grid.cx}" y="${grid.emojiY}" text-anchor="middle" font-size="${fs}">⚡</text>
         <text id="h-val-grid" x="${grid.cx}" y="${grid.valY}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#6A1B9A"></text>
+        ${ring("h-ring-grid", grid.cx, grid.cy, "#7B1FA2")}
         <circle id="h-node-bat" cx="${bcx}" cy="${bcy}" r="${r}" fill="#E3F2FD" stroke="#1565C0" stroke-width="2"/>
         <text id="h-ico-bat"        x="${bcx}" y="${L.bat_ico_y}"  text-anchor="middle" font-size="${fs - 2}">🔋</text>
         <text id="h-val-bat-soc"    x="${bcx}" y="${L.bat_soc_y}"  text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#0D47A1"></text>
         <text id="h-val-bat-action" x="${bcx}" y="${L.bat_act_y}"  text-anchor="middle" font-size="${fsVal - 1}" fill="#1565C0"></text>
+        ${ring("h-ring-bat", bcx, bcy, "#4CAF50")}
       </svg>`;
   }
 
@@ -174,6 +191,9 @@ class HeliosCard extends HTMLElement {
           padding: 16px;
           font-family: var(--primary-font-family, Roboto, sans-serif);
           color: var(--primary-text-color);
+        }
+        .card[data-compact] {
+          padding: 4px;
         }
 
         /* ---- Header ---- */
@@ -199,6 +219,7 @@ class HeliosCard extends HTMLElement {
 
         /* ---- Power flow ---- */
         .flow-wrap { width: 100%; margin: 4px 0 8px; }
+        .card[data-compact] .flow-wrap { margin: 0; }
         svg { width: 100%; height: auto; display: block; }
 
         .fl {
@@ -206,6 +227,9 @@ class HeliosCard extends HTMLElement {
           stroke: #e0e0e0;
           stroke-width: 2.5;
           stroke-linecap: round;
+        }
+        .h-ring {
+          transition: stroke-dashoffset 0.8s ease, stroke 0.5s ease;
         }
         .fl-on {
           stroke-dasharray: 8 5;
@@ -333,16 +357,11 @@ class HeliosCard extends HTMLElement {
       </style>
 
       <div class="card">
-        <div class="header">
-          <div class="title">⚡ Helios</div>
-          <button class="mode-btn" id="h-mode-btn">—</button>
-        </div>
-
         <div class="flow-wrap">
           ${this._buildSvg()}
         </div>
 
-        <div class="footer">
+        <div class="footer" id="h-footer">
           <div class="score-row">
             <div class="lbl">Score</div>
             <div class="bar-bg"><div class="bar-fill" id="h-score-bar"></div></div>
@@ -354,18 +373,6 @@ class HeliosCard extends HTMLElement {
         <div class="devices" id="h-devices" style="display:none"></div>
       </div>
     `;
-
-    this.shadowRoot.getElementById("h-mode-btn").addEventListener("click", () => {
-      const entityId = this._config?.entities?.auto_mode;
-      if (!entityId || !this._hass) return;
-      const state = this._hass.states[entityId];
-      if (!state) return;
-      this._hass.callService(
-        "switch",
-        state.state === "on" ? "turn_off" : "turn_on",
-        { entity_id: entityId }
-      );
-    });
 
     this._initialized = true;
   }
@@ -390,19 +397,18 @@ class HeliosCard extends HTMLElement {
     const score      = this._num(e.score);
     const battAction = this._str(e.battery_action) ?? "idle";
     const tempo      = this._attr(e.score, "tempo_color");
-    const modeAttr   = this._attr(e.score, "mode");
-    const switchSt   = this._str(e.auto_mode);
-    const mode       = modeAttr ?? (switchSt === "on" ? "auto" : switchSt === "off" ? "off" : null);
-
     // Node values
     this._txt("h-val-pv",    this._fmt(pv));
     this._txt("h-val-house", this._fmt(house));
 
     const gridSign = grid > 0 ? "+" : "";
     this._txt("h-val-grid", `${gridSign}${this._fmt(grid)}`);
-    this._svgAttr("h-node-grid", "fill",   grid < 0 ? "#E8F5E9" : "#F3E5F5");
-    this._svgAttr("h-node-grid", "stroke", grid < 0 ? "#388E3C" : "#7B1FA2");
-    this._svgAttr("h-val-grid",  "fill",   grid < 0 ? "#2E7D32" : "#6A1B9A");
+    const tempoFill   = tempo === "red" ? "#FFEBEE" : tempo === "white" ? "#F5F5F5" : "#E3F2FD";
+    const tempoStroke = tempo === "red" ? "#F44336" : tempo === "white" ? "#9E9E9E" : "#2196F3";
+    const tempoText   = tempo === "red" ? "#B71C1C" : tempo === "white" ? "#616161" : "#0D47A1";
+    this._svgAttr("h-node-grid", "fill",   tempoFill);
+    this._svgAttr("h-node-grid", "stroke", tempoStroke);
+    this._svgAttr("h-val-grid",  "fill",   tempoText);
 
     const L = this._layout;
     this._txt("h-val-bat-soc", soc !== null ? `${Math.round(soc)}%` : "—");
@@ -489,14 +495,6 @@ class HeliosCard extends HTMLElement {
     }
     this._txt("h-score-num", this._hass ? score.toFixed(2) : "—");
 
-    // Mode button
-    const btn = this.shadowRoot.getElementById("h-mode-btn");
-    if (btn) {
-      const modeColors = { auto: "#4CAF50", off: "#F44336", manual: "#FF9800" };
-      btn.style.background = modeColors[mode] ?? "#9E9E9E";
-      btn.textContent = mode ? mode.toUpperCase() : "—";
-    }
-
     // Chips
     const chips = [];
     if (tempo) {
@@ -515,8 +513,40 @@ class HeliosCard extends HTMLElement {
     const chipsEl = this.shadowRoot.getElementById("h-chips");
     if (chipsEl) chipsEl.innerHTML = chips.join("");
 
-    // Devices section
-    this._updateDevices();
+    // Progress rings
+    const maxPow  = this._config.max_power          ?? 6000;
+    const maxGrid = this._config.grid_subscription_w ?? maxPow;
+
+    // PV ring — amber, 0…max_power
+    this._updateRing("h-ring-pv", pv / maxPow, "#F9A825");
+
+    // Grid ring — color by tempo, 0…grid_subscription_w
+    if (Math.abs(grid) > 5) {
+      const tempoRingColor = tempo === "red" ? "#F44336" : tempo === "white" ? "#9E9E9E" : "#2196F3";
+      this._updateRing("h-ring-grid", Math.abs(grid) / maxGrid, tempoRingColor);
+    } else {
+      this._hideRing("h-ring-grid");
+    }
+
+    // Battery ring — SOC, color by level
+    if (soc !== null) {
+      const socColor = soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336";
+      this._updateRing("h-ring-bat", soc / 100, socColor);
+    } else {
+      this._hideRing("h-ring-bat");
+    }
+
+    // Compact: marge réduite + masquer footer + devices
+    const compact  = !!this._config.compact;
+    const cardEl   = this.shadowRoot.querySelector(".card");
+    if (cardEl) compact ? cardEl.setAttribute("data-compact", "") : cardEl.removeAttribute("data-compact");
+    const chipsSection  = this.shadowRoot.getElementById("h-chips");
+    const devices       = this.shadowRoot.getElementById("h-devices");
+    if (chipsSection) chipsSection.style.display = compact ? "none" : "";
+    if (devices && compact) devices.style.display = "none";
+
+    // Devices section (full mode uniquement)
+    if (!compact) this._updateDevices();
   }
 
   // ------------------------------------------------------------------ Devices
