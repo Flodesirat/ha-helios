@@ -151,6 +151,7 @@ const hassNight = makeHass({
 const configFull = {
   max_power: 3500,          // pour tester les anneaux PV/maison
   grid_subscription_w: 6000,
+  info_url: "https://example.com",
   entities: {
     pv_power:       "sensor.helios_pv_power",
     grid_power:     "sensor.helios_grid_power",
@@ -259,6 +260,7 @@ const configCompact = {
   compact: true,
   max_power: 3500,
   grid_subscription_w: 6000,
+  info_url: "https://example.com",
   entities: {
     pv_power:       "sensor.helios_pv_power",
     grid_power:     "sensor.helios_grid_power",

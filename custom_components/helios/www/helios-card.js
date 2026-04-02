@@ -4,21 +4,23 @@
  * La resource est enregistrée automatiquement dans Lovelace au démarrage de HA.
  * URL : /helios/helios-card.js
  *
+ * Test local : python3 -m http.server 8765 --directory custom_components/helios/www/
+ *              → http://localhost:8765/test_card.html
+ *
  * Config example:
  *   type: custom:helios-card
- *   compact: true                                 # optionnel — vue flux condensée
- *   max_power: 6000                               # optionnel — puissance max PV/maison pour les anneaux (W, défaut 6000)
- *   grid_subscription_w: 9000                     # optionnel — puissance d'abonnement réseau pour l'anneau réseau (W, défaut = max_power)
+ *   compact: true                                 # optionnel — vue flux condensée (sans section appareils)
+ *   info_url: /lovelace/energie                  # optionnel — URL du bouton ℹ️ (chemin HA ou URL complète)
+ *   max_power: 6000                               # optionnel — puissance max PV pour l'anneau (W, défaut 6000)
+ *   grid_subscription_w: 9000                     # optionnel — puissance abonnement réseau pour l'anneau (W, défaut = max_power)
  *   entities:
- *     pv_power:       sensor.helios_pv_power
- *     grid_power:     sensor.helios_grid_power    # positif=import, négatif=export
- *     house_power:    sensor.helios_house_power
- *     battery_soc:    sensor.my_battery_soc       # optionnel
- *     battery_power:  sensor.helios_battery_power # optionnel — négatif=charge, positif=décharge
- *     score:          sensor.helios_global_score
- *     battery_action: sensor.helios_battery_action
- *     auto_mode:      switch.helios_auto_mode
- *   devices:                                      # optionnel
+ *     pv_power:      sensor.helios_pv_power
+ *     grid_power:    sensor.helios_grid_power     # positif=import, négatif=export
+ *     house_power:   sensor.helios_house_power
+ *     battery_soc:   sensor.my_battery_soc        # optionnel — SOC batterie (%)
+ *     battery_power: sensor.helios_battery_power  # optionnel — négatif=charge, positif=décharge
+ *     score:         sensor.helios_global_score   # attribut tempo_color: blue|white|red
+ *   devices:                                      # optionnel — section appareils (mode full uniquement)
  *     - name: Piscine
  *       type: pool
  *       entity:              switch.helios_piscine_manuel
@@ -39,7 +41,6 @@
  *       entity:         switch.helios_voiture_manuel
  *       soc_entity:     sensor.ev_soc             # optionnel
  *       plugged_entity: binary_sensor.ev_branche  # optionnel — on=branché, off=non branché
- *       state_entity:   binary_sensor.ev_branche  # alias de plugged_entity
  */
 
 class HeliosCard extends HTMLElement {
@@ -183,7 +184,31 @@ class HeliosCard extends HTMLElement {
       <style>
         :host { display: block; }
 
+        .info-btn {
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          z-index: 10;
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          border: none;
+          background: none;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          color: var(--secondary-text-color);
+          padding: 0;
+          opacity: 0.6;
+          transition: opacity 0.2s;
+        }
+        .info-btn:hover { opacity: 1; }
+        .info-btn[hidden] { display: none; }
+
         .card {
+          position: relative;
           background: var(--card-background-color, #fff);
           border-radius: var(--ha-card-border-radius, 12px);
           box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0,0,0,0.1));
@@ -356,6 +381,7 @@ class HeliosCard extends HTMLElement {
       </style>
 
       <div class="card">
+        <button class="info-btn" id="h-info-btn" hidden>ℹ️</button>
         <div class="flow-wrap">
           ${this._buildSvg()}
         </div>
@@ -372,6 +398,17 @@ class HeliosCard extends HTMLElement {
         <div class="devices" id="h-devices" style="display:none"></div>
       </div>
     `;
+
+    this.shadowRoot.getElementById("h-info-btn").addEventListener("click", () => {
+      const url = this._config?.info_url;
+      if (!url) return;
+      if (url.startsWith("http://") || url.startsWith("https://")) {
+        window.open(url, "_blank");
+      } else {
+        history.pushState(null, "", url);
+        window.dispatchEvent(new Event("location-changed", { bubbles: true, composed: true }));
+      }
+    });
 
     this._initialized = true;
   }
@@ -521,6 +558,10 @@ class HeliosCard extends HTMLElement {
     } else {
       this._hideRing("h-ring-bat");
     }
+
+    // Bouton info
+    const infoBtn = this.shadowRoot.getElementById("h-info-btn");
+    if (infoBtn) infoBtn.hidden = !this._config.info_url;
 
     // Compact: marge réduite + masquer footer + devices
     const compact  = !!this._config.compact;
