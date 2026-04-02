@@ -10,6 +10,7 @@ from custom_components.helios.managed_device import ManagedDevice
 from custom_components.helios.const import (
     DEVICE_TYPE_APPLIANCE,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY, CONF_DEVICE_POWER_W,
+    CONF_DEVICE_PRIORITY,
     CONF_APPLIANCE_READY_ENTITY, CONF_APPLIANCE_PREPARE_SCRIPT, CONF_APPLIANCE_START_SCRIPT,
     CONF_APPLIANCE_POWER_ENTITY, CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
     APPLIANCE_STATE_IDLE, APPLIANCE_STATE_PREPARING, APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_DONE,
@@ -238,3 +239,142 @@ class TestFullCycle:
         hass2.services.async_call.side_effect = _record_call
         await _handle(dm, device, hass2, global_score=0.8, surplus_w=3000.0)
         assert all_calls == [PREPARE_SCRIPT, READY_ENTITY, START_SCRIPT]
+
+
+# ---------------------------------------------------------------------------
+# Multiple appliances — budget and priority
+# ---------------------------------------------------------------------------
+
+START_SCRIPT_A = "script.start_lave_vaisselle"
+START_SCRIPT_B = "script.start_lave_linge"
+
+
+def _make_two_appliances(priority_a: int = 5, priority_b: int = 5) -> tuple[ManagedDevice, ManagedDevice]:
+    """Two appliances, each 2000 W, both in PREPARING state."""
+    dev_a = ManagedDevice({
+        CONF_DEVICE_NAME:          "Lave-vaisselle",
+        CONF_DEVICE_TYPE:          DEVICE_TYPE_APPLIANCE,
+        CONF_DEVICE_SWITCH_ENTITY: None,
+        CONF_DEVICE_POWER_W:       2000,
+        CONF_DEVICE_PRIORITY:      priority_a,
+        CONF_APPLIANCE_READY_ENTITY:          READY_ENTITY,
+        CONF_APPLIANCE_PREPARE_SCRIPT:        None,
+        CONF_APPLIANCE_START_SCRIPT:          START_SCRIPT_A,
+        CONF_APPLIANCE_POWER_ENTITY:          None,
+        CONF_APPLIANCE_CYCLE_DURATION_MINUTES: 120,
+    })
+    dev_b = ManagedDevice({
+        CONF_DEVICE_NAME:          "Lave-linge",
+        CONF_DEVICE_TYPE:          DEVICE_TYPE_APPLIANCE,
+        CONF_DEVICE_SWITCH_ENTITY: None,
+        CONF_DEVICE_POWER_W:       2000,
+        CONF_DEVICE_PRIORITY:      priority_b,
+        CONF_APPLIANCE_READY_ENTITY:          "input_boolean.lave_linge_pret",
+        CONF_APPLIANCE_PREPARE_SCRIPT:        None,
+        CONF_APPLIANCE_START_SCRIPT:          START_SCRIPT_B,
+        CONF_APPLIANCE_POWER_ENTITY:          None,
+        CONF_APPLIANCE_CYCLE_DURATION_MINUTES: 90,
+    })
+    dev_a.appliance_state = APPLIANCE_STATE_PREPARING
+    dev_b.appliance_state = APPLIANCE_STATE_PREPARING
+    return dev_a, dev_b
+
+
+def _make_dm_two(dev_a: ManagedDevice, dev_b: ManagedDevice) -> DeviceManager:
+    dm = DeviceManager.__new__(DeviceManager)
+    dm.devices = [dev_a, dev_b]
+    dm.decision_log = MagicMock()
+    dm.decision_log.__iter__ = MagicMock(return_value=iter([]))
+    dm._scan_interval = 5.0
+    dm._dispatch_threshold = 0.3
+    store = MagicMock()
+    store.async_save = AsyncMock()
+    dm._store = store
+    return dm
+
+
+async def _dispatch(dm: DeviceManager, hass, surplus_w: float, global_score: float = 0.8):
+    """Call async_dispatch with minimal score_input."""
+    score_input = {
+        "global_score": global_score,
+        "surplus_w":    surplus_w,
+        "tempo_color":  "blue",
+        "battery_soc":  None,
+        "bat_action":   "idle",
+    }
+    await dm.async_dispatch(hass, score_input)
+
+
+class TestMultipleApplianceBudget:
+
+    @pytest.mark.asyncio
+    async def test_only_one_starts_when_budget_insufficient_for_both(self):
+        """Surplus = 2500 W, both appliances need 2000 W — only one should start."""
+        dev_a, dev_b = _make_two_appliances()
+        dm   = _make_dm_two(dev_a, dev_b)
+        hass = _make_hass(ready=False)
+
+        await _dispatch(dm, hass, surplus_w=2500.0)
+
+        running = [d for d in [dev_a, dev_b] if d.appliance_state == APPLIANCE_STATE_RUNNING]
+        preparing = [d for d in [dev_a, dev_b] if d.appliance_state == APPLIANCE_STATE_PREPARING]
+        assert len(running) == 1, "Exactly one appliance should have started"
+        assert len(preparing) == 1, "The other appliance should still be PREPARING"
+
+    @pytest.mark.asyncio
+    async def test_higher_priority_starts_first(self):
+        """When budget is insufficient for both, the higher-priority appliance starts."""
+        # dev_a priority=3 (low), dev_b priority=8 (high) — order in dm.devices is [a, b]
+        dev_a, dev_b = _make_two_appliances(priority_a=3, priority_b=8)
+        dm   = _make_dm_two(dev_a, dev_b)
+        hass = _make_hass(ready=False)
+
+        await _dispatch(dm, hass, surplus_w=2500.0)
+
+        assert dev_b.appliance_state == APPLIANCE_STATE_RUNNING, \
+            "Higher-priority appliance (lave-linge, p=8) should start first"
+        assert dev_a.appliance_state == APPLIANCE_STATE_PREPARING, \
+            "Lower-priority appliance (lave-vaisselle, p=3) should remain PREPARING"
+
+    @pytest.mark.asyncio
+    async def test_lower_priority_first_in_list_but_higher_priority_wins(self):
+        """dm.devices order should not matter — priority takes precedence."""
+        # dev_a is first in the list but has lower priority
+        dev_a, dev_b = _make_two_appliances(priority_a=2, priority_b=9)
+        dm   = _make_dm_two(dev_a, dev_b)
+        hass = _make_hass(ready=False)
+
+        await _dispatch(dm, hass, surplus_w=2500.0)
+
+        assert dev_b.appliance_state == APPLIANCE_STATE_RUNNING
+        assert dev_a.appliance_state == APPLIANCE_STATE_PREPARING
+
+    @pytest.mark.asyncio
+    async def test_second_appliance_starts_next_cycle_when_budget_freed(self):
+        """After the first appliance is RUNNING, the second can start on the next cycle
+        if there is now enough surplus (e.g. first is drawing from battery, not surplus)."""
+        dev_a, dev_b = _make_two_appliances(priority_a=8, priority_b=3)
+        dm   = _make_dm_two(dev_a, dev_b)
+        hass = _make_hass(ready=False)
+
+        # Cycle 1: only dev_a (higher priority) starts
+        await _dispatch(dm, hass, surplus_w=2500.0)
+        assert dev_a.appliance_state == APPLIANCE_STATE_RUNNING
+        assert dev_b.appliance_state == APPLIANCE_STATE_PREPARING
+
+        # Cycle 2: surplus now 5000 W — enough for the second appliance too
+        await _dispatch(dm, hass, surplus_w=5000.0)
+        assert dev_b.appliance_state == APPLIANCE_STATE_RUNNING, \
+            "Second appliance should start on next cycle when budget allows"
+
+    @pytest.mark.asyncio
+    async def test_both_start_when_budget_sufficient(self):
+        """Surplus = 5000 W, both appliances need 2000 W — both should start."""
+        dev_a, dev_b = _make_two_appliances()
+        dm   = _make_dm_two(dev_a, dev_b)
+        hass = _make_hass(ready=False)
+
+        await _dispatch(dm, hass, surplus_w=5000.0)
+
+        assert dev_a.appliance_state == APPLIANCE_STATE_RUNNING
+        assert dev_b.appliance_state == APPLIANCE_STATE_RUNNING

@@ -391,16 +391,32 @@ class DeviceManager:
         # ---- Score all eligible devices ----
         scored: list[tuple[float, ManagedDevice]] = []
 
-        for device in self.devices:
+        # Track power committed to appliances that start this cycle so that
+        # subsequent appliances see a correctly reduced surplus.
+        appliance_started_w: float = 0.0
+
+        # Sort PREPARING appliances by priority (descending) so the highest-priority
+        # appliance gets first access to the available surplus budget.
+        def _device_key(d: ManagedDevice) -> tuple:
+            if d.device_type == DEVICE_TYPE_APPLIANCE and d.appliance_state == APPLIANCE_STATE_PREPARING:
+                return (0, -d.priority)
+            return (1, 0)
+
+        for device in sorted(self.devices, key=_device_key):
             # Devices not under Helios control are skipped entirely
             if not _helios_manages(device):
                 continue
 
-            # Appliance state machine is handled separately
+            # Appliance state machine is handled separately.
+            # Pass adjusted surplus so a second appliance cannot start if the
+            # first one already consumed all available headroom.
             if device.device_type == DEVICE_TYPE_APPLIANCE:
-                await self._async_handle_appliance(
-                    hass, device, global_score, surplus_w, bat_available_w
+                started = await self._async_handle_appliance(
+                    hass, device, global_score,
+                    surplus_w - appliance_started_w, bat_available_w,
                 )
+                if started:
+                    appliance_started_w += device.power_w
                 continue
 
             # Must-run override → bypass allowed window and force on immediately.
@@ -503,7 +519,8 @@ class DeviceManager:
         global_score: float,
         surplus_w: float,
         bat_available_w: float,
-    ) -> None:
+    ) -> bool:
+        """Handle appliance state machine. Returns True if the appliance started this cycle."""
         reader = ManagedDevice._make_ha_reader(hass)
         now_ts = time_mod.time()
 
@@ -517,7 +534,7 @@ class DeviceManager:
                 await DeviceManager._async_appliance_to_preparing(
                     hass, device, device.appliance_ready_entity
                 )
-            return
+            return False
 
         if device.appliance_state == APPLIANCE_STATE_PREPARING:
             fit     = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
@@ -529,7 +546,7 @@ class DeviceManager:
                 or urgency >= 0.8   # deadline imminent → start regardless of surplus
             )
             if not should_start:
-                return
+                return False
 
             # Transition: PREPARING → RUNNING
             _LOGGER.info("Appliance '%s': starting (score=%.2f fit=%.2f urgency=%.2f)",
@@ -549,10 +566,10 @@ class DeviceManager:
                     blocking=False,
                 )
 
-            device.appliance_state     = APPLIANCE_STATE_RUNNING
+            device.appliance_state       = APPLIANCE_STATE_RUNNING
             device.appliance_cycle_start = now_ts
-            device.is_on               = True
-            return
+            device.is_on                 = True
+            return True
 
         if device.appliance_state == APPLIANCE_STATE_RUNNING:
             done = False
@@ -584,10 +601,11 @@ class DeviceManager:
                         {"entity_id": device.appliance_ready_entity},
                         blocking=False,
                     )
-            return
+            return False
 
         if device.appliance_state == APPLIANCE_STATE_DONE:
             device.appliance_state = APPLIANCE_STATE_IDLE
+        return False
 
     # ------------------------------------------------------------------
     # Helpers
