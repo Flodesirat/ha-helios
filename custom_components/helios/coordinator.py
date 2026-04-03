@@ -48,7 +48,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     """Central coordinator: reads sensors → scores → decisions → actions."""
 
     @property
-    def _cfg(self) -> dict:
+    def config(self) -> dict:
         """Effective config: entry.data merged with entry.options (options win).
 
         The initial config flow writes to entry.data; the options flow writes to
@@ -56,6 +56,10 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         are picked up without requiring a full reinstall.
         """
         return {**self.entry.data, **self.entry.options}
+
+    @property
+    def _cfg(self) -> dict:
+        return self.config
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.entry = entry
