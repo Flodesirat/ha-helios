@@ -16,6 +16,7 @@ from .const import (
     CONF_HOUSE_POWER_ENTITY, CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY,
     CONF_FORECAST_ENTITY,
     CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W,
+    CONF_GRID_SUBSCRIPTION_W, DEFAULT_GRID_SUBSCRIPTION_W,
     # Battery
     CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_POWER_ENTITY,
     CONF_BATTERY_CHARGE_SCRIPT, CONF_BATTERY_AUTOCONSUM_SCRIPT,
@@ -121,6 +122,9 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(CONF_PEAK_PV_W, default=DEFAULT_PEAK_PV_W): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=500, max=30000, step=100, unit_of_measurement="W")
+                ),
+                vol.Optional(CONF_GRID_SUBSCRIPTION_W, default=DEFAULT_GRID_SUBSCRIPTION_W): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=1000, max=100000, step=500, unit_of_measurement="W")
                 ),
             }),
         )
@@ -506,6 +510,12 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                     default=self._current(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W),
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=500, max=30000, step=100, unit_of_measurement="W")
+                ),
+                vol.Optional(
+                    CONF_GRID_SUBSCRIPTION_W,
+                    default=self._current(CONF_GRID_SUBSCRIPTION_W, DEFAULT_GRID_SUBSCRIPTION_W),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=1000, max=100000, step=500, unit_of_measurement="W")
                 ),
             }),
         )

@@ -17,6 +17,8 @@ from .const import (
     DOMAIN,
     DEVICE_TYPE_APPLIANCE, APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_PREPARING,
     DEVICE_TYPE_POOL,
+    CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W,
+    CONF_GRID_SUBSCRIPTION_W, DEFAULT_GRID_SUBSCRIPTION_W,
 )
 from .coordinator import EnergyOptimizerCoordinator
 from .managed_device import ManagedDevice
@@ -132,6 +134,9 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
             "tempo_color": c.tempo_color,
             "battery_soc": c.battery_soc,
             "mode":        c.mode,
+            # Installation parameters (used by the Lovelace card)
+            "peak_pv_w":          int(c.config.get(CONF_PEAK_PV_W,          DEFAULT_PEAK_PV_W)),
+            "grid_subscription_w": int(c.config.get(CONF_GRID_SUBSCRIPTION_W, DEFAULT_GRID_SUBSCRIPTION_W)),
         }
 
 

@@ -11,12 +11,14 @@
           "tempo_color_entity": "Tempo color entity (today)",
           "tempo_next_color_entity": "Tempo color entity (tomorrow)",
           "forecast_entity": "PV production forecast entity (kWh)",
-          "peak_pv_w": "Installed PV peak power (W)"
+          "peak_pv_w": "Installed PV peak power (W)",
+          "grid_subscription_w": "Grid subscription power (W)"
         },
         "data_description": {
           "tempo_next_color_entity": "Used by the 5 am optimizer to know the color for the coming HP period.",
           "forecast_entity": "Expected daily production, used to adjust scoring weights.",
-          "peak_pv_w": "Total panel power under optimal conditions."
+          "peak_pv_w": "Total panel power under optimal conditions.",
+          "grid_subscription_w": "Maximum power allowed by your grid contract."
         }
       },
       "battery": {
@@ -187,7 +189,8 @@
           "tempo_color_entity": "Tempo color entity (today)",
           "tempo_next_color_entity": "Tempo color entity (tomorrow)",
           "forecast_entity": "PV production forecast entity (kWh)",
-          "peak_pv_w": "Installed PV peak power (W)"
+          "peak_pv_w": "Installed PV peak power (W)",
+          "grid_subscription_w": "Grid subscription power (W)"
         }
       },
       "battery": {

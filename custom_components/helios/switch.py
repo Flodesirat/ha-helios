@@ -11,7 +11,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
-from .const import DOMAIN, MODE_AUTO, MODE_OFF, DEVICE_TYPE_POOL, DEVICE_TYPE_EV
+from .const import (
+    DOMAIN, MODE_AUTO, MODE_OFF,
+    DEVICE_TYPE_POOL, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_APPLIANCE,
+)
 from .coordinator import EnergyOptimizerCoordinator
 from .managed_device import ManagedDevice
 
@@ -33,11 +36,23 @@ class _BaseDeviceSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {
-            "helios_device_on":     self._device.is_on,
-            "last_effective_score": self._device.last_effective_score,
-            "last_decision_reason": self._device.last_decision_reason,
+        d = self._device
+        attrs: dict = {
+            "helios_device_on":     d.is_on,
+            "last_effective_score": d.last_effective_score,
+            "last_decision_reason": d.last_decision_reason,
+            # Device metadata — used by the Lovelace card for auto-discovery
+            "device_name":     d.name,
+            "device_type":     d.device_type,
+            "device_priority": d.priority,
         }
+        if d.device_type == DEVICE_TYPE_WATER_HEATER:
+            attrs["wh_temp_entity"] = d.wh_temp_entity
+            attrs["wh_temp_target"] = d.wh_temp_target
+        elif d.device_type == DEVICE_TYPE_EV:
+            attrs["ev_soc_entity"]    = d.ev_soc_entity
+            attrs["ev_plugged_entity"] = d.ev_plugged_entity
+        return attrs
 
     @property
     def device_info(self) -> DeviceInfo:

@@ -11,12 +11,14 @@
           "tempo_color_entity": "Entité couleur Tempo du jour",
           "tempo_next_color_entity": "Entité couleur Tempo du lendemain",
           "forecast_entity": "Entité prévision production PV (kWh)",
-          "peak_pv_w": "Puissance crête PV installée (W)"
+          "peak_pv_w": "Puissance crête PV installée (W)",
+          "grid_subscription_w": "Puissance souscrite au réseau (W)"
         },
         "data_description": {
           "tempo_next_color_entity": "Utilisé par l'optimiseur à 5h pour connaître la couleur du jour qui commence.",
           "forecast_entity": "Production prévue pour la journée, utilisée pour ajuster les poids.",
-          "peak_pv_w": "Puissance totale des panneaux en conditions optimales."
+          "peak_pv_w": "Puissance totale des panneaux en conditions optimales.",
+          "grid_subscription_w": "Puissance maximale autorisée par votre contrat réseau."
         }
       },
       "battery": {
@@ -187,7 +189,8 @@
           "tempo_color_entity": "Entité couleur Tempo du jour",
           "tempo_next_color_entity": "Entité couleur Tempo du lendemain",
           "forecast_entity": "Entité prévision production PV (kWh)",
-          "peak_pv_w": "Puissance crête PV installée (W)"
+          "peak_pv_w": "Puissance crête PV installée (W)",
+          "grid_subscription_w": "Puissance souscrite au réseau (W)"
         }
       },
       "battery": {
