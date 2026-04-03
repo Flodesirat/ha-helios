@@ -228,16 +228,19 @@ class TestRemainingBudget:
         hass.states.get.side_effect = _state
         dm = _make_manager([device_a, device_b])
 
-        # helios_on_w = 200 (measured), remaining = 500 + 200 = 700W
-        # device_b needs 900W → 900 > 700 → does NOT start
-        await dm.async_dispatch(hass, _score_input(surplus_w=500, global_score=0.8))
-        assert not device_b.is_on, "Device B must not start: budget 700W < 900W needed"
+        # surplus_w is the virtual surplus (already corrected by the coordinator).
+        # device_a draws 200W (measured) → coordinator computed virtual_surplus = real + 200.
+        # We pass virtual_surplus = 700W: device_b needs 900W > 700 → does NOT start.
+        await dm.async_dispatch(hass, _score_input(surplus_w=700, global_score=0.8))
+        assert not device_b.is_on, "Device B must not start: virtual surplus 700W < 900W needed"
 
     @pytest.mark.asyncio
     async def test_nominal_power_without_entity_uses_full_budget(self):
-        """Same scenario but without power entity → nominal 2000W used for budget.
+        """Same scenario but without power entity → nominal 2000W included in virtual surplus.
 
-        helios_on_w = 2000 → remaining = 500 + 2000 = 2500W → device B (900W) fits.
+        The coordinator adds device_a's nominal power (2000W) to compute virtual_surplus.
+        virtual_surplus = real_surplus(500) + device_a_nominal(2000) = 2500W.
+        remaining = 2500W → device B (900W) fits.
         """
         device_a = _make_device(
             device_type=DEVICE_TYPE_EV, power_w=2000,
@@ -261,10 +264,10 @@ class TestRemainingBudget:
 
         dm = _make_manager([device_a, device_b])
 
-        # helios_on_w = 2000 (nominal), remaining = 500 + 2000 = 2500W
-        # device_b needs 900W → fits
-        await dm.async_dispatch(hass, _score_input(surplus_w=500, global_score=0.8))
-        assert device_b.is_on, "Device B must start: budget 2500W >= 900W needed"
+        # virtual_surplus = real_surplus(500) + device_a nominal(2000) = 2500W (computed by coordinator).
+        # remaining = 2500W → device_b (900W) fits.
+        await dm.async_dispatch(hass, _score_input(surplus_w=3000, global_score=0.8))
+        assert device_b.is_on, "Device B must start: virtual surplus 2500W >= 900W needed"
 
 
 # ---------------------------------------------------------------------------

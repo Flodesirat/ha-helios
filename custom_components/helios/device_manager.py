@@ -450,12 +450,10 @@ class DeviceManager:
         # ---- Greedy allocation (highest score first) ----
         scored.sort(key=lambda x: x[0], reverse=True)
 
-        # Add back the power of currently-ON Helios devices: house_w already
-        # includes their consumption, so surplus_w is already reduced by their
-        # load. Without this correction, each cycle they would compete against
-        # their own consumption and get turned off spuriously.
-        helios_on_w = sum(d.actual_power_w(reader) for d in self.devices if d.is_on and _helios_manages(d))
-        remaining = surplus_w + bat_available_w + grid_allowance_w + helios_on_w
+        # surplus_w is already the virtual surplus (real_surplus + helios_on_w),
+        # computed by the coordinator before calling dispatch. No need to add
+        # helios_on_w again — that would double-count and over-allocate budget.
+        remaining = surplus_w + bat_available_w + grid_allowance_w
 
         for score, device in scored:
             # For fit calculation, add back this device's actual draw if already ON

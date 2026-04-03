@@ -433,3 +433,112 @@ class TestMinOnMinutes_SatisfiedShutoff:
         assert device.is_on is False, (
             "Device must be turned off once min_on_minutes elapsed and score path reaches satisfied"
         )
+
+
+# ---------------------------------------------------------------------------
+# Bug 4 — helios_on_w double-counted in dispatch budget
+# ---------------------------------------------------------------------------
+# Root cause: surplus_w received by async_dispatch is already the virtual surplus
+# (real_surplus + helios_on_w), computed in coordinator._build_score_input().
+# The dispatch loop was also adding helios_on_w a second time to `remaining`,
+# giving devices a phantom budget equal to the power already consumed by
+# currently-ON Helios devices — potentially causing grid imports.
+#
+# Fix: remove the second + helios_on_w in device_manager.async_dispatch.
+# ---------------------------------------------------------------------------
+
+_WH2_TEMP    = "sensor.wh2_temp"
+_WH2_SWITCH  = "switch.wh2"
+
+
+def _wh2_device(power_w: int, temp_entity: str, switch_entity: str,
+                priority: int = 5, min_on_minutes: int = 0) -> ManagedDevice:
+    """Water heater factory — temp between floor and target → not satisfied, not must_run."""
+    return ManagedDevice(
+        {
+            CONF_DEVICE_NAME:           f"WH_{power_w}W",
+            CONF_DEVICE_TYPE:           DEVICE_TYPE_WATER_HEATER,
+            CONF_DEVICE_SWITCH_ENTITY:  switch_entity,
+            CONF_DEVICE_POWER_W:        power_w,
+            CONF_WH_TEMP_ENTITY:        temp_entity,
+            CONF_WH_TEMP_TARGET:        61.0,
+            CONF_WH_TEMP_MIN:           10.0,
+            CONF_DEVICE_MIN_ON_MINUTES: min_on_minutes,
+        },
+        {},  # no off-peak slots
+    )
+
+
+def _two_wh_hass(temp1: float, temp2: float) -> MagicMock:
+    hass = MagicMock()
+    hass.services = AsyncMock()
+
+    def _state(entity_id):
+        s = MagicMock()
+        mapping = {_WH_TEMP: temp1, _WH2_TEMP: temp2}
+        s.state = str(mapping.get(entity_id, "unavailable"))
+        return s
+
+    hass.states.get.side_effect = _state
+    return hass
+
+
+class TestHeliosOnW_NotDoubleCountedInBudget:
+    """surplus_w is already the virtual surplus — helios_on_w must not be added again.
+
+    Scenario: virtual_surplus = 600 W, device1 (400 W, already ON),
+    device2 (300 W, OFF).  Total = 700 W > 600 W — only one can run.
+
+    With the bug: remaining = 600 + 400 = 1000 W → both start → 100 W grid import.
+    With the fix: remaining = 600 W         → only one runs within budget.
+    """
+
+    @pytest.mark.asyncio
+    async def test_total_on_power_does_not_exceed_virtual_surplus(self):
+        """After dispatch, the sum of ON device powers must not exceed virtual_surplus."""
+        VIRTUAL_SURPLUS = 600
+
+        # device1: 400 W, already ON, temp=58 (slightly unsatisfied, low urgency)
+        device1 = _wh2_device(400, _WH_TEMP,  _WH_SWITCH,  priority=4)
+        device1.is_on       = True
+        device1.turned_on_at = time.time() - 3600  # min_on elapsed
+
+        # device2: 300 W, OFF, temp=20 (very unsatisfied → high urgency → higher score)
+        device2 = _wh2_device(300, _WH2_TEMP, _WH2_SWITCH, priority=7)
+        device2.is_on = False
+
+        mgr  = _make_manager([device1, device2])
+        hass = _two_wh_hass(temp1=58.0, temp2=20.0)
+
+        await mgr.async_dispatch(
+            hass,
+            _score(global_score=0.8, surplus_w=VIRTUAL_SURPLUS, bat_w=0.0),
+        )
+
+        on_power = (400 if device1.is_on else 0) + (300 if device2.is_on else 0)
+        assert on_power <= VIRTUAL_SURPLUS, (
+            f"Total ON power ({on_power} W) exceeds virtual_surplus ({VIRTUAL_SURPLUS} W) "
+            "— helios_on_w was likely double-counted in the dispatch budget."
+        )
+
+    @pytest.mark.asyncio
+    async def test_single_device_on_fits_exactly_within_virtual_surplus(self):
+        """A single ON device whose power equals virtual_surplus must keep running."""
+        VIRTUAL_SURPLUS = 400
+
+        device = _wh2_device(400, _WH_TEMP, _WH_SWITCH)
+        device.is_on        = True
+        device.turned_on_at = time.time() - 3600
+
+        mgr  = _make_manager([device])
+        hass = _two_wh_hass(temp1=40.0, temp2=40.0)
+
+        await mgr.async_dispatch(
+            hass,
+            _score(global_score=0.8, surplus_w=VIRTUAL_SURPLUS, bat_w=0.0),
+        )
+
+        assert device.is_on is True, (
+            "Device whose power equals virtual_surplus must stay ON — "
+            "virtual surplus already accounts for its consumption."
+        )

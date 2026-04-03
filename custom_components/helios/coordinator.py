@@ -324,9 +324,12 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         usable_fraction = (soc - soc_floor) / 100.0
         energy_based_w  = usable_fraction * capacity_kwh * 500  # kWh × 500 → W over 2 h
 
-        if max_discharge_w > 0:
-            return min(energy_based_w, max_discharge_w)
-        return energy_based_w
+        capacity_w = min(energy_based_w, max_discharge_w) if max_discharge_w > 0 else energy_based_w
+
+        # Deduct power the battery is already discharging to the house so we
+        # don't double-count headroom that is already consumed.
+        current_discharge_w = max(0.0, self.battery_power_w or 0.0)
+        return max(0.0, capacity_w - current_discharge_w)
 
     def _build_score_input(self) -> dict[str, Any]:
         # Virtual surplus: add back the power of Helios-managed devices currently ON.

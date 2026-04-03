@@ -33,6 +33,7 @@ def _make_coordinator(
     soc_min: float = 10.0,
     capacity_kwh: float = 10.0,
     max_discharge_w: float = 3000.0,
+    battery_power_w: float | None = None,
 ) -> MagicMock:
     from custom_components.helios.coordinator import EnergyOptimizerCoordinator
 
@@ -47,6 +48,7 @@ def _make_coordinator(
     coord._cfg = cfg
     coord.battery_soc = soc
     coord.tempo_color = tempo_color
+    coord.battery_power_w = battery_power_w
     coord._compute_bat_available_w = (
         EnergyOptimizerCoordinator._compute_bat_available_w.__get__(coord)
     )
@@ -150,3 +152,52 @@ def test_max_discharge_caps_result():
                               soc_min=10.0, capacity_kwh=20.0,
                               max_discharge_w=500.0)
     assert coord._compute_bat_available_w() == pytest.approx(500.0)
+
+
+# ---------------------------------------------------------------------------
+# Current discharge deduction
+# ---------------------------------------------------------------------------
+
+def test_current_discharge_reduces_available():
+    """If the battery is already discharging 500 W, that headroom is already spent."""
+    # capacity = 3000 W (capped at max_discharge_w), discharge in progress = 500 W
+    coord = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE,
+                              soc_min=10.0, capacity_kwh=10.0,
+                              max_discharge_w=3000.0,
+                              battery_power_w=500.0)  # positive = discharging
+    result = coord._compute_bat_available_w()
+    assert result == pytest.approx(3000.0 - 500.0)
+
+
+def test_discharge_exceeding_capacity_clamps_to_zero():
+    """Current discharge ≥ capacity → 0 W available (no negative result)."""
+    coord = _make_coordinator(soc=50.0, tempo_color=TEMPO_BLUE,
+                              soc_min=10.0, capacity_kwh=10.0,
+                              max_discharge_w=3000.0,
+                              battery_power_w=4000.0)
+    assert coord._compute_bat_available_w() == 0.0
+
+
+def test_charging_does_not_reduce_available():
+    """A negative battery_power_w (charging) must not affect bat_available_w."""
+    coord_no_bat = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE,
+                                     soc_min=10.0, capacity_kwh=10.0,
+                                     max_discharge_w=3000.0,
+                                     battery_power_w=None)
+    coord_charging = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE,
+                                       soc_min=10.0, capacity_kwh=10.0,
+                                       max_discharge_w=3000.0,
+                                       battery_power_w=-800.0)  # negative = charging
+    assert coord_charging._compute_bat_available_w() == pytest.approx(
+        coord_no_bat._compute_bat_available_w()
+    )
+
+
+def test_no_battery_power_sensor_unchanged():
+    """battery_power_w=None (sensor not configured) → no deduction, same as before."""
+    coord = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE,
+                              soc_min=10.0, capacity_kwh=10.0,
+                              max_discharge_w=3000.0,
+                              battery_power_w=None)
+    expected = min((85.0 - 10.0) / 100.0 * 10.0 * 500, 3000.0)
+    assert coord._compute_bat_available_w() == pytest.approx(expected)
