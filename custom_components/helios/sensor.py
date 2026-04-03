@@ -278,6 +278,7 @@ class DeviceStateSensor(_BaseEOSensor):
     """
 
     _attr_has_entity_name = True
+    _unique_suffix = "device_state"  # placeholder; overwritten per-instance below
 
     def __init__(
         self,
@@ -285,10 +286,10 @@ class DeviceStateSensor(_BaseEOSensor):
         entry: ConfigEntry,
         device: ManagedDevice,
     ) -> None:
+        slug = slugify(device.name)
+        self._unique_suffix = f"device_state_{slug}"
         super().__init__(coordinator, entry)
         self._device = device
-        slug = slugify(device.name)
-        self._attr_unique_id = f"{entry.entry_id}_device_state_{slug}"
         self._attr_translation_key = "eo_device_state"
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_suggested_object_id = f"{slug}"
