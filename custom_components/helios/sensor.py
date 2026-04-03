@@ -312,7 +312,7 @@ class DeviceStateSensor(_BaseEOSensor):
         self._attr_unique_id = f"{entry.entry_id}_device_state_{slug}"
         self._attr_translation_key = "eo_device_state"
         self._attr_translation_placeholders = {"name": device.name}
-        self.suggested_object_id = f"helios_{slug}"
+        self._attr_suggested_object_id = f"helios_{slug}"
 
     @property
     def native_value(self) -> str:

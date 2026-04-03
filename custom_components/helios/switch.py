@@ -128,7 +128,7 @@ class PoolForceSwitch(_BaseDeviceSwitch):
         slug = slugify(device.name)
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{slug}_force"
-        self.suggested_object_id = f"helios_pool_{slug}_force"
+        self._attr_suggested_object_id = f"helios_pool_{slug}_force"
 
     @property
     def is_on(self) -> bool:
@@ -179,7 +179,7 @@ class DeviceManualSwitch(_BaseDeviceSwitch):
         slug = slugify(device.name)
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_device_{slug}_manual"
-        self.suggested_object_id = f"helios_{slug}_manual"
+        self._attr_suggested_object_id = f"helios_{slug}_manual"
 
     @property
     def is_on(self) -> bool:
@@ -211,7 +211,7 @@ class EVPluggedSwitch(_BaseDeviceSwitch):
         slug = slugify(device.name)
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_ev_{slug}_plugged"
-        self.suggested_object_id = f"helios_ev_{slug}_plugged"
+        self._attr_suggested_object_id = f"helios_ev_{slug}_plugged"
 
     @property
     def is_on(self) -> bool:
