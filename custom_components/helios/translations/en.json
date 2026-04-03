@@ -353,8 +353,8 @@
       "eo_global_score": {
         "name": "Global score"
       },
-      "eo_battery_action": {
-        "name": "Battery action",
+      "eo_battery": {
+        "name": "Battery",
         "state": {
           "forced_charge": "Forced charge",
           "autoconsommation": "Self-consumption",
@@ -370,12 +370,6 @@
           "red": "Red"
         }
       },
-      "eo_battery_soc_level": {
-        "name": "Battery SOC level"
-      },
-      "eo_battery_power": {
-        "name": "Battery power"
-      },
       "eo_pv_power": {
         "name": "PV power"
       },
@@ -385,28 +379,13 @@
       "eo_house_power": {
         "name": "House power"
       },
-      "eo_bat_available_w": {
-        "name": "Battery available power"
-      },
-      "eo_device_power": {
-        "name": "{name} power"
-      },
-      "eo_appliance_state": {
-        "name": "{name} state",
+      "eo_device_state": {
+        "name": "{name}",
         "state": {
-          "stop": "Off",
-          "en_attente": "Waiting",
-          "en_route": "Running"
+          "running": "Running",
+          "waiting": "Waiting",
+          "off": "Off"
         }
-      },
-      "eo_pool_filtration_required": {
-        "name": "{name} required filtration"
-      },
-      "eo_pool_filtration_done": {
-        "name": "{name} daily filtration"
-      },
-      "eo_pool_force_remaining": {
-        "name": "{name} force remaining"
       },
       "eo_base_load_profile": {
         "name": "Learned base load"

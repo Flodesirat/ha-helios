@@ -6,7 +6,7 @@ from datetime import datetime
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPower, UnitOfTime, PERCENTAGE
+from homeassistant.const import UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -16,19 +16,13 @@ from homeassistant.util import slugify
 from .const import (
     DOMAIN,
     DEVICE_TYPE_APPLIANCE, APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_PREPARING,
-    DEVICE_TYPE_POOL,
+    DEVICE_TYPE_POOL, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER,
     CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W,
     CONF_GRID_SUBSCRIPTION_W, DEFAULT_GRID_SUBSCRIPTION_W,
+    CONF_BATTERY_ENABLED,
 )
 from .coordinator import EnergyOptimizerCoordinator
 from .managed_device import ManagedDevice
-
-# Appliance state → published state
-_APPLIANCE_STATE_MAP = {
-    APPLIANCE_STATE_RUNNING:   "en_route",
-    APPLIANCE_STATE_PREPARING: "en_attente",
-}
-_APPLIANCE_STATE_DEFAULT = "stop"
 
 
 async def async_setup_entry(
@@ -38,24 +32,15 @@ async def async_setup_entry(
     entities = [
         EnergyOptimizerSurplusSensor(coordinator, entry),
         EnergyOptimizerScoreSensor(coordinator, entry),
-        EnergyOptimizerBatteryActionSensor(coordinator, entry),
+        EnergyOptimizerBatterySensor(coordinator, entry),
         EnergyOptimizerTempoNextColorSensor(coordinator, entry),
         EnergyOptimizerPVPowerSensor(coordinator, entry),
         EnergyOptimizerGridPowerSensor(coordinator, entry),
         EnergyOptimizerHousePowerSensor(coordinator, entry),
-        EnergyOptimizerBatAvailableSensor(coordinator, entry),
-        EnergyOptimizerBatterySocLevelSensor(coordinator, entry),
-        EnergyOptimizerBatteryPowerSensor(coordinator, entry),
+        EnergyOptimizerBaseLoadSensor(coordinator, entry),
     ]
-    entities.append(EnergyOptimizerBaseLoadSensor(coordinator, entry))
     for device in coordinator.device_manager.devices:
-        entities.append(DevicePowerSensor(coordinator, entry, device))
-        if device.device_type == DEVICE_TYPE_APPLIANCE:
-            entities.append(ApplianceStateSensor(coordinator, entry, device))
-        if device.device_type == DEVICE_TYPE_POOL:
-            entities.append(PoolFiltrationRequiredSensor(coordinator, entry, device))
-            entities.append(PoolFiltrationDoneSensor(coordinator, entry, device))
-            entities.append(PoolForceRemainingSensor(coordinator, entry, device))
+        entities.append(DeviceStateSensor(coordinator, entry, device))
     async_add_entities(entities)
 
 
@@ -142,20 +127,32 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
         }
 
 
-class EnergyOptimizerBatteryActionSensor(_BaseEOSensor):
-    """Reports current battery action: charge | discharge | reserve | idle."""
+class EnergyOptimizerBatterySensor(_BaseEOSensor):
+    """Single battery entity — state is the current action, attributes hold all battery data."""
 
     _attr_has_entity_name = True
-    _attr_translation_key = "eo_battery_action"
-    suggested_object_id = "helios_battery_action"
+    _attr_translation_key = "eo_battery"
+    suggested_object_id = "helios_battery"
 
     @property
     def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_battery_action"
+        return f"{self._entry.entry_id}_battery"
 
     @property
     def native_value(self) -> str:
         return self.coordinator.battery_action
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        c = self.coordinator
+        soc = c.battery_soc
+        return {
+            "battery_enabled": bool(c.config.get(CONF_BATTERY_ENABLED, False)),
+            "soc":             soc,
+            "soc_level":       _soc_level_label(soc),
+            "power_w":         c.battery_power_w,
+            "available_w":     c.bat_available_w,
+        }
 
 
 class EnergyOptimizerTempoNextColorSensor(_BaseEOSensor):
@@ -231,29 +228,6 @@ class EnergyOptimizerHousePowerSensor(_BaseEOSensor):
         return self.coordinator.house_power_w
 
 
-class EnergyOptimizerBatAvailableSensor(_BaseEOSensor):
-    """Reports the power available from the battery for managed devices (W).
-
-    This is the budget Helios can draw from the battery on top of PV surplus.
-    0 W when battery is disabled, SOC is too low, or a red Tempo day restricts discharge.
-    """
-
-    _attr_has_entity_name = True
-    _attr_translation_key = "eo_bat_available_w"
-    suggested_object_id = "helios_bat_available_w"
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_bat_available_w"
-
-    @property
-    def native_value(self) -> float:
-        return self.coordinator.bat_available_w
-
-
 def _soc_level_label(soc: float | None) -> str | None:
     if soc is None:
         return None
@@ -268,45 +242,6 @@ def _soc_level_label(soc: float | None) -> str | None:
     if soc <= 95:
         return "Très haute"
     return "Pleine"
-
-
-class EnergyOptimizerBatteryPowerSensor(_BaseEOSensor):
-    """Reports current battery power in W. Negative = charging, positive = discharging."""
-
-    _attr_has_entity_name = True
-    _attr_translation_key = "eo_battery_power"
-    suggested_object_id = "helios_battery_power"
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_battery_power"
-
-    @property
-    def native_value(self) -> float | None:
-        return self.coordinator.battery_power_w
-
-
-class EnergyOptimizerBatterySocLevelSensor(_BaseEOSensor):
-    """Reports a textual label for the battery SOC level."""
-
-    _attr_has_entity_name = True
-    _attr_translation_key = "eo_battery_soc_level"
-    suggested_object_id = "helios_battery_soc_level"
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_battery_soc_level"
-
-    @property
-    def native_value(self) -> str | None:
-        return _soc_level_label(self.coordinator.battery_soc)
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        return {"battery_soc": self.coordinator.battery_soc}
 
 
 class EnergyOptimizerBaseLoadSensor(_BaseEOSensor):
@@ -356,147 +291,80 @@ class EnergyOptimizerBaseLoadSensor(_BaseEOSensor):
         }
 
 
-class DevicePowerSensor(_BaseEOSensor):
-    """Reports the current power draw of a Helios-controlled device.
+class DeviceStateSensor(_BaseEOSensor):
+    """Primary state entity for a Helios-managed device.
 
-    Returns device.power_w when the device is ON (controlled by Helios or manually),
-    0.0 otherwise.  This lets users build a total-devices power sum in HA and
-    helps evaluate the real base load (house_power − sum_of_devices).
+    State  : "running" | "waiting" | "off"
+    Attributes: all device data — power, score, type-specific info.
     """
 
     _attr_has_entity_name = True
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device: ManagedDevice) -> None:
+    def __init__(
+        self,
+        coordinator: EnergyOptimizerCoordinator,
+        entry: ConfigEntry,
+        device: ManagedDevice,
+    ) -> None:
         super().__init__(coordinator, entry)
         self._device = device
         slug = slugify(device.name)
-        self._attr_unique_id = f"{entry.entry_id}_device_{slug}_power"
-        self._attr_translation_key = "eo_device_power"
+        self._attr_unique_id = f"{entry.entry_id}_device_state_{slug}"
+        self._attr_translation_key = "eo_device_state"
         self._attr_translation_placeholders = {"name": device.name}
-        self.suggested_object_id = f"helios_{slug}_power"
-
-    @property
-    def native_value(self) -> float:
-        if not self._device.is_on:
-            return 0.0
-        reader = ManagedDevice._make_ha_reader(self.coordinator.hass)
-        return float(self._device.actual_power_w(reader))
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        return {
-            "rated_power_w": self._device.power_w,
-            "is_on": self._device.is_on,
-            "manual_mode": self._device.manual_mode,
-        }
-
-
-class ApplianceStateSensor(_BaseEOSensor):
-    """Reports the Helios control state of an appliance: stop | en_attente | en_route."""
-
-    _attr_has_entity_name = True
-
-    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device: ManagedDevice) -> None:
-        super().__init__(coordinator, entry)
-        self._device = device
-        slug = slugify(device.name)
-        self._attr_translation_key = "eo_appliance_state"
-        self._attr_translation_placeholders = {"name": device.name}
-        self._attr_unique_id = f"{entry.entry_id}_appliance_{slug}_state"
-        self.suggested_object_id = f"helios_{slug}_state"
+        self.suggested_object_id = f"helios_{slug}"
 
     @property
     def native_value(self) -> str:
-        return _APPLIANCE_STATE_MAP.get(self._device.appliance_state, _APPLIANCE_STATE_DEFAULT)
+        d = self._device
+        if d.device_type == DEVICE_TYPE_APPLIANCE:
+            if d.appliance_state == APPLIANCE_STATE_RUNNING:
+                return "running"
+            if d.appliance_state == APPLIANCE_STATE_PREPARING:
+                return "waiting"
+            return "off"
+        return "running" if d.is_on else "off"
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {"internal_state": self._device.appliance_state}
-
-
-class _BasePoolSensor(_BaseEOSensor):
-    """Base class for pool filtration sensors."""
-
-    _attr_has_entity_name = True
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
-    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device: ManagedDevice) -> None:
-        super().__init__(coordinator, entry)
-        self._device = device
-        self._slug   = slugify(device.name)
-
-
-class PoolFiltrationRequiredSensor(_BasePoolSensor):
-    """Total filtration time required today (from the configured entity), in minutes."""
-
-    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
-        super().__init__(coordinator, entry, device)
-        self._attr_translation_key = "eo_pool_filtration_required"
-        self._attr_translation_placeholders = {"name": device.name}
-        self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_required"
-        self.suggested_object_id = f"helios_{self._slug}_filtration_required"
-
-    @property
-    def native_value(self) -> float | None:
-        # Prefer the 05:00 snapshot — that's what the optimizer actually uses.
-        snapshot = self._device.pool_required_minutes_today
-        if snapshot is not None:
-            return round(snapshot, 1)
-        # Before 05:00: fall back to live value for display only.
-        entity_id = self._device.pool_filtration_entity
-        if not entity_id:
-            return None
-        state = self.hass.states.get(entity_id)
-        if state is None or state.state in ("unavailable", "unknown"):
-            return None
-        try:
-            return round(float(state.state) * 60, 1)  # hours → minutes
-        except ValueError:
-            return None
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        return {"snapshot_taken": self._device.pool_required_minutes_today is not None}
-
-
-class PoolFiltrationDoneSensor(_BasePoolSensor):
-    """Filtration time already completed today, in minutes."""
-
-    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
-        super().__init__(coordinator, entry, device)
-        self._attr_translation_key = "eo_pool_filtration_done"
-        self._attr_translation_placeholders = {"name": device.name}
-        self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_done"
-        self.suggested_object_id = f"helios_{self._slug}_filtration_done"
-
-    @property
-    def native_value(self) -> float:
-        return round(self._device.pool_daily_run_minutes, 1)
-
-
-class PoolForceRemainingSensor(_BasePoolSensor):
-    """Minutes remaining in pool force mode (0 when not active)."""
-
-    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry, device) -> None:
-        super().__init__(coordinator, entry, device)
-        self._attr_translation_key = "eo_pool_force_remaining"
-        self._attr_translation_placeholders = {"name": device.name}
-        self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_force_remaining"
-        self.suggested_object_id = f"helios_{self._slug}_force_remaining"
-
-    @property
-    def native_value(self) -> float:
-        fu = self._device.pool_force_until
-        if fu is None:
-            return 0.0
-        return round(max(0.0, (fu - _time.time()) / 60), 1)
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        iu = self._device.pool_inhibit_until
-        inhibit_remaining = 0.0 if iu is None else round(max(0.0, (iu - _time.time()) / 60), 1)
-        return {"inhibit_remaining_min": inhibit_remaining}
+        d = self._device
+        reader = ManagedDevice._make_ha_reader(self.coordinator.hass)
+        attrs: dict = {
+            "device_name":          d.name,
+            "device_type":          d.device_type,
+            "device_priority":      d.priority,
+            "is_on":                d.is_on,
+            "manual_mode":          d.manual_mode,
+            "power_w":              float(d.actual_power_w(reader)) if d.is_on else 0.0,
+            "last_effective_score": d.last_effective_score,
+            "last_decision_reason": d.last_decision_reason,
+        }
+        if d.device_type == DEVICE_TYPE_WATER_HEATER:
+            attrs["wh_temp_target"] = d.wh_temp_target
+            if d.wh_temp_entity:
+                s = self.coordinator.hass.states.get(d.wh_temp_entity)
+                if s and s.state not in ("unavailable", "unknown"):
+                    try:
+                        attrs["temperature"] = float(s.state)
+                    except ValueError:
+                        pass
+        elif d.device_type == DEVICE_TYPE_EV:
+            attrs["ev_soc_entity"]     = d.ev_soc_entity
+            attrs["ev_plugged_entity"] = d.ev_plugged_entity
+            if d.ev_soc_entity:
+                s = self.coordinator.hass.states.get(d.ev_soc_entity)
+                if s and s.state not in ("unavailable", "unknown"):
+                    try:
+                        attrs["soc"] = float(s.state)
+                    except ValueError:
+                        pass
+            if d.ev_plugged_entity:
+                s = self.coordinator.hass.states.get(d.ev_plugged_entity)
+                if s:
+                    attrs["plugged"] = s.state == "on"
+        elif d.device_type == DEVICE_TYPE_POOL:
+            attrs["filtration_done_min"]     = round(d.pool_daily_run_minutes, 1)
+            attrs["filtration_required_min"] = round(d.pool_required_minutes_today or 0.0, 1)
+            fu = d.pool_force_until
+            attrs["force_remaining_min"]     = round(max(0.0, (fu - _time.time()) / 60), 1) if fu else 0.0
+        return attrs

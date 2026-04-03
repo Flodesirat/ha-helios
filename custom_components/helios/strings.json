@@ -364,8 +364,8 @@
       "eo_global_score": {
         "name": "Score global"
       },
-      "eo_battery_action": {
-        "name": "Action batterie",
+      "eo_battery": {
+        "name": "Batterie",
         "state": {
           "forced_charge": "Charge forcée",
           "autoconsommation": "Autoconsommation",
@@ -381,12 +381,6 @@
           "red": "Rouge"
         }
       },
-      "eo_battery_soc_level": {
-        "name": "Niveau SOC batterie"
-      },
-      "eo_battery_power": {
-        "name": "Puissance batterie"
-      },
       "eo_pv_power": {
         "name": "Production PV"
       },
@@ -396,28 +390,13 @@
       "eo_house_power": {
         "name": "Consommation maison"
       },
-      "eo_bat_available_w": {
-        "name": "Puissance batterie disponible"
-      },
-      "eo_device_power": {
-        "name": "Puissance {name}"
-      },
-      "eo_appliance_state": {
-        "name": "État {name}",
+      "eo_device_state": {
+        "name": "{name}",
         "state": {
-          "stop": "Arrêt",
-          "en_attente": "En attente",
-          "en_route": "En route"
+          "running": "En marche",
+          "waiting": "En attente",
+          "off": "Arrêt"
         }
-      },
-      "eo_pool_filtration_required": {
-        "name": "Filtration requise {name}"
-      },
-      "eo_pool_filtration_done": {
-        "name": "Filtration journée {name}"
-      },
-      "eo_pool_force_remaining": {
-        "name": "Forçage restant {name}"
       },
       "eo_base_load_profile": {
         "name": "Charge de fond apprise"

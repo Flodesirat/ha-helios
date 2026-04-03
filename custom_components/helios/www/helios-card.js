@@ -434,42 +434,21 @@ class HeliosCard extends HTMLElement {
     return map;
   }
 
-  // Build the device list from auto-discovered manual switches, sorted by priority desc.
+  // Build the device list from auto-discovered device state sensors, sorted by priority desc.
   // entityMap: suffix → entityId (output of _discoverEntities)
   _discoverDevices(entityMap) {
     const devices = [];
     for (const [suffix, entityId] of Object.entries(entityMap)) {
-      // DeviceManualSwitch unique_id: {entry_id}_device_{slug}_manual
-      const m = suffix.match(/^device_(.+)_manual$/);
+      const m = suffix.match(/^device_state_(.+)$/);
       if (!m) continue;
       const slug = m[1];
       const attrs = this._hass.states[entityId]?.attributes ?? {};
-      const type     = attrs.device_type     ?? "appliance";
-      const priority = attrs.device_priority ?? 5;
-      const dev = {
-        entity:        entityId,
-        name:          attrs.device_name ?? slug,
-        type,
-        priority,
-        power_entity:  entityMap[`device_${slug}_power`] ?? null,
-      };
-      if (type === "pool") {
-        dev.filtration_done     = entityMap[`pool_${slug}_done`];
-        dev.filtration_required = entityMap[`pool_${slug}_required`];
-        dev.force_remaining     = entityMap[`pool_${slug}_force_remaining`];
-      }
-      if (type === "appliance") {
-        dev.state_entity = entityMap[`appliance_${slug}_state`];
-      }
-      if (type === "water_heater") {
-        dev.temp_entity = attrs.wh_temp_entity ?? null;
-        dev.temp_target = attrs.wh_temp_target ?? null;
-      }
-      if (type === "ev_charger") {
-        dev.soc_entity     = attrs.ev_soc_entity    ?? null;
-        dev.plugged_entity = attrs.ev_plugged_entity ?? null;
-      }
-      devices.push(dev);
+      devices.push({
+        entity:   entityId,
+        name:     attrs.device_name ?? slug,
+        type:     attrs.device_type ?? "appliance",
+        priority: attrs.device_priority ?? 5,
+      });
     }
     devices.sort((a, b) => b.priority - a.priority);
     return devices;
@@ -488,49 +467,26 @@ class HeliosCard extends HTMLElement {
       pv_power:       "sensor.helios_pv_power",
       grid_power:     "sensor.helios_grid_power",
       house_power:    "sensor.helios_house_power",
-      score:          "sensor.helios_global_score",
-      battery_action: "sensor.helios_battery_action",
-      battery_power:  "sensor.helios_battery_power",
+      score:   "sensor.helios_global_score",
+      battery: "sensor.helios_battery",
     };
     for (const [key, eid] of Object.entries(SYSTEM)) {
       if (states[eid]) entityRefs[key] = eid;
     }
 
-    // Device discovery — any switch with helios_device_on attribute is a Helios device
+    // Device discovery — sensor.helios_{slug} with device_type attribute
     const devices = [];
     for (const [entityId, state] of Object.entries(states)) {
+      if (!entityId.startsWith("sensor.helios_")) continue;
       const attrs = state.attributes ?? {};
-      if (!("helios_device_on" in attrs)) continue;
-      // Entity id format: switch.helios_{slug}_manual  (suggested_object_id in Python)
-      const m = entityId.match(/^switch\.helios_(.+)_manual$/);
-      if (!m) continue;
-      const slug     = m[1];
-      const type     = attrs.device_type     ?? "appliance";
-      const priority = attrs.device_priority ?? 5;
-      const dev = {
-        entity:       entityId,
-        name:         attrs.device_name ?? slug,
-        type, priority,
-        power_entity: states[`sensor.helios_${slug}_power`] ? `sensor.helios_${slug}_power` : null,
-      };
-      if (type === "pool") {
-        dev.filtration_done     = states[`sensor.helios_${slug}_filtration_done`]    ? `sensor.helios_${slug}_filtration_done`    : null;
-        dev.filtration_required = states[`sensor.helios_${slug}_filtration_required`]? `sensor.helios_${slug}_filtration_required`: null;
-        dev.force_remaining     = states[`sensor.helios_${slug}_force_remaining`]    ? `sensor.helios_${slug}_force_remaining`    : null;
-      }
-      if (type === "appliance") {
-        const eid = `sensor.helios_${slug}_state`;
-        dev.state_entity = states[eid] ? eid : null;
-      }
-      if (type === "water_heater") {
-        dev.temp_entity = attrs.wh_temp_entity ?? null;
-        dev.temp_target = attrs.wh_temp_target ?? null;
-      }
-      if (type === "ev_charger") {
-        dev.soc_entity     = attrs.ev_soc_entity    ?? null;
-        dev.plugged_entity = attrs.ev_plugged_entity ?? null;
-      }
-      devices.push(dev);
+      if (!attrs.device_type) continue;
+      const slug = entityId.replace(/^sensor\.helios_/, "");
+      devices.push({
+        entity:   entityId,
+        name:     attrs.device_name ?? slug,
+        type:     attrs.device_type ?? "appliance",
+        priority: attrs.device_priority ?? 5,
+      });
     }
     devices.sort((a, b) => b.priority - a.priority);
 
@@ -549,8 +505,7 @@ class HeliosCard extends HTMLElement {
           grid_power:     disc["grid_power"],
           house_power:    disc["house_power"],
           score:          disc["global_score"],
-          battery_action: disc["battery_action"],
-          battery_power:  disc["battery_power"],
+          battery:        disc["battery"],
           _soc_from_attr: true,
         };
       }
@@ -578,12 +533,11 @@ class HeliosCard extends HTMLElement {
     const pv         = this._num(e.pv_power);
     const grid       = this._num(e.grid_power);
     const house      = this._num(e.house_power);
-    // SOC: from explicit entity (manual mode) or from score sensor attribute (auto mode)
-    const soc        = e._soc_from_attr
-      ? this._attr(e.score, "battery_soc")
-      : (e.battery_soc ? this._num(e.battery_soc, null) : null);
     const score      = this._num(e.score);
-    const battAction = this._str(e.battery_action) ?? "idle";
+    // Battery data — all from sensor.helios_battery attributes
+    const battAction   = this._str(e.battery) ?? "idle";
+    const soc          = this._attr(e.battery, "soc") ?? this._attr(e.score, "battery_soc");
+    const batPowerRaw  = this._attr(e.battery, "power_w");
     const tempo      = this._attr(e.score, "tempo_color");
     // Node values
     this._txt("h-val-house", this._fmt(house));
@@ -635,11 +589,10 @@ class HeliosCard extends HTMLElement {
     // Battery flow — négatif = charge, positif = décharge
     const lb = L.lineBat;
     let batIsCharge, batIsDischarge, batPow;
-    if (e.battery_power) {
-      const raw = this._num(e.battery_power, 0);
-      batPow         = Math.abs(raw);
-      batIsCharge    = raw < -10;
-      batIsDischarge = raw > 10;
+    if (batPowerRaw !== null && batPowerRaw !== undefined) {
+      batPow         = Math.abs(batPowerRaw);
+      batIsCharge    = batPowerRaw < -10;
+      batIsDischarge = batPowerRaw > 10;
     } else {
       batPow         = Math.abs(pv - house - grid);
       batIsCharge    = battAction === "charge"    && batPow > 10;
@@ -745,10 +698,10 @@ class HeliosCard extends HTMLElement {
     // Status dot + label
     const { dotColor, statusText } = this._deviceStatus(dev, isOn);
 
-    // Current power (shown only when device is on)
+    // Current power from sensor attribute
     let powerHtml = "";
-    if (isOn && dev.power_entity) {
-      const pw = this._num(dev.power_entity, null);
+    if (isOn) {
+      const pw = this._attr(dev.entity, "power_w");
       if (pw !== null && pw > 5) powerHtml = `<span class="dev-power">${this._fmt(pw)}</span>`;
     }
 
@@ -780,32 +733,23 @@ class HeliosCard extends HTMLElement {
   }
 
   _deviceIsOn(dev) {
-    if (dev.type === "appliance") {
-      return this._str(dev.state_entity) === "en_route";
-    }
-    if (dev.type === "ev" || dev.type === "ev_charger") {
-      const pluggedEntity = dev.plugged_entity ?? dev.state_entity;
-      if (pluggedEntity && this._str(pluggedEntity) === "off") return false;
-    }
-    // For all other types, read the helios_device_on attribute from the manual switch
-    const attr = this._attr(dev.entity, "helios_device_on");
-    if (attr !== null) return attr === true || attr === "true";
-    return false;
+    return this._str(dev.entity) === "running";
   }
 
   _deviceStatus(dev, isOn) {
+    const manual = this._attr(dev.entity, "manual_mode") === true;
+    if (manual) return { dotColor: "#FF9800", statusText: "Manuel" };
+    const st = this._str(dev.entity);
     if (dev.type === "appliance") {
-      const state = this._str(dev.state_entity);
       const map = {
-        en_route:   { dotColor: "#4CAF50", statusText: "En route" },
-        en_attente: { dotColor: "#FF9800", statusText: "En attente" },
-        stop:       { dotColor: "#9E9E9E", statusText: "Arrêt" },
+        running: { dotColor: "#4CAF50", statusText: "En marche" },
+        waiting: { dotColor: "#FF9800", statusText: "En attente" },
+        off:     { dotColor: "#9E9E9E", statusText: "Arrêt" },
       };
-      return map[state] ?? { dotColor: "#9E9E9E", statusText: state ?? "—" };
+      return map[st] ?? { dotColor: "#9E9E9E", statusText: st ?? "—" };
     }
     if (dev.type === "ev" || dev.type === "ev_charger") {
-      const pluggedEntity = dev.plugged_entity ?? dev.state_entity;
-      if (pluggedEntity && this._str(pluggedEntity) === "off") return { dotColor: "#9E9E9E", statusText: "Non branché" };
+      if (this._attr(dev.entity, "plugged") === false) return { dotColor: "#9E9E9E", statusText: "Non branché" };
     }
     return isOn
       ? { dotColor: "#4CAF50", statusText: "ON" }
@@ -815,32 +759,26 @@ class HeliosCard extends HTMLElement {
   _deviceDetail(dev) {
     switch (dev.type) {
       case "pool": {
-        const doneMin = this._num(dev.filtration_done, null);
-        const reqMin  = this._num(dev.filtration_required, null);
+        const doneMin = this._attr(dev.entity, "filtration_done_min");
+        const reqMin  = this._attr(dev.entity, "filtration_required_min");
         if (doneMin === null || reqMin === null) return "";
         let s = `${(doneMin / 60).toFixed(1)}h / ${(reqMin / 60).toFixed(1)}h`;
-        const forceRem = dev.force_remaining ? this._num(dev.force_remaining, 0) : 0;
+        const forceRem = this._attr(dev.entity, "force_remaining_min") ?? 0;
         if (forceRem > 1) s += ` 🔒 ${Math.round(forceRem)} min`;
         return s;
       }
       case "water_heater": {
-        const temp = this._num(dev.temp_entity, null);
+        const temp = this._attr(dev.entity, "temperature");
         if (temp === null) return "";
-        const target = dev.temp_target ?? null;
-        return target !== null
-          ? `${temp.toFixed(1)}°C / ${target}°C`
-          : `${temp.toFixed(1)}°C`;
+        const target = this._attr(dev.entity, "wh_temp_target");
+        return target !== null ? `${temp.toFixed(1)}°C / ${target}°C` : `${temp.toFixed(1)}°C`;
       }
       case "ev":
       case "ev_charger": {
-        const pluggedEntity = dev.plugged_entity ?? dev.state_entity;
-        if (pluggedEntity && this._str(pluggedEntity) === "off") return "";
-        const soc = this._num(dev.soc_entity, null);
+        if (this._attr(dev.entity, "plugged") === false) return "";
+        const soc = this._attr(dev.entity, "soc");
         return soc !== null ? `SOC : ${Math.round(soc)}%` : "";
       }
-      case "appliance":
-        // Status already shown in statusText
-        return "";
       default:
         return "";
     }
@@ -919,14 +857,12 @@ class HeliosCard extends HTMLElement {
   static getStubConfig() {
     return {
       entities: {
-        pv_power:       "sensor.helios_pv_power",
-        grid_power:     "sensor.helios_grid_power",
-        house_power:    "sensor.helios_house_power",
-        battery_soc:    "",
-        battery_power:  "",
-        score:          "sensor.helios_global_score",
-        battery_action: "sensor.helios_battery_action",
-        auto_mode:      "switch.helios_auto_mode",
+        pv_power:   "sensor.helios_pv_power",
+        grid_power: "sensor.helios_grid_power",
+        house_power:"sensor.helios_house_power",
+        score:      "sensor.helios_global_score",
+        battery:    "sensor.helios_battery",
+        auto_mode:  "switch.helios_auto_mode",
       },
       devices: [],
     };
