@@ -82,6 +82,7 @@ class EnergyOptimizerSurplusSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_pv_surplus"
+    suggested_object_id = "helios_pv_surplus"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -100,6 +101,7 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_global_score"
+    suggested_object_id = "helios_global_score"
     _attr_native_unit_of_measurement = None
     _attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -145,6 +147,7 @@ class EnergyOptimizerBatteryActionSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_battery_action"
+    suggested_object_id = "helios_battery_action"
 
     @property
     def unique_id(self) -> str:
@@ -160,6 +163,7 @@ class EnergyOptimizerTempoNextColorSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_tempo_next_color"
+    suggested_object_id = "helios_tempo_next_color"
 
     @property
     def unique_id(self) -> str:
@@ -175,6 +179,7 @@ class EnergyOptimizerPVPowerSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_pv_power"
+    suggested_object_id = "helios_pv_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -193,6 +198,7 @@ class EnergyOptimizerGridPowerSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_grid_power"
+    suggested_object_id = "helios_grid_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -211,6 +217,7 @@ class EnergyOptimizerHousePowerSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_house_power"
+    suggested_object_id = "helios_house_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -233,6 +240,7 @@ class EnergyOptimizerBatAvailableSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_bat_available_w"
+    suggested_object_id = "helios_bat_available_w"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -267,6 +275,7 @@ class EnergyOptimizerBatteryPowerSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_battery_power"
+    suggested_object_id = "helios_battery_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -285,6 +294,7 @@ class EnergyOptimizerBatterySocLevelSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_battery_soc_level"
+    suggested_object_id = "helios_battery_soc_level"
 
     @property
     def unique_id(self) -> str:
@@ -312,6 +322,7 @@ class EnergyOptimizerBaseLoadSensor(_BaseEOSensor):
 
     _attr_translation_key = "eo_base_load_profile"
     _attr_has_entity_name = True
+    suggested_object_id = "helios_base_load_profile"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -365,6 +376,7 @@ class DevicePowerSensor(_BaseEOSensor):
         self._attr_unique_id = f"{entry.entry_id}_device_{slug}_power"
         self._attr_translation_key = "eo_device_power"
         self._attr_translation_placeholders = {"name": device.name}
+        self.suggested_object_id = f"helios_{slug}_power"
 
     @property
     def native_value(self) -> float:
@@ -394,6 +406,7 @@ class ApplianceStateSensor(_BaseEOSensor):
         self._attr_translation_key = "eo_appliance_state"
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_appliance_{slug}_state"
+        self.suggested_object_id = f"helios_{slug}_state"
 
     @property
     def native_value(self) -> str:
@@ -425,6 +438,7 @@ class PoolFiltrationRequiredSensor(_BasePoolSensor):
         self._attr_translation_key = "eo_pool_filtration_required"
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_required"
+        self.suggested_object_id = f"helios_{self._slug}_filtration_required"
 
     @property
     def native_value(self) -> float | None:
@@ -457,6 +471,7 @@ class PoolFiltrationDoneSensor(_BasePoolSensor):
         self._attr_translation_key = "eo_pool_filtration_done"
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_done"
+        self.suggested_object_id = f"helios_{self._slug}_filtration_done"
 
     @property
     def native_value(self) -> float:
@@ -471,6 +486,7 @@ class PoolForceRemainingSensor(_BasePoolSensor):
         self._attr_translation_key = "eo_pool_force_remaining"
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{self._slug}_force_remaining"
+        self.suggested_object_id = f"helios_{self._slug}_force_remaining"
 
     @property
     def native_value(self) -> float:

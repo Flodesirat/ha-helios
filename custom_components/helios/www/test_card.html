@@ -88,25 +88,25 @@ const MOCK_ENTITIES = {
   "sensor.helios_global_score":  mockEntity("global_score"),
   "sensor.helios_battery_action":mockEntity("battery_action"),
   "sensor.helios_battery_power": mockEntity("battery_power"),
-  // Device manual switches (slug = slugify(name) en Python)
-  "switch.helios_piscine_manuel":     mockEntity("device_piscine_manual"),
-  "switch.helios_chauffe_eau_manuel": mockEntity("device_chauffe_eau_manuel"),
-  "switch.helios_lave_vaisselle_manuel": mockEntity("device_lave_vaisselle_manual"),
-  "switch.helios_lave_linge_manuel":     mockEntity("device_lave_linge_manual"),
-  "switch.helios_voiture_manuel":        mockEntity("device_voiture_manual"),
-  // Device power sensors
-  "sensor.helios_piscine_power":         mockEntity("device_piscine_power"),
-  "sensor.helios_chauffe_eau_power":     mockEntity("device_chauffe_eau_manuel_power"),
-  "sensor.helios_lave_vaisselle_power":  mockEntity("device_lave_vaisselle_power"),
-  "sensor.helios_lave_linge_power":      mockEntity("device_lave_linge_power"),
-  "sensor.helios_voiture_power":         mockEntity("device_voiture_power"),
-  // Pool secondary sensors
-  "sensor.helios_pool_filtration_done":     mockEntity("pool_piscine_done"),
-  "sensor.helios_pool_filtration_required": mockEntity("pool_piscine_required"),
-  "sensor.helios_pool_force_remaining":     mockEntity("pool_piscine_force_remaining"),
-  // Appliance state sensors
-  "sensor.helios_lave_vaisselle_etat": mockEntity("appliance_lave_vaisselle_state"),
-  "sensor.helios_lave_linge_etat":     mockEntity("appliance_lave_linge_state"),
+  // Device manual switches — suggested_object_id: helios_{slug}_manual
+  "switch.helios_pool_manual":           mockEntity("device_pool_manual"),
+  "switch.helios_water_heater_manual":   mockEntity("device_water_heater_manual"),
+  "switch.helios_dishwasher_manual":     mockEntity("device_dishwasher_manual"),
+  "switch.helios_washing_machine_manual":mockEntity("device_washing_machine_manual"),
+  "switch.helios_ev_manual":             mockEntity("device_ev_manual"),
+  // Device power sensors — suggested_object_id: helios_{slug}_power
+  "sensor.helios_pool_power":            mockEntity("device_pool_power"),
+  "sensor.helios_water_heater_power":    mockEntity("device_water_heater_power"),
+  "sensor.helios_dishwasher_power":      mockEntity("device_dishwasher_power"),
+  "sensor.helios_washing_machine_power": mockEntity("device_washing_machine_power"),
+  "sensor.helios_ev_power":              mockEntity("device_ev_power"),
+  // Pool secondary sensors — suggested_object_id: helios_{slug}_filtration_{suffix}
+  "sensor.helios_pool_filtration_done":        mockEntity("pool_pool_done"),
+  "sensor.helios_pool_filtration_required":    mockEntity("pool_pool_required"),
+  "sensor.helios_pool_force_remaining":        mockEntity("pool_pool_force_remaining"),
+  // Appliance state sensors — suggested_object_id: helios_{slug}_state
+  "sensor.helios_dishwasher_state":      mockEntity("appliance_dishwasher_state"),
+  "sensor.helios_washing_machine_state": mockEntity("appliance_washing_machine_state"),
 };
 
 function makeHass(states) {
@@ -136,35 +136,35 @@ const hassDay = makeHass({
   "sensor.my_battery_soc":                    state(58),
 
   // Devices (metadata attrs used by auto-discovery)
-  "switch.helios_piscine_manuel":             state("off", {
+  "switch.helios_piscine_manual":             state("off", {
     helios_device_on: true, last_effective_score: 0.82, last_decision_reason: "dispatch",
     device_name: "Piscine", device_type: "pool", device_priority: 7,
   }),
-  "sensor.helios_pool_filtration_done":       state(150),   // minutes
-  "sensor.helios_pool_filtration_required":   state(240),
-  "sensor.helios_pool_force_remaining":       state(0),
+  "sensor.helios_pool_piscine_done":       state(150),   // minutes
+  "sensor.helios_pool_piscine_required":   state(240),
+  "sensor.helios_pool_piscine_force_remaining":       state(0),
 
-  "switch.helios_chauffe_eau_manuel":         state("off", {
+  "switch.helios_chauffe_eau_manual":         state("off", {
     helios_device_on: true, last_effective_score: 0.45, last_decision_reason: "dispatch",
     device_name: "Chauffe-eau", device_type: "water_heater", device_priority: 6,
     wh_temp_entity: "sensor.temperature_chauffe_eau", wh_temp_target: 61,
   }),
   "sensor.temperature_chauffe_eau":           state(54.2),
 
-  "switch.helios_lave_vaisselle_manuel":      state("off", {
+  "switch.helios_lave_vaisselle_manual":      state("off", {
     helios_device_on: false, last_effective_score: 0.31, last_decision_reason: "score_too_low",
     device_name: "Lave-vaisselle", device_type: "appliance", device_priority: 4,
   }),
-  "sensor.helios_lave_vaisselle_etat":        state("en_attente"),
+  "sensor.helios_lave_vaisselle_state":        state("en_attente"),
 
-  "switch.helios_lave_linge_manuel":          state("off", {
+  "switch.helios_lave_linge_manual":          state("off", {
     helios_device_on: true, last_effective_score: 0.29, last_decision_reason: "dispatch",
     device_name: "Lave-linge", device_type: "appliance", device_priority: 3,
   }),
-  "sensor.helios_lave_linge_etat":            state("en_route"),
+  "sensor.helios_lave_linge_state":            state("en_route"),
   "sensor.helios_lave_linge_power":           state(2100),
 
-  "switch.helios_voiture_manuel":             state("off", {
+  "switch.helios_voiture_manual":             state("off", {
     helios_device_on: true, last_effective_score: 0.68, last_decision_reason: "dispatch",
     device_name: "Voiture", device_type: "ev_charger", device_priority: 8,
     ev_soc_entity: "sensor.ev_soc", ev_plugged_entity: "binary_sensor.ev_branche",
@@ -191,32 +191,32 @@ const hassNight = makeHass({
   "switch.helios_auto_mode":                  state("on"),
   // no battery_soc entity configured → hidden
 
-  "switch.helios_piscine_manuel":             state("off", {
+  "switch.helios_piscine_manual":             state("off", {
     helios_device_on: false, last_effective_score: 0.0, last_decision_reason: "outside_window",
     device_name: "Piscine", device_type: "pool", device_priority: 7,
   }),
-  "sensor.helios_pool_filtration_done":       state(240),   // done = required → satisfait
-  "sensor.helios_pool_filtration_required":   state(240),
+  "sensor.helios_pool_piscine_done":       state(240),   // done = required → satisfait
+  "sensor.helios_pool_piscine_required":   state(240),
 
-  "switch.helios_chauffe_eau_manuel":         state("off", {
+  "switch.helios_chauffe_eau_manual":         state("off", {
     helios_device_on: false, last_effective_score: 0.0, last_decision_reason: "satisfied",
     device_name: "Chauffe-eau", device_type: "water_heater", device_priority: 6,
     wh_temp_entity: "sensor.temperature_chauffe_eau", wh_temp_target: 61,
   }),
   "sensor.temperature_chauffe_eau":           state(62.1),
 
-  "switch.helios_lave_vaisselle_manuel":      state("off", {
+  "switch.helios_lave_vaisselle_manual":      state("off", {
     helios_device_on: true, last_effective_score: 0.55, last_decision_reason: "dispatch",
     device_name: "Lave-vaisselle", device_type: "appliance", device_priority: 4,
   }),
-  "sensor.helios_lave_vaisselle_etat":        state("en_route"),
+  "sensor.helios_lave_vaisselle_state":        state("en_route"),
   "sensor.helios_lave_vaisselle_power":       state(1950),
 
-  "switch.helios_lave_linge_manuel":          state("off", {
+  "switch.helios_lave_linge_manual":          state("off", {
     helios_device_on: false, last_effective_score: 0.2, last_decision_reason: "no_budget",
     device_name: "Lave-linge", device_type: "appliance", device_priority: 3,
   }),
-  "sensor.helios_lave_linge_etat":            state("en_attente"),
+  "sensor.helios_lave_linge_state":            state("en_attente"),
 });
 
 // ---------------------------------------------------------------------------
@@ -243,21 +243,21 @@ const hassCompact = makeHass({
   "switch.helios_auto_mode":                  state("on"),
   "sensor.my_battery_soc":                    state(18),
 
-  "switch.helios_piscine_manuel":             state("off", {
+  "switch.helios_piscine_manual":             state("off", {
     helios_device_on: false, last_effective_score: 0.0, last_decision_reason: "outside_window",
     device_name: "Piscine", device_type: "pool", device_priority: 7,
   }),
-  "sensor.helios_pool_filtration_done":       state(60),
-  "sensor.helios_pool_filtration_required":   state(240),
+  "sensor.helios_pool_piscine_done":       state(60),
+  "sensor.helios_pool_piscine_required":   state(240),
 
-  "switch.helios_chauffe_eau_manuel":         state("off", {
+  "switch.helios_chauffe_eau_manual":         state("off", {
     helios_device_on: false, last_effective_score: 0.0, last_decision_reason: "score_too_low",
     device_name: "Chauffe-eau", device_type: "water_heater", device_priority: 6,
     wh_temp_entity: "sensor.temperature_chauffe_eau", wh_temp_target: 61,
   }),
   "sensor.temperature_chauffe_eau":           state(48.0),
 
-  "switch.helios_voiture_manuel":             state("off", {
+  "switch.helios_voiture_manual":             state("off", {
     helios_device_on: false, last_effective_score: 0.05, last_decision_reason: "no_budget",
     device_name: "Voiture", device_type: "ev_charger", device_priority: 8,
     ev_soc_entity: "sensor.ev_soc", ev_plugged_entity: "binary_sensor.ev_branche",
@@ -281,13 +281,13 @@ const configDark = {
   devices: [
     {
       name: "Chauffe-eau", type: "water_heater",
-      entity:      "switch.helios_chauffe_eau_manuel",
+      entity:      "switch.helios_chauffe_eau_manual",
       temp_entity: "sensor.temperature_chauffe_eau",
       temp_target: 61,
     },
     {
       name: "Voiture", type: "ev_charger",
-      entity:         "switch.helios_voiture_manuel",
+      entity:         "switch.helios_voiture_manual",
       soc_entity:     "sensor.ev_soc",
       plugged_entity: "binary_sensor.ev_branche",
     },

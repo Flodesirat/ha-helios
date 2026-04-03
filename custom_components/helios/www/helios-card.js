@@ -501,8 +501,8 @@ class HeliosCard extends HTMLElement {
     for (const [entityId, state] of Object.entries(states)) {
       const attrs = state.attributes ?? {};
       if (!("helios_device_on" in attrs)) continue;
-      // Entity id format: switch.helios_{slug}_manuel
-      const m = entityId.match(/^switch\.helios_(.+)_manuel$/);
+      // Entity id format: switch.helios_{slug}_manual  (suggested_object_id in Python)
+      const m = entityId.match(/^switch\.helios_(.+)_manual$/);
       if (!m) continue;
       const slug     = m[1];
       const type     = attrs.device_type     ?? "appliance";
@@ -514,12 +514,12 @@ class HeliosCard extends HTMLElement {
         power_entity: states[`sensor.helios_${slug}_power`] ? `sensor.helios_${slug}_power` : null,
       };
       if (type === "pool") {
-        dev.filtration_done     = states["sensor.helios_pool_filtration_done"]     ? "sensor.helios_pool_filtration_done"     : null;
-        dev.filtration_required = states["sensor.helios_pool_filtration_required"] ? "sensor.helios_pool_filtration_required" : null;
-        dev.force_remaining     = states["sensor.helios_pool_force_remaining"]     ? "sensor.helios_pool_force_remaining"     : null;
+        dev.filtration_done     = states[`sensor.helios_${slug}_filtration_done`]    ? `sensor.helios_${slug}_filtration_done`    : null;
+        dev.filtration_required = states[`sensor.helios_${slug}_filtration_required`]? `sensor.helios_${slug}_filtration_required`: null;
+        dev.force_remaining     = states[`sensor.helios_${slug}_force_remaining`]    ? `sensor.helios_${slug}_force_remaining`    : null;
       }
       if (type === "appliance") {
-        const eid = `sensor.helios_${slug}_etat`;
+        const eid = `sensor.helios_${slug}_state`;
         dev.state_entity = states[eid] ? eid : null;
       }
       if (type === "water_heater") {
