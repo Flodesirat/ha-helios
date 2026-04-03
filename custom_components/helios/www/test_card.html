@@ -28,6 +28,21 @@
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
+    .dark-col {
+      color-scheme: dark;
+      background: #1c1c1e;
+      padding: 12px;
+      border-radius: 12px;
+    }
+    .dark-col h3 { color: #999; }
+    .dark-col helios-card {
+      --card-background-color: #2c2c2e;
+      --ha-card-border-radius: 12px;
+      --primary-text-color: #e5e5e7;
+      --secondary-text-color: #aeaeb2;
+      --secondary-background-color: #3a3a3c;
+      --divider-color: #48484a;
+    }
   </style>
 </head>
 <body>
@@ -45,6 +60,11 @@
 <div class="col">
   <h3>Compact — jour Tempo rouge</h3>
   <helios-card id="card-compact"></helios-card>
+</div>
+
+<div class="col dark-col">
+  <h3>Mode sombre — jour Tempo bleu</h3>
+  <helios-card id="card-dark"></helios-card>
 </div>
 
 <script src="./helios-card.js" type="module"></script>
@@ -149,7 +169,7 @@ const hassNight = makeHass({
 // Inject config + hass into each card
 // ---------------------------------------------------------------------------
 const configFull = {
-  max_power: 3500,          // pour tester les anneaux PV/maison
+  pv_max_power: 3500,          // pour tester les anneaux PV/maison
   grid_subscription_w: 6000,
   info_url: "https://example.com",
   entities: {
@@ -258,7 +278,7 @@ const hassCompact = makeHass({
 
 const configCompact = {
   compact: true,
-  max_power: 3500,
+  pv_max_power: 3500,
   grid_subscription_w: 6000,
   info_url: "https://example.com",
   entities: {
@@ -292,12 +312,45 @@ const configCompact = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// Scenario 4 — dark mode, sunny day, battery mid, Tempo bleu
+// ---------------------------------------------------------------------------
+const configDark = {
+  pv_max_power: 3500,
+  grid_subscription_w: 6000,
+  info_url: "https://example.com",
+  entities: {
+    pv_power:       "sensor.helios_pv_power",
+    grid_power:     "sensor.helios_grid_power",
+    house_power:    "sensor.helios_house_power",
+    battery_soc:    "sensor.my_battery_soc",
+    score:          "sensor.helios_global_score",
+    battery_action: "sensor.helios_battery_action",
+    auto_mode:      "switch.helios_auto_mode",
+  },
+  devices: [
+    {
+      name: "Chauffe-eau", type: "water_heater",
+      entity:      "switch.helios_chauffe_eau_manuel",
+      temp_entity: "sensor.temperature_chauffe_eau",
+      temp_target: 61,
+    },
+    {
+      name: "Voiture", type: "ev_charger",
+      entity:         "switch.helios_voiture_manuel",
+      soc_entity:     "sensor.ev_soc",
+      plugged_entity: "binary_sensor.ev_branche",
+    },
+  ],
+};
+
 // Wait for custom elements to be defined
 await customElements.whenDefined("helios-card");
 
 const cardFull    = document.getElementById("card-full");
 const cardNight   = document.getElementById("card-night");
 const cardCompact = document.getElementById("card-compact");
+const cardDark    = document.getElementById("card-dark");
 
 cardFull.setConfig(configFull);
 cardFull.hass = hassDay;
@@ -307,6 +360,9 @@ cardNight.hass = hassNight;
 
 cardCompact.setConfig(configCompact);
 cardCompact.hass = hassCompact;
+
+cardDark.setConfig(configDark);
+cardDark.hass = hassDay;
 </script>
 </body>
 </html>

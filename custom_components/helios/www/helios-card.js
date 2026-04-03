@@ -11,8 +11,8 @@
  *   type: custom:helios-card
  *   compact: true                                 # optionnel — vue flux condensée (sans section appareils)
  *   info_url: /lovelace/energie                  # optionnel — URL du bouton ℹ️ (chemin HA ou URL complète)
- *   max_power: 6000                               # optionnel — puissance max PV pour l'anneau (W, défaut 6000)
- *   grid_subscription_w: 9000                     # optionnel — puissance abonnement réseau pour l'anneau (W, défaut = max_power)
+ *   pv_max_power: 6000                            # optionnel — puissance crête PV pour l'anneau (W, défaut 6000)
+ *   grid_subscription_w: 9000                     # optionnel — puissance abonnement réseau pour l'anneau (W, défaut = pv_max_power)
  *   entities:
  *     pv_power:      sensor.helios_pv_power
  *     grid_power:    sensor.helios_grid_power     # positif=import, négatif=export
@@ -163,9 +163,9 @@ class HeliosCard extends HTMLElement {
         <circle cx="${pv.cx}" cy="${pv.cy}" r="${r}" fill="#FFF8E1" stroke="#F9A825" stroke-width="2"/>
         <text x="${pv.cx}" y="${pv.emojiY}" text-anchor="middle" font-size="${fs}">☀️</text>
         ${ring("h-ring-pv", pv.cx, pv.cy, "#F9A825")}
-        <circle cx="${house.cx}" cy="${house.cy}" r="${r}" fill="#E8F5E9" stroke="#388E3C" stroke-width="2"/>
+        <circle id="h-node-house" cx="${house.cx}" cy="${house.cy}" r="${r}" fill="#E8F5E9" stroke="#388E3C" stroke-width="2"/>
         <text x="${house.cx}" y="${house.emojiY}" text-anchor="middle" font-size="${fs}">🏠</text>
-        <text id="h-val-house" x="${house.cx}" y="${L.houseValBelowY}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#1B5E20"></text>
+        <text id="h-val-house" x="${house.cx}" y="${L.houseValBelowY}" text-anchor="middle" font-size="${fsVal}" font-weight="600"></text>
         <circle id="h-node-grid" cx="${grid.cx}" cy="${grid.cy}" r="${r}" fill="#F3E5F5" stroke="#7B1FA2" stroke-width="2"/>
         <text x="${grid.cx}" y="${grid.emojiY}" text-anchor="middle" font-size="${fs}">⚡</text>
         ${ring("h-ring-grid", grid.cx, grid.cy, "#7B1FA2")}
@@ -254,6 +254,10 @@ class HeliosCard extends HTMLElement {
         }
         .h-ring {
           transition: stroke-dashoffset 0.8s ease, stroke 0.5s ease;
+        }
+        #h-val-house { fill: var(--primary-text-color, #212121); }
+        @media (prefers-color-scheme: dark) {
+          #h-node-house { fill: #1B5E20; stroke: #66BB6A; }
         }
         .fl-on {
           stroke-dasharray: 8 5;
@@ -537,10 +541,10 @@ class HeliosCard extends HTMLElement {
     if (chipsEl) chipsEl.innerHTML = chips.join("");
 
     // Progress rings
-    const maxPow  = this._config.max_power          ?? 6000;
+    const maxPow  = this._config.pv_max_power        ?? 6000;
     const maxGrid = this._config.grid_subscription_w ?? maxPow;
 
-    // PV ring — amber, 0…max_power
+    // PV ring — amber, 0…pv_max_power
     this._updateRing("h-ring-pv", pv / maxPow, "#F9A825");
 
     // Grid ring — color by tempo, 0…grid_subscription_w
