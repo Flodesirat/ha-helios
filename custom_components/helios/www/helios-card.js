@@ -54,11 +54,11 @@ class HeliosCard extends HTMLElement {
     this._initialized = false;
     this._hass = null;
     this._config = null;
-    this._layout = this._makeLayout(false);
+    this._layout = this._makeLayout();
   }
 
   // ------------------------------------------------------------------ Layout (full vs compact)
-  _makeLayout(_compact) {
+  _makeLayout() {
     return {
       viewBox: "0 0 300 162", r: 20, fs: 17, fsVal: 9, ringR: 24, ringSW: 2.5,
       pv:   { cx: 150, cy: 32,  emojiY: 39  },
@@ -97,7 +97,7 @@ class HeliosCard extends HTMLElement {
     this._config = config || {};
     const compact = !!this._config.compact;
     if (!this._initialized || prevCompact !== compact) {
-      this._layout = this._makeLayout(compact);
+      this._layout = this._makeLayout();
       this._build();
     }
     this._update();
@@ -222,27 +222,6 @@ class HeliosCard extends HTMLElement {
         }
         .card[data-compact] {
           padding: 4px;
-        }
-
-        /* ---- Header ---- */
-        .header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 8px;
-        }
-        .title { font-size: 15px; font-weight: 600; letter-spacing: 0.3px; }
-
-        .mode-btn {
-          padding: 3px 11px;
-          border-radius: 12px;
-          font-size: 11px;
-          font-weight: 700;
-          color: #fff;
-          cursor: pointer;
-          border: none;
-          background: #9E9E9E;
-          transition: background 0.3s;
         }
 
         /* ---- Power flow ---- */
@@ -493,28 +472,29 @@ class HeliosCard extends HTMLElement {
     return { entityRefs, devices };
   }
 
-  // Build the entity refs object.
-  // Priority: explicit entry_id → auto-discovered entry_id → state patterns → manual config.
-  _resolveEntityRefs() {
+  // Résout les entités ET les appareils en un seul passage.
+  // Priorité : entry_id explicite → auto-découverte → patterns état → config manuelle.
+  _resolveAll() {
     const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
     if (entryId) {
       const disc = this._discoverEntities(entryId);
-      if (disc && disc["global_score"]) {
+      if (disc?.["global_score"]) {
         return {
-          pv_power:       disc["pv_power"],
-          grid_power:     disc["grid_power"],
-          house_power:    disc["house_power"],
-          score:          disc["global_score"],
-          battery:        disc["battery"],
-          _soc_from_attr: true,
+          entityRefs: {
+            pv_power:       disc["pv_power"],
+            grid_power:     disc["grid_power"],
+            house_power:    disc["house_power"],
+            score:          disc["global_score"],
+            battery:        disc["battery"],
+            _soc_from_attr: true,
+          },
+          devices: this._discoverDevices(disc),
         };
       }
     }
-    // Fallback: state-pattern discovery (no hass.entities needed)
     const stateDisc = this._discoverFromStates();
-    if (stateDisc?.entityRefs.score) return stateDisc.entityRefs;
-    // Last resort: manual entities block
-    return this._config?.entities || {};
+    if (stateDisc?.entityRefs.score) return stateDisc; // { entityRefs, devices }
+    return { entityRefs: this._config?.entities || {}, devices: this._config?.devices ?? [] };
   }
 
   // ------------------------------------------------------------------ Update
@@ -528,7 +508,7 @@ class HeliosCard extends HTMLElement {
   }
 
   _doUpdate() {
-    const e = this._resolveEntityRefs();
+    const { entityRefs: e, devices: discoveredDevices } = this._resolveAll();
 
     const pv         = this._num(e.pv_power);
     const grid       = this._num(e.grid_power);
@@ -638,10 +618,9 @@ class HeliosCard extends HTMLElement {
       this._hideRing("h-ring-grid");
     }
 
-    // Battery ring — SOC, color by level
+    // Battery ring — SOC, color by level (batColor already encodes the same logic)
     if (soc !== null) {
-      const socColor = soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336";
-      this._updateRing("h-ring-bat", soc / 100, socColor);
+      this._updateRing("h-ring-bat", soc / 100, batColor);
     } else {
       this._hideRing("h-ring-bat");
     }
@@ -658,32 +637,14 @@ class HeliosCard extends HTMLElement {
     if (devices && compact) devices.style.display = "none";
 
     // Devices section (full mode uniquement)
-    if (!compact) this._updateDevices();
+    if (!compact) this._updateDevices(discoveredDevices);
   }
 
   // ------------------------------------------------------------------ Devices
-  _updateDevices() {
+  _updateDevices(devCfgs) {
     const devicesEl = this.shadowRoot.getElementById("h-devices");
     if (!devicesEl) return;
-
-    // Device discovery: explicit/auto entry_id → state patterns → manual config
-    const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
-    let devCfgs;
-    if (entryId) {
-      const entityMap = this._discoverEntities(entryId);
-      devCfgs = entityMap && Object.keys(entityMap).length > 0
-        ? this._discoverDevices(entityMap)
-        : (this._discoverFromStates()?.devices ?? []);
-    } else {
-      const stateDisc = this._discoverFromStates();
-      devCfgs = stateDisc?.devices.length ? stateDisc.devices : (this._config?.devices ?? []);
-    }
-
-    if (devCfgs.length === 0) {
-      devicesEl.style.display = "none";
-      return;
-    }
-
+    if (devCfgs.length === 0) { devicesEl.style.display = "none"; return; }
     devicesEl.style.display = "flex";
     devicesEl.innerHTML = devCfgs.map(d => this._renderDevice(d)).join("");
   }
@@ -862,7 +823,6 @@ class HeliosCard extends HTMLElement {
         house_power:"sensor.helios_house_power",
         score:      "sensor.helios_global_score",
         battery:    "sensor.helios_battery",
-        auto_mode:  "switch.helios_auto_mode",
       },
       devices: [],
     };
