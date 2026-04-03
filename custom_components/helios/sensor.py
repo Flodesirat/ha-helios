@@ -47,9 +47,12 @@ async def async_setup_entry(
 class _BaseEOSensor(CoordinatorEntity, SensorEntity):
     """Base class for all EO sensor entities."""
 
+    _unique_suffix: str  # Set as class attribute in each subclass
+
     def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
         self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_{self._unique_suffix}"
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -67,14 +70,11 @@ class EnergyOptimizerSurplusSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_pv_surplus"
-    suggested_object_id = "helios_pv_surplus"
+    suggested_object_id = "pv_surplus"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_surplus_pv"
+    _unique_suffix = "surplus_pv"
 
     @property
     def native_value(self) -> float:
@@ -86,13 +86,10 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_global_score"
-    suggested_object_id = "helios_global_score"
+    suggested_object_id = "global_score"
     _attr_native_unit_of_measurement = None
     _attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_global_score"
+    _unique_suffix = "global_score"
 
     @property
     def native_value(self) -> float:
@@ -132,11 +129,8 @@ class EnergyOptimizerBatterySensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_battery"
-    suggested_object_id = "helios_battery"
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_battery"
+    suggested_object_id = "battery"
+    _unique_suffix = "battery"
 
     @property
     def native_value(self) -> str:
@@ -160,11 +154,8 @@ class EnergyOptimizerTempoNextColorSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_tempo_next_color"
-    suggested_object_id = "helios_tempo_next_color"
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_tempo_next_color"
+    suggested_object_id = "tempo_next_color"
+    _unique_suffix = "tempo_next_color"
 
     @property
     def native_value(self) -> str | None:
@@ -176,14 +167,11 @@ class EnergyOptimizerPVPowerSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_pv_power"
-    suggested_object_id = "helios_pv_power"
+    suggested_object_id = "pv_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_pv_power"
+    _unique_suffix = "pv_power"
 
     @property
     def native_value(self) -> float:
@@ -195,14 +183,11 @@ class EnergyOptimizerGridPowerSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_grid_power"
-    suggested_object_id = "helios_grid_power"
+    suggested_object_id = "grid_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_grid_power"
+    _unique_suffix = "grid_power"
 
     @property
     def native_value(self) -> float:
@@ -214,14 +199,11 @@ class EnergyOptimizerHousePowerSensor(_BaseEOSensor):
 
     _attr_has_entity_name = True
     _attr_translation_key = "eo_house_power"
-    suggested_object_id = "helios_house_power"
+    suggested_object_id = "house_power"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_house_power"
+    _unique_suffix = "house_power"
 
     @property
     def native_value(self) -> float:
@@ -257,14 +239,11 @@ class EnergyOptimizerBaseLoadSensor(_BaseEOSensor):
 
     _attr_translation_key = "eo_base_load_profile"
     _attr_has_entity_name = True
-    suggested_object_id = "helios_base_load_profile"
+    suggested_object_id = "base_load_profile"
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_base_load_profile"
+    _unique_suffix = "base_load_profile"
 
     @property
     def native_value(self) -> float | None:
@@ -312,7 +291,7 @@ class DeviceStateSensor(_BaseEOSensor):
         self._attr_unique_id = f"{entry.entry_id}_device_state_{slug}"
         self._attr_translation_key = "eo_device_state"
         self._attr_translation_placeholders = {"name": device.name}
-        self._attr_suggested_object_id = f"helios_{slug}"
+        self._attr_suggested_object_id = f"{slug}"
 
     @property
     def native_value(self) -> str:

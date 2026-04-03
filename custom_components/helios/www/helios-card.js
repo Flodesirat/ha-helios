@@ -499,7 +499,7 @@ class HeliosCard extends HTMLElement {
     const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
     if (entryId) {
       const disc = this._discoverEntities(entryId);
-      if (disc && Object.keys(disc).length > 0) {
+      if (disc && disc["global_score"]) {
         return {
           pv_power:       disc["pv_power"],
           grid_power:     disc["grid_power"],
