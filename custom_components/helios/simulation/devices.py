@@ -134,14 +134,14 @@ class SimDevice:
                 delta_soc = (self.power_w * step_h / 1000.0) / ev_capacity_kwh * 100.0
                 self.ev_soc = min(100.0, self.ev_soc + delta_soc)
 
-    def make_state_reader(self) -> "StateReader":
-        """Build a StateReader for this device's entities (used by ManagedDevice methods).
+    def make_state_dict(self) -> "dict[str, str]":
+        """Build a {entity_id: state_string} dict for SimHass.
 
-        Returns a callable mapping entity_id → current state string, reading from
-        this SimDevice's physical state fields.
+        Includes all physical-state entities that ManagedDevice methods read via
+        a StateReader.  Used both by make_state_reader() and by the async_dispatch
+        simulation path (SimHass).
         """
         state: dict[str, str] = {}
-
         if self.wh_temp is not None and self.wh_temp_entity:
             state[self.wh_temp_entity] = str(self.wh_temp)
         if self.wh_temp_min_entity:
@@ -151,10 +151,79 @@ class SimDevice:
         if self.ev_plugged_entity:
             state[self.ev_plugged_entity] = "on" if self.ev_plugged else "off"
         if self.pool_filtration_entity and self.pool_required_min is not None:
-            # Filtration entity is in hours
+            # Filtration entity is in hours (ManagedDevice converts h → min internally)
             state[self.pool_filtration_entity] = str(self.pool_required_min / 60.0)
+        return state
 
+    def make_state_reader(self) -> "StateReader":
+        """Build a StateReader for this device's entities (used by ManagedDevice methods).
+
+        Returns a callable mapping entity_id → current state string, reading from
+        this SimDevice's physical state fields.
+        """
+        state = self.make_state_dict()
         return lambda eid: state.get(eid)
+
+    def to_managed_config(self) -> dict:
+        """Build a config dict compatible with ManagedDevice.__init__.
+
+        Maps SimDevice fields to the const keys expected by ManagedDevice so that
+        the real dispatch logic (is_satisfied, must_run_now, urgency_modifier, …)
+        operates correctly on this simulated device.
+        """
+        from custom_components.helios.const import (
+            CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_POWER_W,
+            CONF_DEVICE_PRIORITY, CONF_DEVICE_MIN_ON_MINUTES,
+            CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
+            CONF_DEVICE_MUST_RUN_DAILY,
+            CONF_DEVICE_WEIGHT_PRIORITY, CONF_DEVICE_WEIGHT_FIT, CONF_DEVICE_WEIGHT_URGENCY,
+            CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
+            CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
+            CONF_WH_TEMP_MIN_ENTITY, CONF_WH_OFF_PEAK_HYSTERESIS_K,
+            CONF_POOL_FILTRATION_ENTITY,
+        )
+
+        def _h2hm(h: float) -> str:
+            """Convert decimal hours to 'HH:MM' string; clamp at 23:59."""
+            if h >= 24.0:
+                return "23:59"
+            hh = int(h)
+            mm = round((h - hh) * 60)
+            if mm >= 60:
+                hh, mm = hh + 1, 0
+            return f"{hh:02d}:{mm:02d}"
+
+        cfg: dict = {
+            CONF_DEVICE_NAME:            self.name,
+            CONF_DEVICE_TYPE:            self.device_type,
+            CONF_DEVICE_POWER_W:         self.power_w,
+            CONF_DEVICE_PRIORITY:        self.priority,
+            CONF_DEVICE_MIN_ON_MINUTES:  self.min_on_minutes,
+            CONF_DEVICE_ALLOWED_START:   _h2hm(self.allowed_start),
+            CONF_DEVICE_ALLOWED_END:     _h2hm(self.allowed_end),
+            CONF_DEVICE_MUST_RUN_DAILY:  self.must_run_daily,
+            CONF_DEVICE_WEIGHT_PRIORITY: self.w_priority,
+            CONF_DEVICE_WEIGHT_FIT:      self.w_fit,
+            CONF_DEVICE_WEIGHT_URGENCY:  self.w_urgency,
+        }
+        # Water heater
+        if self.wh_temp_entity:
+            cfg[CONF_WH_TEMP_ENTITY] = self.wh_temp_entity
+        cfg[CONF_WH_TEMP_TARGET]           = self.wh_temp_target
+        cfg[CONF_WH_TEMP_MIN]              = self.wh_temp_min
+        if self.wh_temp_min_entity:
+            cfg[CONF_WH_TEMP_MIN_ENTITY]   = self.wh_temp_min_entity
+        cfg[CONF_WH_OFF_PEAK_HYSTERESIS_K] = self.wh_off_peak_hysteresis_k
+        # EV
+        if self.ev_soc_entity:
+            cfg[CONF_EV_SOC_ENTITY]      = self.ev_soc_entity
+        cfg[CONF_EV_SOC_TARGET]          = self.ev_soc_target
+        if self.ev_plugged_entity:
+            cfg[CONF_EV_PLUGGED_ENTITY]  = self.ev_plugged_entity
+        # Pool
+        if self.pool_filtration_entity:
+            cfg[CONF_POOL_FILTRATION_ENTITY] = self.pool_filtration_entity
+        return cfg
 
 
 # ---------------------------------------------------------------------------
