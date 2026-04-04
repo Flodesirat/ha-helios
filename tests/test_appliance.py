@@ -75,7 +75,19 @@ def _make_hass(ready: bool = False, power_w: float = 2000.0) -> MagicMock:
 
 
 async def _handle(dm, device, hass, global_score=0.8, surplus_w=2500.0, bat_available_w=0.0):
-    await dm._async_handle_appliance(hass, device, global_score, surplus_w, bat_available_w)
+    """Call _async_handle_appliance (IDLE / RUNNING / DONE states)."""
+    await dm._async_handle_appliance(hass, device)
+
+
+async def _try_start(dm, device, hass, global_score=0.8, surplus_w=2500.0, bat_available_w=0.0):
+    """Simulate the greedy-loop PREPARING decision: start only if conditions are met."""
+    from custom_components.helios.managed_device import ManagedDevice
+    reader = ManagedDevice._make_ha_reader(hass)
+    fit     = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
+    urgency = device.urgency_modifier(reader)
+    should_start = (global_score >= 0.4 and fit >= 0.3) or urgency >= 0.8
+    if should_start:
+        await dm._async_start_appliance(hass, device, global_score, fit, urgency)
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +154,7 @@ class TestPreparingState:
         dm   = _make_dm(device)
         hass = _make_hass()
 
-        await _handle(dm, device, hass, global_score=0.2, surplus_w=0.0)
+        await _try_start(dm, device, hass, global_score=0.2, surplus_w=0.0)
 
         assert device.appliance_state == APPLIANCE_STATE_PREPARING
         hass.services.async_call.assert_not_called()
@@ -155,7 +167,7 @@ class TestPreparingState:
         dm   = _make_dm(device)
         hass = _make_hass()
 
-        await _handle(dm, device, hass, global_score=0.8, surplus_w=2500.0)
+        await _try_start(dm, device, hass, global_score=0.8, surplus_w=2500.0)
 
         assert device.appliance_state == APPLIANCE_STATE_RUNNING
         assert device.is_on is True
@@ -174,7 +186,7 @@ class TestPreparingState:
         dm   = _make_dm(device)
         hass = _make_hass()
 
-        await _handle(dm, device, hass, global_score=0.8, surplus_w=2500.0)
+        await _try_start(dm, device, hass, global_score=0.8, surplus_w=2500.0)
 
         calls = hass.services.async_call.call_args_list
         called_scripts = [c.args[2]["entity_id"] for c in calls]
@@ -203,7 +215,7 @@ class TestFullCycle:
 
         # Step 2: conditions met → PREPARING → RUNNING + start_script
         hass2 = _make_hass(ready=False)
-        await _handle(dm, device, hass2, global_score=0.8, surplus_w=3000.0)
+        await _try_start(dm, device, hass2, global_score=0.8, surplus_w=3000.0)
         assert device.appliance_state == APPLIANCE_STATE_RUNNING
         assert device.appliance_cycle_start is not None
 
@@ -237,7 +249,7 @@ class TestFullCycle:
         # PREPARING → RUNNING
         hass2 = _make_hass(ready=False)
         hass2.services.async_call.side_effect = _record_call
-        await _handle(dm, device, hass2, global_score=0.8, surplus_w=3000.0)
+        await _try_start(dm, device, hass2, global_score=0.8, surplus_w=3000.0)
         assert all_calls == [PREPARE_SCRIPT, READY_ENTITY, START_SCRIPT]
 
 

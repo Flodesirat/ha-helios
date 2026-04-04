@@ -401,35 +401,34 @@ class DeviceManager:
                 )
             surplus_w += freed_w  # Make freed budget visible to appliance state machine
 
-        # ---- Score all eligible devices ----
+        # ---- Pre-pass: IDLE / RUNNING / DONE appliance states ----
+        # These states don't compete for budget — handle them before scoring.
+        for device in self.devices:
+            if device.device_type != DEVICE_TYPE_APPLIANCE:
+                continue
+            if device.appliance_state == APPLIANCE_STATE_PREPARING:
+                continue  # Handled by greedy loop below
+            if _helios_manages(device):
+                await self._async_handle_appliance(hass, device)
+
+        # ---- Score all eligible devices (including PREPARING appliances) ----
         scored: list[tuple[float, ManagedDevice]] = []
 
-        # Track power committed to appliances that start this cycle so that
-        # subsequent appliances see a correctly reduced surplus.
-        appliance_started_w: float = 0.0
-
-        # Sort PREPARING appliances by priority (descending) so the highest-priority
-        # appliance gets first access to the available surplus budget.
-        def _device_key(d: ManagedDevice) -> tuple:
-            if d.device_type == DEVICE_TYPE_APPLIANCE and d.appliance_state == APPLIANCE_STATE_PREPARING:
-                return (0, -d.priority)
-            return (1, 0)
-
-        for device in sorted(self.devices, key=_device_key):
+        for device in self.devices:
             # Devices not under Helios control are skipped entirely
             if not _helios_manages(device):
                 continue
 
-            # Appliance state machine is handled separately.
-            # Pass adjusted surplus so a second appliance cannot start if the
-            # first one already consumed all available headroom.
+            # PREPARING appliances compete in the greedy loop with the correct budget.
             if device.device_type == DEVICE_TYPE_APPLIANCE:
-                started = await self._async_handle_appliance(
-                    hass, device, global_score,
-                    surplus_w - appliance_started_w, bat_available_w,
-                )
-                if started:
-                    appliance_started_w += device.power_w
+                if device.appliance_state != APPLIANCE_STATE_PREPARING:
+                    continue  # Already handled in pre-pass
+                urgency        = device.urgency_modifier(reader)
+                fit            = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
+                priority_score = device.priority / 10.0
+                score          = min(global_score * priority_score * fit + urgency * 0.3, 1.0)
+                device.last_effective_score = round(score, 3)
+                scored.append((score, device))
                 continue
 
             # Must-run override → bypass allowed window and force on immediately.
@@ -469,6 +468,23 @@ class DeviceManager:
         remaining = surplus_w + bat_available_w + grid_allowance_w
 
         for score, device in scored:
+            # PREPARING appliances: apply start conditions using actual remaining budget.
+            # This is the core of fix B: they now see correctly reduced remaining after
+            # ON devices have been allocated, rather than the full virtual surplus.
+            if device.device_type == DEVICE_TYPE_APPLIANCE:
+                urgency    = device.urgency_modifier(reader)
+                fit        = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
+                should_start = (global_score >= 0.4 and fit >= 0.3) or urgency >= 0.8
+                if not should_start:
+                    continue
+                if device.power_w <= remaining:
+                    remaining -= device.power_w
+                    await self._async_start_appliance(hass, device, global_score, fit, urgency)
+                elif urgency >= 0.8:
+                    # Deadline imminent: start anyway; overcommit check will shed budget elsewhere.
+                    await self._async_start_appliance(hass, device, global_score, fit, urgency)
+                continue
+
             # For fit calculation, add back this device's actual draw if already ON
             # so it doesn't penalise itself when re-evaluated each cycle.
             # Use actual_power_w: a water heater whose thermostat has cut (0 W actual)
@@ -579,11 +595,9 @@ class DeviceManager:
         self,
         hass: HomeAssistant,
         device: ManagedDevice,
-        global_score: float,
-        surplus_w: float,
-        bat_available_w: float,
-    ) -> bool:
-        """Handle appliance state machine. Returns True if the appliance started this cycle."""
+    ) -> None:
+        """Handle IDLE, RUNNING and DONE appliance states.
+        PREPARING is handled by the greedy allocation loop via _async_start_appliance."""
         reader = ManagedDevice._make_ha_reader(hass)
         now_ts = time_mod.time()
 
@@ -597,42 +611,7 @@ class DeviceManager:
                 await DeviceManager._async_appliance_to_preparing(
                     hass, device, device.appliance_ready_entity
                 )
-            return False
-
-        if device.appliance_state == APPLIANCE_STATE_PREPARING:
-            fit     = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
-            urgency = device.urgency_modifier(reader)
-            device.last_effective_score = round(min(global_score * fit + urgency * 0.3, 1.0), 3)
-
-            should_start = (
-                (global_score >= 0.4 and fit >= 0.3)
-                or urgency >= 0.8   # deadline imminent → start regardless of surplus
-            )
-            if not should_start:
-                return False
-
-            # Transition: PREPARING → RUNNING
-            _LOGGER.info("Appliance '%s': starting (score=%.2f fit=%.2f urgency=%.2f)",
-                         device.name, global_score, fit, urgency)
-
-            if not device.appliance_start_script:
-                _LOGGER.warning(
-                    "Appliance '%s': no start_script configured — "
-                    "cycle will be tracked but nothing will actually start",
-                    device.name,
-                )
-
-            if device.appliance_start_script:
-                await hass.services.async_call(
-                    "script", "turn_on",
-                    {"entity_id": device.appliance_start_script},
-                    blocking=False,
-                )
-
-            device.appliance_state       = APPLIANCE_STATE_RUNNING
-            device.appliance_cycle_start = now_ts
-            device.is_on                 = True
-            return True
+            return
 
         if device.appliance_state == APPLIANCE_STATE_RUNNING:
             done = False
@@ -669,6 +648,35 @@ class DeviceManager:
         if device.appliance_state == APPLIANCE_STATE_DONE:
             device.appliance_state = APPLIANCE_STATE_IDLE
         return False
+
+    async def _async_start_appliance(
+        self,
+        hass: HomeAssistant,
+        device: ManagedDevice,
+        global_score: float,
+        fit: float,
+        urgency: float,
+    ) -> None:
+        """Trigger the PREPARING → RUNNING transition for an appliance."""
+        _LOGGER.info(
+            "Appliance '%s': starting (score=%.2f fit=%.2f urgency=%.2f)",
+            device.name, global_score, fit, urgency,
+        )
+        if not device.appliance_start_script:
+            _LOGGER.warning(
+                "Appliance '%s': no start_script configured — "
+                "cycle will be tracked but nothing will actually start",
+                device.name,
+            )
+        if device.appliance_start_script:
+            await hass.services.async_call(
+                "script", "turn_on",
+                {"entity_id": device.appliance_start_script},
+                blocking=False,
+            )
+        device.appliance_state       = APPLIANCE_STATE_RUNNING
+        device.appliance_cycle_start = time_mod.time()
+        device.is_on                 = True
 
     # ------------------------------------------------------------------
     # Helpers
