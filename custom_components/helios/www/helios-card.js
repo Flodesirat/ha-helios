@@ -343,6 +343,19 @@ class HeliosCard extends HTMLElement {
           color: var(--secondary-text-color);
           margin-top: 2px;
         }
+        .dev-ready-btn {
+          font-size: 10px;
+          font-weight: 600;
+          padding: 3px 8px;
+          border-radius: 4px;
+          border: none;
+          background: var(--primary-color, #03a9f4);
+          color: #fff;
+          cursor: pointer;
+          flex-shrink: 0;
+          white-space: nowrap;
+        }
+        .dev-ready-btn:active { opacity: 0.7; }
         .dev-status {
           display: flex;
           align-items: center;
@@ -811,6 +824,14 @@ class HeliosCard extends HTMLElement {
     if (devCfgs.length === 0) { devicesEl.style.display = "none"; return; }
     devicesEl.style.display = "flex";
     devicesEl.innerHTML = devCfgs.map(d => this._renderDevice(d)).join("");
+    devicesEl.querySelectorAll(".dev-ready-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const entityId = btn.dataset.readyEntity;
+        if (entityId && this._hass) {
+          this._hass.callService("input_boolean", "turn_on", { entity_id: entityId });
+        }
+      });
+    });
   }
 
   _renderDevice(dev) {
@@ -833,6 +854,14 @@ class HeliosCard extends HTMLElement {
     const priorityHtml = priority !== null ? `<span class="dev-priority">P${priority}</span>` : "";
     const reasonHtml   = reason ? `<div class="dev-reason">${this._reasonLabel(reason)}</div>` : "";
 
+    // Appliance "ready" button — visible only when idle and ready_entity is configured
+    const applianceState = dev.type === "appliance" ? this._attr(dev.entity, "appliance_state") : null;
+    const readyEntity    = dev.type === "appliance" ? this._attr(dev.entity, "appliance_ready_entity") : null;
+    const showReadyBtn   = applianceState === "idle" && readyEntity;
+    const readyBtnHtml   = showReadyBtn
+      ? `<button class="dev-ready-btn" data-ready-entity="${readyEntity}">Prêt !</button>`
+      : "";
+
     return `
       <div class="dev-row">
         <div class="dev-icon">${icon}</div>
@@ -849,6 +878,7 @@ class HeliosCard extends HTMLElement {
           <span class="dev-status-text">${statusText}</span>
           ${powerHtml}
         </div>
+        ${readyBtnHtml}
       </div>
     `;
   }
@@ -903,9 +933,9 @@ class HeliosCard extends HTMLElement {
       }
       case "ev":
       case "ev_charger": {
-        if (this._attr(dev.entity, "plugged") === false) return "";
         const soc = this._attr(dev.entity, "soc");
         if (soc !== null) parts.push(`SOC : ${Math.round(soc)}%`);
+        if (this._attr(dev.entity, "plugged") === false) return parts.join(" · ");
         break;
       }
     }

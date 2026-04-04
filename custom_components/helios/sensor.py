@@ -327,7 +327,10 @@ class DeviceStateSensor(_BaseEOSensor):
             "allowed_end":          d.allowed_end,
             "daily_on_minutes":     round(d.daily_on_minutes, 1),
         }
-        if d.device_type == DEVICE_TYPE_WATER_HEATER:
+        if d.device_type == DEVICE_TYPE_APPLIANCE:
+            attrs["appliance_state"]        = d.appliance_state
+            attrs["appliance_ready_entity"] = d.appliance_ready_entity
+        elif d.device_type == DEVICE_TYPE_WATER_HEATER:
             attrs["wh_temp_target"] = d.wh_temp_target
             if d.wh_temp_entity:
                 s = self.coordinator.hass.states.get(d.wh_temp_entity)
