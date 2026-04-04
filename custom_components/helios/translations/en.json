@@ -146,6 +146,7 @@
           "weight_battery_soc": "Battery SOC weight",
           "weight_forecast": "Forecast weight",
           "scan_interval_minutes": "Update interval (min)",
+          "sample_interval_seconds": "Sampling interval (s)",
           "mode": "Operating mode",
           "dispatch_threshold": "Dispatch threshold",
           "optimizer_alpha": "Alpha (0 = savings, 1 = self-consumption)",
@@ -157,6 +158,7 @@
         },
         "data_description": {
           "dispatch_threshold": "Minimum global score to dispatch devices (0–1).",
+          "sample_interval_seconds": "How often PV, grid, house and device power sensors are sampled. Must be ≥ 10 s and ≤ update interval.",
           "optimizer_alpha": "Balance between minimizing bill and maximizing self-consumption.",
           "off_peak_1_start": "E.g. 22:00 for a 22h–6h off-peak contract. Leave empty if unused.",
           "off_peak_2_start": "Second off-peak slot (e.g. 12:00–14:00). Leave empty if unused.",
@@ -166,7 +168,8 @@
     },
     "error": {
       "weights_must_sum_to_one": "The weights must sum to 1.0.",
-      "device_weights_must_sum_to_one": "The per-device weights must sum to 1.0."
+      "device_weights_must_sum_to_one": "The per-device weights must sum to 1.0.",
+      "sample_interval_out_of_range": "Sampling interval must be between 10 s and the update interval."
     },
     "abort": {
       "already_configured": "This integration is already configured."
@@ -229,6 +232,7 @@
           "weight_battery_soc": "Battery SOC weight",
           "weight_forecast": "Forecast weight",
           "scan_interval_minutes": "Update interval (min)",
+          "sample_interval_seconds": "Sampling interval (s)",
           "mode": "Operating mode",
           "dispatch_threshold": "Dispatch threshold",
           "optimizer_alpha": "Alpha (0 = savings, 1 = self-consumption)",
@@ -342,7 +346,8 @@
     },
     "error": {
       "weights_must_sum_to_one": "The weights must sum to 1.0.",
-      "device_weights_must_sum_to_one": "The per-device weights must sum to 1.0."
+      "device_weights_must_sum_to_one": "The per-device weights must sum to 1.0.",
+      "sample_interval_out_of_range": "Sampling interval must be between 10 s and the update interval."
     }
   },
   "entity": {

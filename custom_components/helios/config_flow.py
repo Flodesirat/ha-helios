@@ -55,6 +55,7 @@ from .const import (
     CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
     CONF_GRID_ALLOWANCE_W, CONF_OPTIMIZER_ALPHA,
     CONF_BASE_LOAD_NOISE, CONF_OPTIMIZER_N_RUNS, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
+    CONF_SAMPLE_INTERVAL_SECONDS,
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END, CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
     # Device / general types and defaults
     DEVICE_TYPES, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER,
@@ -66,6 +67,7 @@ from .const import (
     DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_FORECAST,
     DEFAULT_SCAN_INTERVAL, DEFAULT_DISPATCH_THRESHOLD, DEFAULT_GRID_ALLOWANCE_W, DEFAULT_OPTIMIZER_ALPHA,
     DEFAULT_BASE_LOAD_NOISE, DEFAULT_OPTIMIZER_N_RUNS, DEFAULT_RISK_LAMBDA, DEFAULT_EMA_ALPHA, DEFAULT_EMA_ENABLED,
+    DEFAULT_SAMPLE_INTERVAL_SECONDS,
     DEFAULT_DEVICE_PRIORITY, DEFAULT_DEVICE_MIN_ON_MINUTES,
     DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
     DEFAULT_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_FIT, DEFAULT_DEVICE_WEIGHT_URGENCY,
@@ -390,6 +392,11 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
             if abs(total - 1.0) > 0.01:
                 errors["base"] = "weights_must_sum_to_one"
             else:
+                scan_s = int(user_input[CONF_SCAN_INTERVAL_MINUTES]) * 60
+                sample_s = int(user_input[CONF_SAMPLE_INTERVAL_SECONDS])
+                if not (10 <= sample_s <= scan_s):
+                    errors[CONF_SAMPLE_INTERVAL_SECONDS] = "sample_interval_out_of_range"
+            if not errors:
                 self._data.update(user_input)
                 return self.async_create_entry(title="Helios", data=self._data)
 
@@ -552,6 +559,11 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
             if abs(total - 1.0) > 0.01:
                 errors["base"] = "weights_must_sum_to_one"
             else:
+                scan_s = int(user_input[CONF_SCAN_INTERVAL_MINUTES]) * 60
+                sample_s = int(user_input[CONF_SAMPLE_INTERVAL_SECONDS])
+                if not (10 <= sample_s <= scan_s):
+                    errors[CONF_SAMPLE_INTERVAL_SECONDS] = "sample_interval_out_of_range"
+            if not errors:
                 return self.async_create_entry(data={**self._entry.options, **user_input})
 
         return self.async_show_form(
@@ -564,6 +576,7 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                     CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
                     CONF_GRID_ALLOWANCE_W, CONF_OPTIMIZER_ALPHA,
                     CONF_BASE_LOAD_NOISE, CONF_OPTIMIZER_N_RUNS, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
+                    CONF_SAMPLE_INTERVAL_SECONDS,
                     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
                     CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
                 )
@@ -946,6 +959,12 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
             default=d.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=1, max=60, step=1, unit_of_measurement="min")
+        ),
+        vol.Optional(
+            CONF_SAMPLE_INTERVAL_SECONDS,
+            default=d.get(CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=10, max=3600, step=10, unit_of_measurement="s")
         ),
         vol.Optional(
             CONF_DISPATCH_THRESHOLD,

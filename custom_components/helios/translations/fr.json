@@ -146,6 +146,7 @@
           "weight_battery_soc": "Poids SOC batterie",
           "weight_forecast": "Poids prévision",
           "scan_interval_minutes": "Intervalle de mise à jour (min)",
+          "sample_interval_seconds": "Intervalle d'échantillonnage (s)",
           "mode": "Mode de fonctionnement",
           "dispatch_threshold": "Seuil de déclenchement",
           "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)",
@@ -157,6 +158,7 @@
         },
         "data_description": {
           "dispatch_threshold": "Score global minimum pour piloter les appareils (0–1).",
+          "sample_interval_seconds": "Fréquence de lecture des capteurs PV, réseau, maison et appareils. Doit être ≥ 10 s et ≤ intervalle de mise à jour.",
           "optimizer_alpha": "Équilibre entre minimiser la facture et maximiser l'autoconsommation.",
           "off_peak_1_start": "Ex : 22:00 pour un contrat HC 22h–6h. Laisser vide si inutilisé.",
           "off_peak_2_start": "Deuxième plage HC (ex : 12:00–14:00). Laisser vide si inutilisée.",
@@ -166,7 +168,8 @@
     },
     "error": {
       "weights_must_sum_to_one": "Les poids doivent sommer à 1,0.",
-      "device_weights_must_sum_to_one": "Les poids par appareil doivent sommer à 1,0."
+      "device_weights_must_sum_to_one": "Les poids par appareil doivent sommer à 1,0.",
+      "sample_interval_out_of_range": "L'intervalle d'échantillonnage doit être compris entre 10 s et l'intervalle de mise à jour."
     },
     "abort": {
       "already_configured": "Cette intégration est déjà configurée."
@@ -229,6 +232,7 @@
           "weight_battery_soc": "Poids SOC batterie",
           "weight_forecast": "Poids prévision",
           "scan_interval_minutes": "Intervalle de mise à jour (min)",
+          "sample_interval_seconds": "Intervalle d'échantillonnage (s)",
           "mode": "Mode de fonctionnement",
           "dispatch_threshold": "Seuil de déclenchement",
           "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)",
@@ -342,7 +346,8 @@
     },
     "error": {
       "weights_must_sum_to_one": "Les poids doivent sommer à 1,0.",
-      "device_weights_must_sum_to_one": "Les poids par appareil doivent sommer à 1,0."
+      "device_weights_must_sum_to_one": "Les poids par appareil doivent sommer à 1,0.",
+      "sample_interval_out_of_range": "L'intervalle d'échantillonnage doit être compris entre 10 s et l'intervalle de mise à jour."
     }
   },
   "entity": {

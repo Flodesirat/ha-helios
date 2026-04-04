@@ -147,6 +147,7 @@ CONF_OPTIMIZER_N_RUNS      = "optimizer_n_runs"    # nombre de tirages Monte Car
 CONF_RISK_LAMBDA           = "risk_lambda"         # coefficient de pénalité sur l'écart-type de l'objectif
 CONF_EMA_ALPHA             = "ema_alpha"           # facteur d'apprentissage EMA de la charge de fond
 CONF_EMA_ENABLED           = "ema_enabled"         # activer/désactiver l'apprentissage EMA
+CONF_SAMPLE_INTERVAL_SECONDS = "sample_interval_seconds"  # intervalle d'échantillonnage des capteurs (s)
 
 # ---------------------------------------------------------------------------
 # Device types
@@ -213,6 +214,7 @@ DEFAULT_OPTIMIZER_N_RUNS           = 5      # 5 tirages Monte Carlo par combinai
 DEFAULT_RISK_LAMBDA                = 0.5    # obj = mean − 0.5 × std  (risque modéré)
 DEFAULT_EMA_ALPHA                  = 0.05   # convergence lente (~1 semaine) pour stabilité
 DEFAULT_EMA_ENABLED                = True   # apprentissage activé par défaut
+DEFAULT_SAMPLE_INTERVAL_SECONDS    = 30     # s — fréquence d'échantillonnage des capteurs
 DEFAULT_PEAK_PV_W                  = 3000.0 # W — used when no real-time data available
 DEFAULT_GRID_SUBSCRIPTION_W        = 9000   # W
 

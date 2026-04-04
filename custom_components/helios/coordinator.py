@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import logging
 import time as _time
+from collections import deque
 from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -28,6 +29,7 @@ from .const import (
     CONF_DEVICES, CONF_MODE, CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD,
     CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W,
     CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA,
+    CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS,
     MODE_AUTO, MODE_OFF,
     BATTERY_ACTION_AUTOCONSOMMATION,
     normalize_tempo_color,
@@ -114,6 +116,17 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.optimizer_chosen:           dict              = {}
         self.optimizer_chosen_schedule:  list[dict]        = []
 
+        # Sampling buffers — rolling window for power signal averaging
+        self._rebuild_buffers()
+
+        # Sensor sampling — fires every sample_interval, fills buffers only
+        sample_s = int(cfg.get(CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS))
+        self._unsub_sample = async_track_time_interval(
+            hass,
+            self._async_sample_sensors,
+            timedelta(seconds=sample_s),
+        )
+
         # Daily optimizer — scheduled at 05:00 every morning
         self._unsub_daily_opt = async_track_time_change(
             hass,
@@ -122,6 +135,58 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             minute=0,
             second=0,
         )
+
+    # ------------------------------------------------------------------
+    # Sampling buffers
+    # ------------------------------------------------------------------
+    def _rebuild_buffers(self) -> None:
+        """(Re)build rolling-window buffers. Called on init and after any config reload."""
+        cfg = self._cfg
+        scan_s = int(cfg.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL)) * 60
+        sample_s = int(cfg.get(CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS))
+        n = max(1, scan_s // sample_s)
+        self._buf_pv:      deque[float] = deque(maxlen=n)
+        self._buf_house:   deque[float] = deque(maxlen=n)
+        self._buf_grid:    deque[float] = deque(maxlen=n)
+        self._buf_battery: deque[float] = deque(maxlen=n)
+        self._buf_devices: dict[str, deque[float]] = {
+            d.name: deque(maxlen=n) for d in self.device_manager.devices
+        }
+        _LOGGER.debug(
+            "Helios: sampling buffers rebuilt — n=%d (%ds window, %ds sample)",
+            n, scan_s, sample_s,
+        )
+
+    async def _async_sample_sensors(self, now: Any) -> None:  # noqa: ARG002
+        """Sample raw power values into rolling buffers. No decisions, no state writes."""
+        def _float(entity_id: str | None) -> float:
+            if not entity_id:
+                return 0.0
+            s = self.hass.states.get(entity_id)
+            if s is None or s.state in ("unavailable", "unknown"):
+                return 0.0
+            try:
+                return float(s.state)
+            except ValueError:
+                return 0.0
+
+        cfg = self._cfg
+        self._buf_pv.append(_float(cfg.get(CONF_PV_POWER_ENTITY)))
+        self._buf_house.append(_float(cfg.get(CONF_HOUSE_POWER_ENTITY)))
+        self._buf_grid.append(_float(cfg.get(CONF_GRID_POWER_ENTITY)))
+        if cfg.get(CONF_BATTERY_ENABLED):
+            self._buf_battery.append(_float(cfg.get(CONF_BATTERY_POWER_ENTITY)))
+
+        reader = ManagedDevice._make_ha_reader(self.hass)
+        for device in self.device_manager.devices:
+            buf = self._buf_devices.get(device.name)
+            if buf is not None:
+                buf.append(device.actual_power_w(reader))
+
+    @staticmethod
+    def _buf_mean(buf: deque[float], fallback: float = 0.0) -> float:
+        """Return mean of buffer, or fallback if empty."""
+        return sum(buf) / len(buf) if buf else fallback
 
     # ------------------------------------------------------------------
     # Daily optimizer callback
@@ -135,6 +200,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
 
     def async_unload(self) -> None:
         """Cancel recurring scheduler and appliance listeners when the entry is unloaded."""
+        if self._unsub_sample:
+            self._unsub_sample()
+            self._unsub_sample = None
         if self._unsub_daily_opt:
             self._unsub_daily_opt()
             self._unsub_daily_opt = None
@@ -237,7 +305,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     # Sensor reading
     # ------------------------------------------------------------------
     async def _read_sensors(self) -> dict[str, Any]:
-        """Read all configured input entities from hass state machine."""
+        """Return averaged power values from sampling buffers + instantaneous non-power values."""
         def _float(entity_id: str | None) -> float:
             if not entity_id:
                 return 0.0
@@ -257,15 +325,19 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                 return None
             return s.state
 
+        def _mean(buf: deque[float], entity_id: str | None) -> float:
+            """Return buffer mean, falling back to a direct sensor read if buffer is empty."""
+            return self._buf_mean(buf, fallback=_float(entity_id))
+
         cfg = self._cfg
         battery_enabled = cfg.get(CONF_BATTERY_ENABLED, False)
 
         return {
-            "pv_power_w":   _float(cfg.get(CONF_PV_POWER_ENTITY)),
-            "grid_power_w": _float(cfg.get(CONF_GRID_POWER_ENTITY)),
-            "house_power_w": _float(cfg.get(CONF_HOUSE_POWER_ENTITY)),
-            "battery_soc":   _float(cfg.get(CONF_BATTERY_SOC_ENTITY)) if battery_enabled else None,
-            "battery_power_w": _float(cfg.get(CONF_BATTERY_POWER_ENTITY)) if battery_enabled else None,
+            "pv_power_w":      _mean(self._buf_pv,    cfg.get(CONF_PV_POWER_ENTITY)),
+            "grid_power_w":    _mean(self._buf_grid,   cfg.get(CONF_GRID_POWER_ENTITY)),
+            "house_power_w":   _mean(self._buf_house,  cfg.get(CONF_HOUSE_POWER_ENTITY)),
+            "battery_soc":     _float(cfg.get(CONF_BATTERY_SOC_ENTITY)) if battery_enabled else None,
+            "battery_power_w": _mean(self._buf_battery, cfg.get(CONF_BATTERY_POWER_ENTITY)) if battery_enabled else None,
             "tempo_color":      normalize_tempo_color(_str(cfg.get(CONF_TEMPO_COLOR_ENTITY))),
             "tempo_next_color": normalize_tempo_color(_str(cfg.get(CONF_TEMPO_NEXT_COLOR_ENTITY))),
             "forecast_kwh": _float(entity) if (entity := cfg.get(CONF_FORECAST_ENTITY)) else None,
@@ -286,12 +358,12 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.bat_available_w = self._compute_bat_available_w()
 
         # EMA update: net base load = house_w − currently-active Helios devices.
-        # Use actual_power_w so a water heater whose internal thermostat has cut
-        # (switch ON but 0 W draw) doesn't distort the base load estimate.
+        # Use buffer-averaged actual_power_w for consistency with dispatch decisions.
         if self._cfg.get(CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED):
             reader = ManagedDevice._make_ha_reader(self.hass)
             helios_devices_w = sum(
-                d.actual_power_w(reader) for d in self.device_manager.devices if d.is_on
+                self._device_mean_power_w(d, reader)
+                for d in self.device_manager.devices if d.is_on
             )
             net_base_w = self.house_power_w - helios_devices_w
             now = dt_util.now()
@@ -337,13 +409,18 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         current_discharge_w = max(0.0, self.battery_power_w or 0.0)
         return max(0.0, capacity_w - current_discharge_w)
 
+    def _device_mean_power_w(self, device: ManagedDevice, reader: Any) -> float:
+        """Return buffer-averaged power for a device, falling back to direct read if empty."""
+        buf = self._buf_devices.get(device.name)
+        return self._buf_mean(buf, fallback=device.actual_power_w(reader)) if buf is not None else device.actual_power_w(reader)
+
     def _build_score_input(self) -> dict[str, Any]:
         # Virtual surplus: add back the power of Helios-managed devices currently ON.
         # Without this correction, active devices inflate house_w → deflate surplus_w →
         # score drops below threshold → gate block turns them off → chattering.
         reader = ManagedDevice._make_ha_reader(self.hass)
         helios_on_w = sum(
-            d.actual_power_w(reader)
+            self._device_mean_power_w(d, reader)
             for d in self.device_manager.devices
             if d.is_on
         )
