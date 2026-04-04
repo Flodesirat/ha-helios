@@ -264,12 +264,26 @@ class HeliosCard extends HTMLElement {
           color: var(--secondary-text-color);
           min-width: 42px;
         }
-        .bar-bg {
+        .bar-wrap {
           flex: 1;
+          position: relative;
+        }
+        .bar-bg {
+          width: 100%;
           height: 7px;
           background: var(--secondary-background-color, #f0f0f0);
           border-radius: 4px;
           overflow: hidden;
+        }
+        .bar-threshold {
+          position: absolute;
+          top: -3px;
+          width: 2px;
+          height: 13px;
+          background: rgba(0,0,0,0.55);
+          border-radius: 1px;
+          transform: translateX(-50%);
+          display: none;
         }
         .bar-fill {
           height: 100%;
@@ -459,7 +473,10 @@ class HeliosCard extends HTMLElement {
         <div class="footer" id="h-footer">
           <div class="score-row">
             <div class="lbl">Score</div>
-            <div class="bar-bg"><div class="bar-fill" id="h-score-bar"></div></div>
+            <div class="bar-wrap">
+              <div class="bar-bg"><div class="bar-fill" id="h-score-bar"></div></div>
+              <div class="bar-threshold" id="h-score-threshold"></div>
+            </div>
             <div class="score-num" id="h-score-num">—</div>
           </div>
           <div class="score-decomp" id="h-score-decomp">
@@ -775,6 +792,18 @@ class HeliosCard extends HTMLElement {
       bar.style.background = scoreColor;
     }
     this._txt("h-score-num", this._hass ? score.toFixed(2) : "—");
+
+    // Threshold marker
+    const threshold = this._attr(e.score, "threshold_score");
+    const threshEl  = this.shadowRoot.getElementById("h-score-threshold");
+    if (threshEl) {
+      if (threshold !== null && threshold >= 0 && threshold <= 1) {
+        threshEl.style.left    = `${Math.round(threshold * 100)}%`;
+        threshEl.style.display = "block";
+      } else {
+        threshEl.style.display = "none";
+      }
+    }
 
     // Progress rings
     const maxPow  = this._attr(e.score, "peak_pv_w") ?? 6000;
