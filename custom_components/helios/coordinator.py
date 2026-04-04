@@ -283,6 +283,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                 dispatch_input = {
                     **score_input,
                     "global_score":       self.global_score,
+                    "real_surplus_w":     self.surplus_w,
                     "bat_available_w":    self.bat_available_w,
                     "dispatch_threshold": self.dispatch_threshold,
                     "grid_allowance_w":   self.grid_allowance_w,

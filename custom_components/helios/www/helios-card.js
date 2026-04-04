@@ -903,6 +903,7 @@ class HeliosCard extends HTMLElement {
       satisfied:      "Satisfait",
       score_too_low:  "Score faible",
       no_budget:      "Budget",
+      overcommit:     "Surcharge",
       fit_negligible: "Fit faible",
       outside_window: "Hors plage",
       manual:         "Manuel",

@@ -529,6 +529,49 @@ class DeviceManager:
 
         self.remaining_w = remaining
 
+        # ---- Global overcommit check ----
+        # After all dispatch decisions, verify that the total power drawn by
+        # ON Helios devices does not exceed the real available budget
+        # (real surplus + battery discharge + grid allowance).
+        # If overcommitted, turn off the lowest-priority interruptible device
+        # that has elapsed its min_on_minutes — one device per cycle to avoid
+        # chattering. Already-running appliances are also candidates.
+        real_surplus_w: float = float(score_input.get("real_surplus_w", surplus_w))
+        budget_w = real_surplus_w + bat_available_w + grid_allowance_w
+        total_on_w = sum(d.actual_power_w(reader) for d in self.devices if d.is_on)
+        overcommit_w = total_on_w - budget_w
+
+        if overcommit_w > 100:  # 100 W noise margin
+            candidates = sorted(
+                [
+                    d for d in self.devices
+                    if d.is_on
+                    and d.interruptible
+                    and self._min_on_elapsed(d)
+                    and d not in must_run
+                    and _helios_manages(d)
+                ],
+                key=lambda d: d.priority,
+            )
+            if candidates:
+                victim = candidates[0]
+                _LOGGER.info(
+                    "Dispatch: overcommit %.0f W (on=%.0f W > budget=%.0f W) — "
+                    "turning off '%s' (priority=%d, power=%.0f W)",
+                    overcommit_w, total_on_w, budget_w,
+                    victim.name, victim.priority, victim.power_w,
+                )
+                await self._async_set_switch(
+                    hass, victim, False,
+                    reason="overcommit",
+                    context={
+                        **_base_ctx,
+                        "total_on_w":    round(total_on_w),
+                        "budget_w":      round(budget_w),
+                        "overcommit_w":  round(overcommit_w),
+                    },
+                )
+
     # ------------------------------------------------------------------
     # Appliance state machine
     # ------------------------------------------------------------------
