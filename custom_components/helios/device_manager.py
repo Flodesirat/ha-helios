@@ -462,26 +462,30 @@ class DeviceManager:
         # ---- Greedy allocation (highest score first) ----
         scored.sort(key=lambda x: x[0], reverse=True)
 
-        # surplus_w is already the virtual surplus (real_surplus + helios_on_w),
-        # computed by the coordinator before calling dispatch. No need to add
-        # helios_on_w again — that would double-count and over-allocate budget.
-        remaining = surplus_w + bat_available_w + grid_allowance_w
+        # Use real_surplus_w (PV – base – currently-ON-helios-draw) as the budget for
+        # NEW activations.  surplus_w is virtual (real_surplus + helios_on_w) and is kept
+        # only for fit scoring.  Because ON-device power is already excluded from
+        # real_surplus_w, those devices need no budget deduction here; only newly
+        # activated devices reduce `remaining`.
+        real_surplus_w: float = float(score_input.get("real_surplus_w", surplus_w))
+        remaining = real_surplus_w + bat_available_w + grid_allowance_w
 
         for score, device in scored:
-            # PREPARING appliances: apply start conditions using actual remaining budget.
-            # This is the core of fix B: they now see correctly reduced remaining after
-            # ON devices have been allocated, rather than the full virtual surplus.
+            # PREPARING / RUNNING appliances
             if device.device_type == DEVICE_TYPE_APPLIANCE:
                 urgency    = device.urgency_modifier(reader)
                 fit        = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
                 should_start = (global_score >= 0.4 and fit >= 0.3) or urgency >= 0.8
                 if not should_start:
                     continue
-                if device.power_w <= remaining:
+                if device.is_on:
+                    # Already running: real_surplus already excludes its draw — no deduction.
+                    await self._async_start_appliance(hass, device, global_score, fit, urgency)
+                elif device.power_w <= remaining:
                     remaining -= device.power_w
                     await self._async_start_appliance(hass, device, global_score, fit, urgency)
                 elif urgency >= 0.8:
-                    # Deadline imminent: start anyway; overcommit check will shed budget elsewhere.
+                    # Deadline imminent: start anyway; overcommit check will shed if needed.
                     await self._async_start_appliance(hass, device, global_score, fit, urgency)
                 continue
 
@@ -498,12 +502,14 @@ class DeviceManager:
                     await self._async_set_switch(hass, device, False, reason="fit_negligible", context=_base_ctx)
                 continue
 
-            if device.power_w <= remaining:
+            if device.is_on:
+                # Already running: real_surplus already excludes its draw.
+                # The fit_negligible gate above is the only reason to turn it off here.
+                pass
+            elif device.power_w <= remaining:
                 # Red-day strict guard: on red days below battery reserve, only
                 # activate NEW devices that fit within the PV surplus alone.
-                # This prevents the physical battery from being drained to power
-                # devices on expensive red days when the reserve is not met.
-                if not device.is_on and _red_strict and device.power_w > surplus_w:
+                if _red_strict and device.power_w > surplus_w:
                     _LOGGER.debug(
                         "Dispatch: '%s' blocked — red day strict mode "
                         "(SOC=%.0f%% < reserve=%.0f%%, power=%dW > surplus=%dW)",
@@ -511,7 +517,7 @@ class DeviceManager:
                         device.power_w, surplus_w,
                     )
                     continue
-                if not device.is_on and _soc_gate:
+                if _soc_gate:
                     _LOGGER.debug(
                         "Dispatch: '%s' blocked — SOC gate "
                         "(SOC=%.0f%% < soc_min=%.0f%%)",
@@ -519,41 +525,29 @@ class DeviceManager:
                     )
                     continue
                 remaining -= device.power_w
-                if not device.is_on:
-                    await self._async_set_switch(
-                        hass, device, True,
-                        reason="dispatch",
-                        context={
-                            **_base_ctx,
-                            "global_score":    round(global_score, 3),
-                            "surplus_w":       round(surplus_w),
-                            "bat_available_w": round(bat_available_w),
-                            "fit":             round(fit, 3),
-                        },
-                    )
-            else:
-                if device.is_on and device.interruptible and self._min_on_elapsed(device):
-                    await self._async_set_switch(
-                        hass, device, False,
-                        reason="no_budget",
-                        context={
-                            **_base_ctx,
-                            "power_w":     device.power_w,
-                            "remaining_w": round(remaining),
-                        },
-                    )
+                await self._async_set_switch(
+                    hass, device, True,
+                    reason="dispatch",
+                    context={
+                        **_base_ctx,
+                        "global_score":    round(global_score, 3),
+                        "surplus_w":       round(surplus_w),
+                        "bat_available_w": round(bat_available_w),
+                        "fit":             round(fit, 3),
+                    },
+                )
+            # else: OFF device doesn't fit in remaining budget → skip
 
         self.remaining_w = remaining
 
         # ---- Global overcommit check ----
-        # After all dispatch decisions, verify that the total power drawn by
-        # ON Helios devices does not exceed the real available budget
-        # (real surplus + battery discharge + grid allowance).
-        # If overcommitted, turn off the lowest-priority interruptible device
-        # that has elapsed its min_on_minutes — one device per cycle to avoid
-        # chattering. Already-running appliances are also candidates.
-        real_surplus_w: float = float(score_input.get("real_surplus_w", surplus_w))
-        budget_w = real_surplus_w + bat_available_w + grid_allowance_w
+        # Safety net: if the total draw of ON Helios devices still exceeds the virtual
+        # surplus budget (e.g. an urgency-forced appliance start), shed the lowest-priority
+        # interruptible device — one per cycle to avoid chattering.
+        # Uses surplus_w (virtual = PV − base), not real_surplus_w, because
+        # total_on_w counts ALL Helios devices (including those that were already ON
+        # when real_surplus_w was computed and whose draw is therefore excluded from it).
+        budget_w = surplus_w + bat_available_w + grid_allowance_w
         total_on_w = sum(d.actual_power_w(reader) for d in self.devices if d.is_on)
         overcommit_w = total_on_w - budget_w
 

@@ -65,7 +65,7 @@ def _make_manager(devices, init_threshold=DEFAULT_DISPATCH_THRESHOLD, scan_inter
     return mgr
 
 
-def _score(global_score=0.8, surplus_w=400.0, bat_w=0.0, dispatch_threshold=None):
+def _score(global_score=0.8, surplus_w=400.0, bat_w=0.0, dispatch_threshold=None, real_surplus_w=None):
     d = {
         "global_score":    global_score,
         "surplus_w":       surplus_w,
@@ -73,6 +73,8 @@ def _score(global_score=0.8, surplus_w=400.0, bat_w=0.0, dispatch_threshold=None
     }
     if dispatch_threshold is not None:
         d["dispatch_threshold"] = dispatch_threshold
+    if real_surplus_w is not None:
+        d["real_surplus_w"] = real_surplus_w
     return d
 
 
@@ -510,9 +512,11 @@ class TestHeliosOnW_NotDoubleCountedInBudget:
         mgr  = _make_manager([device1, device2])
         hass = _two_wh_hass(temp1=58.0, temp2=20.0)
 
+        # real_surplus_w = virtual_surplus - device1.power_w (already consuming 400 W)
         await mgr.async_dispatch(
             hass,
-            _score(global_score=0.8, surplus_w=VIRTUAL_SURPLUS, bat_w=0.0),
+            _score(global_score=0.8, surplus_w=VIRTUAL_SURPLUS, bat_w=0.0,
+                   real_surplus_w=VIRTUAL_SURPLUS - 400),
         )
 
         on_power = (400 if device1.is_on else 0) + (300 if device2.is_on else 0)
