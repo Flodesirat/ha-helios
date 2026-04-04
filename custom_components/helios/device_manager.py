@@ -224,6 +224,7 @@ class DeviceManager:
         tempo_color:        str | None  = score_input.get("tempo_color")
         soc_reserve_rouge:  float       = float(score_input.get("soc_reserve_rouge", DEFAULT_BATTERY_SOC_RESERVE_ROUGE))
         soc_max:            float       = float(score_input.get("soc_max", 95.0))
+        soc_min:            float       = float(score_input.get("soc_min", 20.0))
 
         # Red-day strict mode: when SOC is below the battery reserve, do not
         # activate NEW devices unless they fit within the PV surplus alone.
@@ -232,6 +233,14 @@ class DeviceManager:
             tempo_color == TEMPO_RED
             and battery_soc is not None
             and battery_soc < soc_reserve_rouge
+        )
+
+        # SOC gate: when battery is below soc_min, block all new device activations.
+        # The battery must be charged to its minimum level before devices compete
+        # for PV surplus. Already-ON devices and must_run overrides are not affected.
+        _soc_gate = (
+            battery_soc is not None
+            and battery_soc < soc_min
         )
 
         # Base context injected into every decision log entry
@@ -484,6 +493,13 @@ class DeviceManager:
                         "(SOC=%.0f%% < reserve=%.0f%%, power=%dW > surplus=%dW)",
                         device.name, battery_soc, soc_reserve_rouge,
                         device.power_w, surplus_w,
+                    )
+                    continue
+                if not device.is_on and _soc_gate:
+                    _LOGGER.debug(
+                        "Dispatch: '%s' blocked — SOC gate "
+                        "(SOC=%.0f%% < soc_min=%.0f%%)",
+                        device.name, battery_soc, soc_min,
                     )
                     continue
                 remaining -= device.power_w

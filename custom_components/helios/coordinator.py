@@ -293,6 +293,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                     "soc_max":            float(self._cfg.get(
                         CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX
                     )),
+                    "soc_min":            float(self._cfg.get(
+                        CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN
+                    )),
                 }
                 await self.device_manager.async_dispatch(self.hass, dispatch_input)
 
