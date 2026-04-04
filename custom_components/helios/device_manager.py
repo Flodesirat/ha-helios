@@ -639,9 +639,17 @@ class DeviceManager:
             if done:
                 device.appliance_state          = APPLIANCE_STATE_DONE
                 device.is_on                    = False
+                device.turned_off_at            = now_ts
                 device.appliance_cycle_start    = None
                 device.appliance_low_power_since = None
                 _LOGGER.info("Appliance '%s': cycle complete", device.name)
+                self.decision_log.append({
+                    "ts":     datetime.now().isoformat(timespec="seconds"),
+                    "device": device.name,
+                    "action": "off",
+                    "reason": "cycle_complete",
+                })
+                device.last_decision_reason = "cycle_complete"
                 if device.appliance_ready_entity:
                     await hass.services.async_call(
                         "input_boolean", "turn_off",
@@ -682,6 +690,17 @@ class DeviceManager:
         device.appliance_state       = APPLIANCE_STATE_RUNNING
         device.appliance_cycle_start = time_mod.time()
         device.is_on                 = True
+        device.turned_on_at          = device.appliance_cycle_start
+        self.decision_log.append({
+            "ts":     datetime.now().isoformat(timespec="seconds"),
+            "device": device.name,
+            "action": "on",
+            "reason": "appliance_start",
+            "global_score": round(global_score, 3),
+            "fit":          round(fit, 3),
+            "urgency":      round(urgency, 3),
+        })
+        device.last_decision_reason = "appliance_start"
 
     # ------------------------------------------------------------------
     # Helpers

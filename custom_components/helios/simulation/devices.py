@@ -56,6 +56,10 @@ class SimDevice:
     pool_required_min: float | None = None   # minutes; None = use run_quota_h
     pool_filtration_entity: str | None = None
 
+    # Appliance state machine
+    appliance_cycle_duration_minutes: int | None = None  # None → ManagedDevice default (120 min)
+    appliance_ready_at_start: bool = False  # True → pre-set ManagedDevice to PREPARING
+
     # ---- Runtime state (reset each simulation run) ----
     active: bool = field(default=False, init=False)
     _on_minutes: float = field(default=0.0, init=False, repr=False)   # minutes spent ON this cycle
@@ -181,6 +185,8 @@ class SimDevice:
             CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
             CONF_WH_TEMP_MIN_ENTITY, CONF_WH_OFF_PEAK_HYSTERESIS_K,
             CONF_POOL_FILTRATION_ENTITY,
+            CONF_APPLIANCE_CYCLE_DURATION_MINUTES, CONF_APPLIANCE_START_SCRIPT,
+            DEVICE_TYPE_APPLIANCE,
         )
 
         def _h2hm(h: float) -> str:
@@ -223,6 +229,12 @@ class SimDevice:
         # Pool
         if self.pool_filtration_entity:
             cfg[CONF_POOL_FILTRATION_ENTITY] = self.pool_filtration_entity
+        # Appliance — dummy start script suppresses the "no start_script" warning;
+        # SimHass.services.async_call is a no-op so nothing actually runs.
+        if self.device_type == DEVICE_TYPE_APPLIANCE:
+            cfg[CONF_APPLIANCE_START_SCRIPT] = "script.sim_noop"
+        if self.appliance_cycle_duration_minutes is not None:
+            cfg[CONF_APPLIANCE_CYCLE_DURATION_MINUTES] = self.appliance_cycle_duration_minutes
         return cfg
 
 
@@ -236,6 +248,14 @@ def load_devices_from_json(path: str) -> list[SimDevice]:
         data = json.load(f)
     devices = []
     for d in data:
+        device_type = str(d.get("device_type", "generic"))
+        run_quota_h = float(d["run_quota_h"]) if "run_quota_h" in d else None
+        # For pool devices, derive pool_required_min from run_quota_h so that
+        # ManagedDevice.is_satisfied() (pool type) stops the pump once the quota is reached.
+        pool_required_min: float | None = None
+        if device_type == "pool" and run_quota_h is not None:
+            pool_required_min = run_quota_h * 60.0
+        cycle_min = d.get("appliance_cycle_duration_minutes")
         devices.append(SimDevice(
             name=d["name"],
             power_w=float(d["power_w"]),
@@ -243,8 +263,12 @@ def load_devices_from_json(path: str) -> list[SimDevice]:
             allowed_end=float(d.get("allowed_end", 24.0)),
             priority=int(d.get("priority", 5)),
             min_on_minutes=float(d.get("min_on_minutes", 0.0)),
-            run_quota_h=float(d["run_quota_h"]) if "run_quota_h" in d else None,
+            run_quota_h=run_quota_h,
             must_run_daily=bool(d.get("must_run_daily", False)),
+            device_type=device_type,
+            pool_required_min=pool_required_min,
+            appliance_cycle_duration_minutes=int(cycle_min) if cycle_min is not None else None,
+            appliance_ready_at_start=bool(d.get("appliance_ready_at_start", False)),
             w_priority=float(d.get("w_priority", 0.30)),
             w_fit=float(d.get("w_fit", 0.40)),
             w_urgency=float(d.get("w_urgency", 0.30)),

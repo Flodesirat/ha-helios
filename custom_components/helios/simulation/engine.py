@@ -148,20 +148,32 @@ def _build_sim_device_manager(
     dm._coordinator = None
     dm._hass = None
     dm._unsub_ready_listeners = []
+    dm._last_suppressed_names = frozenset()
     return dm
 
 
-def _managed_from_sim(sim_devices: list[SimDevice]) -> list[_ManagedDevice]:
+def _managed_from_sim(
+    sim_devices: list[SimDevice],
+    sim_date: _date | None = None,
+) -> list[_ManagedDevice]:
     """Create ManagedDevice instances from SimDevice objects."""
+    from custom_components.helios.const import APPLIANCE_STATE_PREPARING
+    _today = sim_date or _date.today()
     result: list[_ManagedDevice] = []
     for sd in sim_devices:
         md = _ManagedDevice(sd.to_managed_config(), {})
-        # Pre-seed pool required minutes so the 05:00 capture is not needed
+        # Pre-seed pool required minutes so the 05:00 capture is not needed.
+        # Also set pool_last_date = sim_date so update_pool_run_time doesn't
+        # treat the first dispatch step as a "new day" and reset the quota to None.
         if sd.pool_required_min is not None:
             md.pool_required_minutes_today = sd.pool_required_min
+            md.pool_last_date = _today
         # EV: mirror plugged state
         if sd.ev_plugged_entity is None:
             md.ev_plugged_manual = sd.ev_plugged
+        # Appliance: skip the ready-entity state machine, go straight to PREPARING
+        if sd.appliance_ready_at_start:
+            md.appliance_state = APPLIANCE_STATE_PREPARING
         result.append(md)
     return result
 
@@ -273,7 +285,7 @@ async def async_run(
 
     # Build ManagedDevice instances if not provided
     if managed_devices is None:
-        managed_devices = _managed_from_sim(devices)
+        managed_devices = _managed_from_sim(devices, sim_date=_sim_date)
 
     # Build DeviceManager (bypasses __init__ to avoid hass / Store dependency)
     dm = _build_sim_device_manager(managed_devices, cfg)
@@ -318,6 +330,15 @@ async def async_run(
     _md_mod.datetime = _sim_dt_proxy   # type: ignore[attr-defined]
     _orig_time = _time_stdlib.time
 
+    # Base Unix timestamp for midnight of sim_date.
+    # time.time() is patched each step to sim_date_epoch + step_seconds so that
+    # date.today() (which uses time.time() internally) returns the correct sim_date,
+    # not 1970-01-01 as it would if we used raw seconds-since-midnight.
+    import calendar as _calendar
+    _sim_date_epoch = float(_calendar.timegm((
+        _sim_date.year, _sim_date.month, _sim_date.day, 0, 0, 0, 0, 0, 0
+    )))
+
     try:
         for i in range(STEPS_PER_DAY):
             hour = i * step_h
@@ -329,15 +350,22 @@ async def async_run(
             base_w = _base_load(hour) * _bl_mult
             t_color = tempo_color(hour, cfg.tempo)
 
-            # Battery discharge headroom
+            # Battery discharge headroom — mirrors coordinator._compute_bat_available_w:
+            # available whenever SOC > soc_min, regardless of current PV production.
+            # This lets the battery supplement device loads (washing machine, etc.) even
+            # when there is positive PV surplus, which is the correct real-world behaviour.
             bat_can_discharge = (
                 cfg.bat_enabled and bat_soc > cfg.bat_soc_min and hour >= cfg.bat_discharge_start
             )
             bat_available_w = 0.0
             if bat_can_discharge:
-                surplus_base = pv_w - base_w
-                if surplus_base < 0:
-                    bat_available_w = min(abs(surplus_base), cfg.bat_max_discharge_w)
+                usable_fraction = (bat_soc - cfg.bat_soc_min) / 100.0
+                energy_based_w  = usable_fraction * cfg.bat_capacity_kwh * 500  # kWh×500 → W over 2h
+                bat_available_w = (
+                    min(energy_based_w, cfg.bat_max_discharge_w)
+                    if cfg.bat_max_discharge_w > 0
+                    else energy_based_w
+                )
 
             # Virtual surplus (PV − base load, without Helios devices)
             # Mirrors coordinator._build_score_input: already adds back helios_on_w
@@ -383,7 +411,7 @@ async def async_run(
 
             # Patch time.time so _min_on_elapsed() and pool run-time work correctly.
             # Simulated epoch: minutes since midnight × 60.
-            step_epoch = float(i * STEP_MINUTES * 60)
+            step_epoch = _sim_date_epoch + float(i * STEP_MINUTES * 60)
             _time_stdlib.time = lambda _e=step_epoch: _e
             _sim_dt_proxy.set_now(sim_now)
 

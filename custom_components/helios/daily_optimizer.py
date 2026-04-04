@@ -226,9 +226,12 @@ def ha_devices_to_sim(
 
         # ---- Build ManagedDevice (real dispatch logic) ----
         managed_dev = ManagedDevice(d, gcfg)
-        # Seed pool state from simulation initial values
+        # Seed pool state from simulation initial values.
+        # Also set pool_last_date = today so update_pool_run_time doesn't treat
+        # the first simulation step as a "new day" and reset pool_required_minutes_today.
         if dev_type == DEVICE_TYPE_POOL and sim_dev.pool_required_min is not None:
             managed_dev.pool_required_minutes_today = sim_dev.pool_required_min
+            managed_dev.pool_last_date = date.today()
 
         sim_devices.append(sim_dev)
         managed_devices.append(managed_dev)
