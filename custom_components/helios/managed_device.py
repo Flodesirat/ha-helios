@@ -188,6 +188,10 @@ class ManagedDevice:
         self.last_effective_score: float      = 0.0
         self.last_decision_reason: str        = ""
 
+        # Generic — daily on-time tracking (all device types)
+        self.daily_on_minutes: float             = 0.0
+        self._daily_last_date: date | None       = None
+
         # Pool — daily run tracking (persisted externally)
         self.pool_daily_run_minutes: float       = 0.0
         self.pool_last_date: date | None         = None
@@ -493,6 +497,17 @@ class ManagedDevice:
             + self.w_fit     * fit
             + self.w_urgency * urgency
         ) / total_w
+
+    # ------------------------------------------------------------------
+    # Generic daily on-time
+    # ------------------------------------------------------------------
+    def update_daily_on_time(self, scan_interval_minutes: float, today: date) -> None:
+        """Increment daily_on_minutes when device is on; reset at midnight."""
+        if self._daily_last_date != today:
+            self.daily_on_minutes = 0.0
+            self._daily_last_date = today
+        if self.is_on:
+            self.daily_on_minutes += scan_interval_minutes
 
     # ------------------------------------------------------------------
     # Pool helpers

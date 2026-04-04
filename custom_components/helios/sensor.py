@@ -323,6 +323,9 @@ class DeviceStateSensor(_BaseEOSensor):
             "power_w":              float(d.actual_power_w(reader)) if d.is_on else 0.0,
             "last_effective_score": d.last_effective_score,
             "last_decision_reason": d.last_decision_reason,
+            "allowed_start":        d.allowed_start,
+            "allowed_end":          d.allowed_end,
+            "daily_on_minutes":     round(d.daily_on_minutes, 1),
         }
         if d.device_type == DEVICE_TYPE_WATER_HEATER:
             attrs["wh_temp_target"] = d.wh_temp_target

@@ -264,6 +264,10 @@ class DeviceManager:
         now    = datetime.now().time()
         now_ts = time_mod.time()
 
+        # ---- Update generic daily on-time counter (all devices) ----
+        for device in self.devices:
+            device.update_daily_on_time(self._scan_interval, today)
+
         # ---- Update pool run counters (always, including during force mode) ----
         pool_changed = False
         for device in self.devices:

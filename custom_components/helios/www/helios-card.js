@@ -311,6 +311,11 @@ class HeliosCard extends HTMLElement {
           flex: 1;
           min-width: 0;
         }
+        .dev-name-row {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+        }
         .dev-name {
           font-size: 12px;
           font-weight: 600;
@@ -318,10 +323,25 @@ class HeliosCard extends HTMLElement {
           overflow: hidden;
           text-overflow: ellipsis;
         }
+        .dev-priority {
+          font-size: 9px;
+          font-weight: 700;
+          color: var(--secondary-text-color);
+          background: var(--divider-color, #e0e0e0);
+          border-radius: 3px;
+          padding: 1px 3px;
+          flex-shrink: 0;
+        }
         .dev-detail {
           font-size: 11px;
           color: var(--secondary-text-color);
           margin-top: 1px;
+        }
+        .dev-reason {
+          font-size: 10px;
+          font-weight: 600;
+          color: var(--secondary-text-color);
+          margin-top: 2px;
         }
         .dev-status {
           display: flex;
@@ -339,20 +359,6 @@ class HeliosCard extends HTMLElement {
           font-weight: 600;
           color: #4CAF50;
           margin-left: 4px;
-        }
-        .dev-score-col {
-          text-align: right;
-          flex-shrink: 0;
-          min-width: 38px;
-        }
-        .dev-score-val {
-          font-size: 12px;
-          font-weight: 700;
-        }
-        .dev-reason {
-          font-size: 9px;
-          color: var(--secondary-text-color);
-          margin-top: 1px;
         }
 
         /* ---- Score decomposition ---- */
@@ -392,6 +398,15 @@ class HeliosCard extends HTMLElement {
           font-size: 8px;
           color: var(--secondary-text-color);
           position: relative;
+        }
+        .score-sep {
+          display: flex;
+          align-items: center;
+          font-size: 12px;
+          font-weight: 700;
+          color: var(--secondary-text-color);
+          flex-shrink: 0;
+          padding-bottom: 4px;
         }
 
         /* ---- Budget row ---- */
@@ -441,18 +456,21 @@ class HeliosCard extends HTMLElement {
               <span class="score-factor-val" id="h-sf-surplus-val">—</span>
               <span class="score-factor-w"  id="h-sf-surplus-w"></span>
             </div>
+            <span class="score-sep">+</span>
             <div class="score-factor" id="h-sf-tempo">
               <div class="score-factor-fill" id="h-sf-tempo-fill"></div>
               <span class="score-factor-lbl">🎨 Tempo</span>
               <span class="score-factor-val" id="h-sf-tempo-val">—</span>
               <span class="score-factor-w"  id="h-sf-tempo-w"></span>
             </div>
+            <span class="score-sep">+</span>
             <div class="score-factor" id="h-sf-soc">
               <div class="score-factor-fill" id="h-sf-soc-fill"></div>
               <span class="score-factor-lbl">🔋 SOC</span>
               <span class="score-factor-val" id="h-sf-soc-val">—</span>
               <span class="score-factor-w"  id="h-sf-soc-w"></span>
             </div>
+            <span class="score-sep">+</span>
             <div class="score-factor" id="h-sf-forecast">
               <div class="score-factor-fill" id="h-sf-forecast-fill"></div>
               <span class="score-factor-lbl">📈 Prévision</span>
@@ -796,11 +814,11 @@ class HeliosCard extends HTMLElement {
   }
 
   _renderDevice(dev) {
-    const icon   = dev.icon || this._defaultIcon(dev.type);
-    const isOn   = this._deviceIsOn(dev);
-    const score  = this._attr(dev.entity, "last_effective_score") ?? null;
-    const reason = this._attr(dev.entity, "last_decision_reason") ?? "";
-    const detail = this._deviceDetail(dev);
+    const icon     = dev.icon || this._defaultIcon(dev.type);
+    const isOn     = this._deviceIsOn(dev);
+    const reason   = this._attr(dev.entity, "last_decision_reason") ?? "";
+    const priority = this._attr(dev.entity, "device_priority") ?? dev.priority ?? null;
+    const detail   = this._deviceDetail(dev);
 
     // Status dot + label
     const { dotColor, statusText } = this._deviceStatus(dev, isOn);
@@ -812,29 +830,25 @@ class HeliosCard extends HTMLElement {
       if (pw !== null && pw > 5) powerHtml = `<span class="dev-power">${this._fmt(pw)}</span>`;
     }
 
-    // Score color
-    const scoreColor = score === null ? "#9E9E9E"
-                     : score > 0.6   ? "#4CAF50"
-                     : score > 0.3   ? "#FF9800"
-                     : "#F44336";
-    const scoreHtml = score !== null
-      ? `<div class="dev-score-val" style="color:${scoreColor}">${score.toFixed(2)}</div>
-         ${reason ? `<div class="dev-reason">${this._reasonLabel(reason)}</div>` : ""}`
-      : "";
+    const priorityHtml = priority !== null ? `<span class="dev-priority">P${priority}</span>` : "";
+    const reasonHtml   = reason ? `<div class="dev-reason">${this._reasonLabel(reason)}</div>` : "";
 
     return `
       <div class="dev-row">
         <div class="dev-icon">${icon}</div>
         <div class="dev-info">
-          <div class="dev-name">${dev.name || ""}</div>
+          <div class="dev-name-row">
+            <span class="dev-name">${dev.name || ""}</span>
+            ${priorityHtml}
+          </div>
           ${detail ? `<div class="dev-detail">${detail}</div>` : ""}
+          ${reasonHtml}
         </div>
         <div class="dev-status">
           <div class="dot" style="background:${dotColor}"></div>
           <span class="dev-status-text">${statusText}</span>
           ${powerHtml}
         </div>
-        <div class="dev-score-col">${scoreHtml}</div>
       </div>
     `;
   }
@@ -864,31 +878,54 @@ class HeliosCard extends HTMLElement {
   }
 
   _deviceDetail(dev) {
+    const parts = [];
+
+    // Type-specific primary info
     switch (dev.type) {
       case "pool": {
         const doneMin = this._attr(dev.entity, "filtration_done_min");
         const reqMin  = this._attr(dev.entity, "filtration_required_min");
-        if (doneMin === null || reqMin === null) return "";
-        let s = `${(doneMin / 60).toFixed(1)}h / ${(reqMin / 60).toFixed(1)}h`;
-        const forceRem = this._attr(dev.entity, "force_remaining_min") ?? 0;
-        if (forceRem > 1) s += ` 🔒 ${Math.round(forceRem)} min`;
-        return s;
+        if (doneMin !== null && reqMin !== null) {
+          let s = `${(doneMin / 60).toFixed(1)}h / ${(reqMin / 60).toFixed(1)}h`;
+          const forceRem = this._attr(dev.entity, "force_remaining_min") ?? 0;
+          if (forceRem > 1) s += ` 🔒 ${Math.round(forceRem)} min`;
+          parts.push(s);
+        }
+        break;
       }
       case "water_heater": {
         const temp = this._attr(dev.entity, "temperature");
-        if (temp === null) return "";
-        const target = this._attr(dev.entity, "wh_temp_target");
-        return target !== null ? `${temp.toFixed(1)}°C / ${target}°C` : `${temp.toFixed(1)}°C`;
+        if (temp !== null) {
+          const target = this._attr(dev.entity, "wh_temp_target");
+          parts.push(target !== null ? `${temp.toFixed(1)}°C / ${target}°C` : `${temp.toFixed(1)}°C`);
+        }
+        break;
       }
       case "ev":
       case "ev_charger": {
         if (this._attr(dev.entity, "plugged") === false) return "";
         const soc = this._attr(dev.entity, "soc");
-        return soc !== null ? `SOC : ${Math.round(soc)}%` : "";
+        if (soc !== null) parts.push(`SOC : ${Math.round(soc)}%`);
+        break;
       }
-      default:
-        return "";
     }
+
+    // Daily on-time (for non-pool types, pool already shows done/required)
+    if (dev.type !== "pool") {
+      const dailyMin = this._attr(dev.entity, "daily_on_minutes");
+      if (dailyMin !== null && dailyMin > 0) {
+        parts.push(`${(dailyMin / 60).toFixed(1)}h auj.`);
+      }
+    }
+
+    // Allowed window (only if not the default full-day 00:00–24:00)
+    const start = this._attr(dev.entity, "allowed_start");
+    const end   = this._attr(dev.entity, "allowed_end");
+    if (start && end && !(start === "00:00" && (end === "24:00" || end === "23:59"))) {
+      parts.push(`${start}–${end}`);
+    }
+
+    return parts.join(" · ");
   }
 
   _defaultIcon(type) {
