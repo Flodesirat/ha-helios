@@ -118,6 +118,11 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
             "tempo_color": c.tempo_color,
             "battery_soc": c.battery_soc,
             "mode":        c.mode,
+            # Dispatch budget (used by the Lovelace card)
+            "surplus_w":         round(c.surplus_w),
+            "virtual_surplus_w": round(c.virtual_surplus_w),
+            "bat_available_w":   round(c.bat_available_w),
+            "remaining_w":       round(c.device_manager.remaining_w),
             # Installation parameters (used by the Lovelace card)
             "peak_pv_w":          int(c.config.get(CONF_PEAK_PV_W,          DEFAULT_PEAK_PV_W)),
             "grid_subscription_w": int(c.config.get(CONF_GRID_SUBSCRIPTION_W, DEFAULT_GRID_SUBSCRIPTION_W)),

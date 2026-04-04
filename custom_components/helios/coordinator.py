@@ -96,8 +96,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.pv_power_w:      float       = 0.0
         self.grid_power_w:    float       = 0.0
         self.house_power_w:   float       = 0.0
-        self.surplus_w:       float       = 0.0
-        self.bat_available_w: float       = 0.0
+        self.surplus_w:         float       = 0.0
+        self.virtual_surplus_w: float       = 0.0
+        self.bat_available_w:   float       = 0.0
         self.battery_soc:     float | None = None
         self.battery_power_w: float | None = None  # negative=charge, positive=discharge
         self.tempo_color:      str | None  = None
@@ -202,6 +203,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                 return self._snapshot()
 
             score_input = self._build_score_input()
+            self.virtual_surplus_w = score_input.get("surplus_w", 0.0)
             self.global_score = self.scoring_engine.compute(score_input)
 
             if self._cfg.get(CONF_BATTERY_ENABLED):

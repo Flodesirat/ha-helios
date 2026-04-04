@@ -47,6 +47,8 @@ class DeviceManager:
         self._dispatch_threshold: float = float(config.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD))
         # Decision log — rolling buffer, max 100 entries
         self.decision_log: deque[dict] = deque(maxlen=100)
+        # Remaining dispatch budget after last greedy allocation
+        self.remaining_w: float = 0.0
         # Unsubscribe callbacks for appliance ready-entity listeners
         self._unsub_ready_listeners: list = []
 
@@ -331,6 +333,7 @@ class DeviceManager:
                     satisfied = device.is_satisfied(reader)
                     reason = "satisfied" if satisfied else "score_too_low"
                     await self._async_set_switch(hass, device, False, reason=reason, context=_base_ctx)
+            self.remaining_w = 0.0
             return
 
         # ---- Priority preemption for PREPARING appliances ----
@@ -506,6 +509,8 @@ class DeviceManager:
                             "remaining_w": round(remaining),
                         },
                     )
+
+        self.remaining_w = remaining
 
     # ------------------------------------------------------------------
     # Appliance state machine

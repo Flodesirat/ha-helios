@@ -354,6 +354,72 @@ class HeliosCard extends HTMLElement {
           color: var(--secondary-text-color);
           margin-top: 1px;
         }
+
+        /* ---- Score decomposition ---- */
+        .score-decomp {
+          display: flex;
+          gap: 4px;
+          margin-top: 6px;
+        }
+        .score-factor {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          border-radius: 6px;
+          padding: 3px 4px;
+          background: var(--secondary-background-color, #f0f0f0);
+          position: relative;
+          overflow: hidden;
+        }
+        .score-factor-fill {
+          position: absolute;
+          bottom: 0; left: 0; right: 0;
+          transition: height 0.6s ease, background 0.6s ease;
+        }
+        .score-factor-lbl {
+          font-size: 9px;
+          color: var(--secondary-text-color);
+          white-space: nowrap;
+          position: relative;
+        }
+        .score-factor-val {
+          font-size: 11px;
+          font-weight: 700;
+          position: relative;
+        }
+        .score-factor-w {
+          font-size: 8px;
+          color: var(--secondary-text-color);
+          position: relative;
+        }
+
+        /* ---- Budget row ---- */
+        .budget-row {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          margin-top: 6px;
+        }
+        .budget-chip {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          flex: 1;
+          min-width: 60px;
+          background: var(--secondary-background-color, #f0f0f0);
+          border-radius: 6px;
+          padding: 3px 6px;
+        }
+        .budget-chip-lbl {
+          font-size: 9px;
+          color: var(--secondary-text-color);
+          white-space: nowrap;
+        }
+        .budget-chip-val {
+          font-size: 11px;
+          font-weight: 700;
+        }
       </style>
 
       <div class="card">
@@ -367,6 +433,50 @@ class HeliosCard extends HTMLElement {
             <div class="lbl">Score</div>
             <div class="bar-bg"><div class="bar-fill" id="h-score-bar"></div></div>
             <div class="score-num" id="h-score-num">—</div>
+          </div>
+          <div class="score-decomp" id="h-score-decomp">
+            <div class="score-factor" id="h-sf-surplus">
+              <div class="score-factor-fill" id="h-sf-surplus-fill"></div>
+              <span class="score-factor-lbl">☀️ Surplus</span>
+              <span class="score-factor-val" id="h-sf-surplus-val">—</span>
+              <span class="score-factor-w"  id="h-sf-surplus-w"></span>
+            </div>
+            <div class="score-factor" id="h-sf-tempo">
+              <div class="score-factor-fill" id="h-sf-tempo-fill"></div>
+              <span class="score-factor-lbl">🎨 Tempo</span>
+              <span class="score-factor-val" id="h-sf-tempo-val">—</span>
+              <span class="score-factor-w"  id="h-sf-tempo-w"></span>
+            </div>
+            <div class="score-factor" id="h-sf-soc">
+              <div class="score-factor-fill" id="h-sf-soc-fill"></div>
+              <span class="score-factor-lbl">🔋 SOC</span>
+              <span class="score-factor-val" id="h-sf-soc-val">—</span>
+              <span class="score-factor-w"  id="h-sf-soc-w"></span>
+            </div>
+            <div class="score-factor" id="h-sf-forecast">
+              <div class="score-factor-fill" id="h-sf-forecast-fill"></div>
+              <span class="score-factor-lbl">📈 Prévision</span>
+              <span class="score-factor-val" id="h-sf-forecast-val">—</span>
+              <span class="score-factor-w"  id="h-sf-forecast-w"></span>
+            </div>
+          </div>
+          <div class="budget-row" id="h-budget-row">
+            <div class="budget-chip">
+              <span class="budget-chip-lbl">Surplus</span>
+              <span class="budget-chip-val" id="h-bud-surplus">—</span>
+            </div>
+            <div class="budget-chip">
+              <span class="budget-chip-lbl">Surplus virt.</span>
+              <span class="budget-chip-val" id="h-bud-vsurplus">—</span>
+            </div>
+            <div class="budget-chip">
+              <span class="budget-chip-lbl">Bat. dispo.</span>
+              <span class="budget-chip-val" id="h-bud-bat">—</span>
+            </div>
+            <div class="budget-chip">
+              <span class="budget-chip-lbl">Remaining</span>
+              <span class="budget-chip-val" id="h-bud-rem">—</span>
+            </div>
           </div>
         </div>
 
@@ -594,6 +704,38 @@ class HeliosCard extends HTMLElement {
       this._flowOff("h-line-bat", "h-lbl-bat", lb.x1, lb.y1, lb.x2, lb.y2);
     }
 
+    // Score decomposition chips
+    const factors = [
+      { key: "surplus",  fAttr: "f_surplus",  wAttr: "w_surplus"  },
+      { key: "tempo",    fAttr: "f_tempo",    wAttr: "w_tempo"    },
+      { key: "soc",      fAttr: "f_soc",      wAttr: "w_soc"      },
+      { key: "forecast", fAttr: "f_forecast", wAttr: "w_forecast" },
+    ];
+    for (const { key, fAttr, wAttr } of factors) {
+      const f = this._attr(e.score, fAttr);
+      const w = this._attr(e.score, wAttr);
+      const fColor = f === null ? "#9E9E9E" : f > 0.6 ? "#4CAF50" : f > 0.3 ? "#FF9800" : "#F44336";
+      this._txt(`h-sf-${key}-val`, f !== null ? f.toFixed(2) : "—");
+      this._txt(`h-sf-${key}-w`,   w !== null ? `×${w.toFixed(2)}` : "");
+      const fill = this.shadowRoot.getElementById(`h-sf-${key}-fill`);
+      if (fill) {
+        fill.style.height     = f !== null ? `${Math.round(f * 100)}%` : "0%";
+        fill.style.background = fColor + "33"; // 20% opacity
+      }
+      const valEl = this.shadowRoot.getElementById(`h-sf-${key}-val`);
+      if (valEl) valEl.style.color = fColor;
+    }
+
+    // Budget chips
+    const surplusW   = this._attr(e.score, "surplus_w");
+    const vSurplusW  = this._attr(e.score, "virtual_surplus_w");
+    const batAvailW  = this._attr(e.score, "bat_available_w");
+    const remainingW = this._attr(e.score, "remaining_w");
+    this._txt("h-bud-surplus",  surplusW  !== null ? this._fmt(surplusW)  : "—");
+    this._txt("h-bud-vsurplus", vSurplusW !== null ? this._fmt(vSurplusW) : "—");
+    this._txt("h-bud-bat",      batAvailW !== null ? this._fmt(batAvailW) : "—");
+    this._txt("h-bud-rem",      remainingW !== null ? this._fmt(remainingW) : "—");
+
     // Score bar
     const scoreColor = score > 0.6 ? "#4CAF50" : score > 0.3 ? "#FF9800" : "#F44336";
     const bar = this.shadowRoot.getElementById("h-score-bar");
@@ -633,6 +775,10 @@ class HeliosCard extends HTMLElement {
     const compact  = !!this._config.compact;
     const cardEl   = this.shadowRoot.querySelector(".card");
     if (cardEl) compact ? cardEl.setAttribute("data-compact", "") : cardEl.removeAttribute("data-compact");
+    const scoreDecomp = this.shadowRoot.getElementById("h-score-decomp");
+    if (scoreDecomp) scoreDecomp.style.display = compact ? "none" : "";
+    const budgetRow = this.shadowRoot.getElementById("h-budget-row");
+    if (budgetRow) budgetRow.style.display = compact ? "none" : "";
     const devices = this.shadowRoot.getElementById("h-devices");
     if (devices && compact) devices.style.display = "none";
 
