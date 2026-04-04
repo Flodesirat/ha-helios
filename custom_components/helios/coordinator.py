@@ -22,6 +22,7 @@ from .const import (
     CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY, CONF_FORECAST_ENTITY,
     CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_POWER_ENTITY,
     CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
+    CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX,
     CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     CONF_DEVICES, CONF_MODE, CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD,
@@ -220,6 +221,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                     "house_power_w":      self.house_power_w,
                     "soc_reserve_rouge":  float(self._cfg.get(
                         CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE
+                    )),
+                    "soc_max":            float(self._cfg.get(
+                        CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX
                     )),
                 }
                 await self.device_manager.async_dispatch(self.hass, dispatch_input)

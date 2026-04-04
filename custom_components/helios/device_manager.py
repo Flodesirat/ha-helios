@@ -223,6 +223,7 @@ class DeviceManager:
         house_power_w:      float       = score_input.get("house_power_w",      0.0)
         tempo_color:        str | None  = score_input.get("tempo_color")
         soc_reserve_rouge:  float       = float(score_input.get("soc_reserve_rouge", DEFAULT_BATTERY_SOC_RESERVE_ROUGE))
+        soc_max:            float       = float(score_input.get("soc_max", 95.0))
 
         # Red-day strict mode: when SOC is below the battery reserve, do not
         # activate NEW devices unless they fit within the PV surplus alone.
@@ -242,11 +243,11 @@ class DeviceManager:
 
         # Mode "Pleine" (SOC ≥ 96 %) : autoriser un léger tirage réseau pour
         # décharger la batterie avant qu'elle atteigne 100 % et perde en efficacité.
-        grid_allowance_w: float = configured_allowance_w if (battery_soc is not None and battery_soc >= 96.0) else 0.0
+        grid_allowance_w: float = configured_allowance_w if (battery_soc is not None and battery_soc >= soc_max) else 0.0
         if grid_allowance_w:
             _LOGGER.info(
-                "Dispatch: SOC=%.0f%% (Pleine) — tolérance réseau +%.0fW activée",
-                battery_soc, grid_allowance_w,
+                "Dispatch: SOC=%.0f%% (Pleine, soc_max=%.0f%%) — tolérance réseau +%.0fW activée",
+                battery_soc, soc_max, grid_allowance_w,
             )
         today  = date.today()
         now    = datetime.now().time()
