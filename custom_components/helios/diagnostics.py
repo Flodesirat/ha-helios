@@ -128,7 +128,7 @@ async def async_get_config_entry_diagnostics(
 
     # Score breakdown
     score_input = coordinator._build_score_input()
-    f_surplus  = round(eng._score_surplus(score_input.get("surplus_w", 0.0)), 3)
+    f_surplus  = round(eng._score_surplus(score_input.get("surplus_w", 0.0), score_input.get("battery_soc")), 3)
     f_tempo    = round(eng._score_tempo(score_input.get("tempo_color")), 3)
     f_soc      = round(eng._score_soc(score_input.get("battery_soc")), 3)
     f_forecast = round(eng._score_forecast(score_input), 3)

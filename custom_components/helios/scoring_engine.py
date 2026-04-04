@@ -7,6 +7,7 @@ from .const import (
     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
     CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
     CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
+    CONF_BATTERY_ENABLED, CONF_BATTERY_MAX_CHARGE_POWER_W,
     CONF_PEAK_PV_W,
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
     DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_FORECAST,
@@ -28,13 +29,15 @@ class ScoringEngine:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.w_surplus  = config.get(CONF_WEIGHT_PV_SURPLUS,  DEFAULT_WEIGHT_PV_SURPLUS)
-        self.w_tempo    = config.get(CONF_WEIGHT_TEMPO,        DEFAULT_WEIGHT_TEMPO)
-        self.w_soc      = config.get(CONF_WEIGHT_BATTERY_SOC,  DEFAULT_WEIGHT_BATTERY_SOC)
-        self.w_forecast = config.get(CONF_WEIGHT_FORECAST,     DEFAULT_WEIGHT_FORECAST)
-        self.soc_min    = float(config.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
-        self.soc_max    = float(config.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX))
-        self.peak_pv_kw = float(config.get(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W)) / 1000.0
+        self.w_surplus       = config.get(CONF_WEIGHT_PV_SURPLUS,  DEFAULT_WEIGHT_PV_SURPLUS)
+        self.w_tempo         = config.get(CONF_WEIGHT_TEMPO,        DEFAULT_WEIGHT_TEMPO)
+        self.w_soc           = config.get(CONF_WEIGHT_BATTERY_SOC,  DEFAULT_WEIGHT_BATTERY_SOC)
+        self.w_forecast      = config.get(CONF_WEIGHT_FORECAST,     DEFAULT_WEIGHT_FORECAST)
+        self.soc_min         = float(config.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
+        self.soc_max         = float(config.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX))
+        self.peak_pv_kw      = float(config.get(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W)) / 1000.0
+        self.battery_enabled = bool(config.get(CONF_BATTERY_ENABLED, False))
+        self.charge_max_w    = float(config.get(CONF_BATTERY_MAX_CHARGE_POWER_W, 0.0))
 
     # ------------------------------------------------------------------
     # Public API
@@ -57,7 +60,7 @@ class ScoringEngine:
 
     def compute(self, data: dict[str, Any]) -> float:
         """Return global score in [0..1]."""
-        s_surplus  = self._score_surplus(data.get("surplus_w", 0.0))
+        s_surplus  = self._score_surplus(data.get("surplus_w", 0.0), data.get("battery_soc"))
         s_tempo    = self._score_tempo(data.get("tempo_color"))
         s_soc      = self._score_soc(data.get("battery_soc"))
         s_forecast = self._score_forecast(data)
@@ -73,15 +76,37 @@ class ScoringEngine:
     # ------------------------------------------------------------------
     # Per-dimension scoring functions (fuzzy membership)
     # ------------------------------------------------------------------
-    def _score_surplus(self, surplus_w: float) -> float:
+    def _score_surplus(self, surplus_w: float, battery_soc: float | None) -> float:
         """Map PV surplus to [0..1].
-        Trapezoid: ≤0 W → 0.0, ramp 0–500 W, plateau ≥500 W → 1.0.
+
+        Cas A — pas de batterie OU SoC > soc_max :
+            Rampe linéaire unique : 0 W → 0.0, 500 W → 1.0.
+
+        Cas B — batterie active ET SoC ≤ soc_max :
+            Double pente avec charge_max_w comme seuil de rupture.
+            - [0, charge_max_w]          → rampe douce  0.0 → 0.3
+            - [charge_max_w, +500 W]     → rampe rapide 0.3 → 1.0
+            La batterie peut absorber jusqu'à charge_max_w sans urgence ;
+            au-delà, l'énergie risque de partir sur le réseau.
         """
         if surplus_w <= 0:
             return 0.0
-        if surplus_w >= 500:
-            return 1.0
-        return surplus_w / 500.0
+
+        battery_full = (
+            not self.battery_enabled
+            or battery_soc is None
+            or battery_soc >= self.soc_max
+        )
+
+        if battery_full or self.charge_max_w <= 0:
+            # Cas A : rampe unique
+            return min(1.0, surplus_w / 500.0)
+
+        # Cas B : double pente
+        if surplus_w <= self.charge_max_w:
+            return 0.3 * (surplus_w / self.charge_max_w)
+        excess = surplus_w - self.charge_max_w
+        return min(1.0, 0.3 + 0.7 * (excess / 500.0))
 
     def _score_tempo(self, color: str | None) -> float:
         """Map Tempo color to [0..1].
