@@ -49,6 +49,8 @@ class DeviceManager:
         self.decision_log: deque[dict] = deque(maxlen=100)
         # Remaining dispatch budget after last greedy allocation
         self.remaining_w: float = 0.0
+        # Track last suppressed must_run set to avoid log spam
+        self._last_suppressed_names: frozenset[str] = frozenset()
         # Unsubscribe callbacks for appliance ready-entity listeners
         self._unsub_ready_listeners: list = []
 
@@ -320,12 +322,19 @@ class DeviceManager:
         if battery_soc is not None and battery_soc <= 20.0 and must_run:
             suppressed = {d for d in must_run if d.device_type != DEVICE_TYPE_WATER_HEATER}
             if suppressed:
-                _LOGGER.warning(
-                    "Dispatch: SOC=%.0f%% (Réserve) — must_run supprimé pour: %s",
-                    battery_soc,
-                    ", ".join(d.name for d in suppressed),
-                )
+                suppressed_names = frozenset(d.name for d in suppressed)
+                if suppressed_names != self._last_suppressed_names:
+                    _LOGGER.warning(
+                        "Dispatch: SOC=%.0f%% (Réserve) — must_run supprimé pour: %s",
+                        battery_soc,
+                        ", ".join(d.name for d in suppressed),
+                    )
+                    self._last_suppressed_names = suppressed_names
+            else:
+                self._last_suppressed_names = frozenset()
             must_run -= suppressed
+        else:
+            self._last_suppressed_names = frozenset()
 
         # ---- Gate: skip normal dispatch if global score too low ----
         if global_score < dispatch_threshold and not must_run:
@@ -333,9 +342,7 @@ class DeviceManager:
                 if device.device_type == DEVICE_TYPE_APPLIANCE:
                     # State machine always runs so IDLE→READY→RUNNING transitions
                     # are not blocked by a low global score.
-                    await self._async_handle_appliance(
-                        hass, device, global_score, surplus_w, bat_available_w
-                    )
+                    await self._async_handle_appliance(hass, device)
                     continue
                 if not _helios_manages(device):
                     continue  # manual / force / inhibit — hands off

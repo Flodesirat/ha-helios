@@ -1,13 +1,8 @@
-"""Tests for the simulation engine and dispatch with real ManagedDevice logic.
+"""Tests for the simulation engine.
 
 Coverage goals:
 - SimDevice physical state tracking (WH temperature, EV SOC)
 - SimDevice.make_state_reader() → correct entity values
-- dispatch() fallback mode (no managed_devices) — backward compatibility
-- dispatch() with real ManagedDevice logic:
-    - is_satisfied stops a WH when temperature reaches target
-    - must_run_now forces a WH on below legionella min, even if score < threshold
-    - pool urgency_modifier reflects quota deficit / time remaining
 - run() backward compat: plain list[SimDevice] still works
 - run() with managed_devices: WH physical state updated, device stops at target
 - ha_devices_to_sim: returns parallel (sim, managed) lists with correct types
@@ -22,7 +17,7 @@ import pytest
 
 from custom_components.helios.simulation.devices import SimDevice
 from custom_components.helios.simulation.engine import (
-    SimConfig, run as simulate, dispatch, STEP_MINUTES,
+    SimConfig, run as simulate, STEP_MINUTES,
 )
 from custom_components.helios.managed_device import ManagedDevice
 from custom_components.helios.daily_optimizer import ha_devices_to_sim
@@ -216,138 +211,6 @@ class TestSimDevicePhysicalState:
     def test_sim_device_satisfied_generic_no_physical_state(self):
         sd = SimDevice(name="Generic", power_w=1000)
         assert sd.satisfied() is False  # no quota, no temp, no soc → never satisfied
-
-
-# ---------------------------------------------------------------------------
-# dispatch() — backward compatibility (no managed_devices)
-# ---------------------------------------------------------------------------
-
-class TestDispatchFallback:
-    """dispatch() without managed_devices must behave exactly as before."""
-
-    def test_device_turns_on_when_score_above_threshold(self):
-        sd = SimDevice(name="Heater", power_w=1000, allowed_start=0.0, allowed_end=24.0)
-        dispatch([sd], hour=12.0, surplus_w=2000.0, bat_available_w=0.0,
-                 global_score=0.8, threshold=0.3)
-        assert sd.active is True
-
-    def test_device_does_not_turn_on_when_score_below_threshold(self):
-        sd = SimDevice(name="Heater", power_w=1000, allowed_start=0.0, allowed_end=24.0)
-        dispatch([sd], hour=12.0, surplus_w=2000.0, bat_available_w=0.0,
-                 global_score=0.2, threshold=0.3)
-        assert sd.active is False
-
-    def test_device_turns_off_outside_window(self):
-        sd = SimDevice(name="Heater", power_w=1000, allowed_start=8.0, allowed_end=18.0)
-        sd.turn_on()
-        dispatch([sd], hour=20.0, surplus_w=2000.0, bat_available_w=0.0,
-                 global_score=0.9, threshold=0.3)
-        assert sd.active is False
-
-    def test_device_turns_off_when_quota_reached(self):
-        sd = SimDevice(name="Pool", power_w=800, run_quota_h=3.0)
-        sd.turn_on()
-        sd.run_today_h = 3.0   # quota reached
-        dispatch([sd], hour=12.0, surplus_w=2000.0, bat_available_w=0.0,
-                 global_score=0.9, threshold=0.3)
-        assert sd.active is False
-
-    def test_no_budget_prevents_turn_on(self):
-        sd = SimDevice(name="Heater", power_w=5000, allowed_start=0.0, allowed_end=24.0)
-        dispatch([sd], hour=12.0, surplus_w=500.0, bat_available_w=0.0,
-                 global_score=0.9, threshold=0.3)
-        assert sd.active is False
-
-
-# ---------------------------------------------------------------------------
-# dispatch() — with real ManagedDevice logic
-# ---------------------------------------------------------------------------
-
-class TestDispatchWithManagedDevice:
-
-    def _run_dispatch(self, sd, md, hour=12.0, surplus_w=3000.0,
-                      global_score=0.8, threshold=0.3, sim_now=None):
-        if sim_now is None:
-            sim_now = datetime(2025, 6, 15, int(hour), 0)
-        dispatch([sd], hour=hour, surplus_w=surplus_w, bat_available_w=0.0,
-                 global_score=global_score, threshold=threshold,
-                 managed_devices=[md], sim_now=sim_now)
-
-    def test_wh_turns_on_when_not_satisfied(self):
-        sd = _wh_sim_device(wh_temp=50.0)
-        md = ManagedDevice(_wh_config())
-        self._run_dispatch(sd, md)
-        assert sd.active is True
-
-    def test_wh_stops_when_temp_at_target(self):
-        sd = _wh_sim_device(wh_temp=61.0)  # above target
-        md = ManagedDevice(_wh_config())
-        sd.turn_on()
-        self._run_dispatch(sd, md)
-        assert sd.active is False
-
-    def test_wh_must_run_below_legionella_min_ignores_score(self):
-        """When WH temp < wh_temp_min, must_run_now=True forces it on even if score < threshold."""
-        sd = _wh_sim_device(wh_temp=40.0)  # below legionella min (45°C)
-        md = ManagedDevice(_wh_config())
-        self._run_dispatch(sd, md, global_score=0.1, threshold=0.5)  # score too low normally
-        assert sd.active is True
-
-    def test_wh_does_not_force_when_above_min(self):
-        """Normal case: temp above legionella min, score below threshold → stays off."""
-        sd = _wh_sim_device(wh_temp=50.0)  # above min, below target
-        md = ManagedDevice(_wh_config())
-        self._run_dispatch(sd, md, global_score=0.1, threshold=0.5)
-        assert sd.active is False
-
-    def test_reader_reflects_current_sim_temp(self):
-        """The StateReader built by SimDevice should expose the current wh_temp."""
-        sd = _wh_sim_device(wh_temp=55.0)
-        reader = sd.make_state_reader()
-        temp_str = reader(WH_TEMP_ENTITY)
-        assert temp_str is not None
-        assert float(temp_str) == pytest.approx(55.0)
-
-    def test_multiple_devices_greedy_by_effective_score(self):
-        """When two devices compete, the higher-priority WH wins the budget.
-
-        Uses water_heater type so that is_satisfied() checks temperature
-        (not appliance state) and returns False when below target — ensuring
-        both devices are eligible candidates.
-        """
-        sd_hi = SimDevice(name="WHHigh", power_w=1000,
-                          device_type=DEVICE_TYPE_WATER_HEATER,
-                          wh_temp=50.0, wh_temp_entity="sensor.hi_temp",
-                          wh_temp_target=60.0, wh_temp_min=45.0,
-                          priority=9, allowed_start=0.0, allowed_end=24.0)
-        sd_lo = SimDevice(name="WHLow",  power_w=1000,
-                          device_type=DEVICE_TYPE_WATER_HEATER,
-                          wh_temp=50.0, wh_temp_entity="sensor.lo_temp",
-                          wh_temp_target=60.0, wh_temp_min=45.0,
-                          priority=2, allowed_start=0.0, allowed_end=24.0)
-        md_hi = ManagedDevice({
-            CONF_DEVICE_NAME: "WHHigh", CONF_DEVICE_TYPE: DEVICE_TYPE_WATER_HEATER,
-            CONF_DEVICE_SWITCH_ENTITY: "switch.hi", CONF_DEVICE_POWER_W: 1000,
-            CONF_DEVICE_PRIORITY: 9,
-            CONF_WH_TEMP_ENTITY: "sensor.hi_temp",
-            CONF_WH_TEMP_TARGET: 60.0, CONF_WH_TEMP_MIN: 45.0,
-        })
-        md_lo = ManagedDevice({
-            CONF_DEVICE_NAME: "WHLow", CONF_DEVICE_TYPE: DEVICE_TYPE_WATER_HEATER,
-            CONF_DEVICE_SWITCH_ENTITY: "switch.lo", CONF_DEVICE_POWER_W: 1000,
-            CONF_DEVICE_PRIORITY: 2,
-            CONF_WH_TEMP_ENTITY: "sensor.lo_temp",
-            CONF_WH_TEMP_TARGET: 60.0, CONF_WH_TEMP_MIN: 45.0,
-        })
-        # Budget for exactly one device
-        dispatch(
-            [sd_hi, sd_lo], hour=12.0, surplus_w=1100.0, bat_available_w=0.0,
-            global_score=0.9, threshold=0.3,
-            managed_devices=[md_hi, md_lo],
-            sim_now=datetime(2025, 6, 15, 12, 0),
-        )
-        assert sd_hi.active is True
-        assert sd_lo.active is False
 
 
 # ---------------------------------------------------------------------------
