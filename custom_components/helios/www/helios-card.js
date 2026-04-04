@@ -794,7 +794,7 @@ class HeliosCard extends HTMLElement {
     this._txt("h-score-num", this._hass ? score.toFixed(2) : "—");
 
     // Threshold marker
-    const threshold = this._attr(e.score, "threshold_score");
+    const threshold = this._attr(e.score, "dispatch_threshold");
     const threshEl  = this.shadowRoot.getElementById("h-score-threshold");
     if (threshEl) {
       if (threshold !== null && threshold >= 0 && threshold <= 1) {
