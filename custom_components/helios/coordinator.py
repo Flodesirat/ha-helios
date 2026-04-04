@@ -428,7 +428,11 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             for d in self.device_manager.devices
             if d.is_on
         )
-        virtual_surplus_w = max(0.0, self.surplus_w + helios_on_w)
+        # Compute virtual surplus WITHOUT flooring pv−house first: if the battery is
+        # discharging to power Helios devices, max(0, surplus_w) + helios_on_w would
+        # artificially inflate the virtual surplus and prevent turn-off.
+        # Correct formula: max(0, PV − base_house) where base_house = house − helios_on_w.
+        virtual_surplus_w = max(0.0, self.pv_power_w - self.house_power_w + helios_on_w)
         return {
             "pv_power_w":       self.pv_power_w,
             "surplus_w":        virtual_surplus_w,
