@@ -129,7 +129,7 @@ const hassDay = makeHass({
   "sensor.helios_pv_power":                   state(2800),
   "sensor.helios_grid_power":                 state(-300),   // export
   "sensor.helios_house_power":                state(1200),
-  "sensor.helios_global_score":               state(0.74, { tempo_color: "blue", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 1300, virtual_surplus_w: 2750, bat_available_w: 1200, remaining_w: 620, f_surplus: 0.88, f_tempo: 0.70, f_soc: 0.58, f_forecast: 0.42, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_forecast: 0.1, dispatch_threshold: 0.5 }),
+  "sensor.helios_global_score":               state(0.74, { tempo_color: "blue", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 1300, virtual_surplus_w: 2750, bat_available_w: 1200, remaining_w: 620, f_surplus: 0.88, f_tempo: 0.70, f_soc: 0.58, f_solar: 0.42, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_solar: 0.1, dispatch_threshold: 0.5 }),
   "sensor.helios_battery":                    state("charge", { battery_enabled: true, soc: 58, soc_level: "Optimale", power_w: -650, available_w: 1200 }),
   "switch.helios_auto_mode":                  state("on"),
 
@@ -177,7 +177,7 @@ const hassNight = makeHass({
   "sensor.helios_pv_power":                   state(0),
   "sensor.helios_grid_power":                 state(450),    // import
   "sensor.helios_house_power":                state(900),
-  "sensor.helios_global_score":               state(0.22, { tempo_color: "red", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 0, virtual_surplus_w: 0, bat_available_w: 0, remaining_w: 0, f_surplus: 0.0, f_tempo: 0.10, f_soc: 0.52, f_forecast: 0.15, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_forecast: 0.1, dispatch_threshold: 0.4 }),
+  "sensor.helios_global_score":               state(0.22, { tempo_color: "red", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 0, virtual_surplus_w: 0, bat_available_w: 0, remaining_w: 0, f_surplus: 0.0, f_tempo: 0.10, f_soc: 0.52, f_solar: 0.15, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_solar: 0.1, dispatch_threshold: 0.4 }),
   // no battery configured → sensor absent, battery node hidden
   "switch.helios_auto_mode":                  state("on"),
 
@@ -228,7 +228,7 @@ const hassCompact = makeHass({
   "sensor.helios_pv_power":                   state(1500),
   "sensor.helios_grid_power":                 state(800),    // import
   "sensor.helios_house_power":                state(2200),
-  "sensor.helios_global_score":               state(0.15, { tempo_color: "red", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 0, virtual_surplus_w: 0, bat_available_w: 0, remaining_w: 0, f_surplus: 0.0, f_tempo: 0.10, f_soc: 0.18, f_forecast: 0.10, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_forecast: 0.1, dispatch_threshold: 0.5}),
+  "sensor.helios_global_score":               state(0.15, { tempo_color: "red", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 0, virtual_surplus_w: 0, bat_available_w: 0, remaining_w: 0, f_surplus: 0.0, f_tempo: 0.10, f_soc: 0.18, f_solar: 0.8,  w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_solar: 0.1, dispatch_threshold: 0.5}),
   "sensor.helios_battery":                    state("reserve", { battery_enabled: true, soc: 18, soc_level: "Réserve", power_w: 0, available_w: 0 }),
   "switch.helios_auto_mode":                  state("on"),
 

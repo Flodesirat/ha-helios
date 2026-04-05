@@ -154,7 +154,7 @@ def print_optimize(results: list[OptResult], top: int, alpha: float, n_runs: int
     print(f"    weight_pv_surplus  = {best.w_surplus}")
     print(f"    weight_tempo       = {best.w_tempo}")
     print(f"    weight_battery_soc = {best.w_soc}")
-    print(f"    weight_forecast    = {best.w_forecast}")
+    print(f"    weight_solar    = {best.w_solar}")
     print(f"  dispatch_threshold   = {best.threshold}")
     print()
 
@@ -182,13 +182,14 @@ def print_optimize(results: list[OptResult], top: int, alpha: float, n_runs: int
         parts.append(f"--weight-surplus {best.w_surplus}")
         parts.append(f"--weight-tempo {best.w_tempo}")
         parts.append(f"--weight-soc {best.w_soc}")
-        parts.append(f"--weight-forecast {best.w_forecast}")
+        parts.append(f"--weight-solar {best.w_solar}")
         parts.append(f"--threshold {best.threshold}")
+        parts.append(f"--decision")
 
         cmd = " \\\n    ".join(parts)
         print("  ── Rejouer cette configuration heure par heure ─────────────────────────────────")
         print()
-        print(f"  {cmd} --decision")
+        print(f"  {cmd}")
         print()
 
 
@@ -287,8 +288,8 @@ def main() -> None:
                         metavar="0-1", help="Override Tempo color weight")
     parser.add_argument("--weight-soc", type=float, default=None,
                         metavar="0-1", help="Override battery SOC weight")
-    parser.add_argument("--weight-forecast", type=float, default=None,
-                        metavar="0-1", help="Override forecast weight")
+    parser.add_argument("--weight-solar", type=float, default=None,
+                        metavar="0-1", help="Override solar potential weight")
     parser.add_argument("--compare", action="store_true",
                         help="Compare all solar profiles in a table")
     parser.add_argument("--optimize", action="store_true",
@@ -324,12 +325,12 @@ def main() -> None:
         "weight_pv_surplus":  0.4,
         "weight_tempo":       0.3,
         "weight_battery_soc": 0.2,
-        "weight_forecast":    0.1,
+        "weight_solar":    0.1,
     }
     if args.weight_surplus  is not None: scoring["weight_pv_surplus"]  = args.weight_surplus
     if args.weight_tempo    is not None: scoring["weight_tempo"]        = args.weight_tempo
     if args.weight_soc      is not None: scoring["weight_battery_soc"]  = args.weight_soc
-    if args.weight_forecast is not None: scoring["weight_forecast"]     = args.weight_forecast
+    if args.weight_solar is not None: scoring["weight_solar"]     = args.weight_solar
 
     cfg = SimConfig(
         season=args.season,

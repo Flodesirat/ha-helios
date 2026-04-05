@@ -512,11 +512,11 @@ class HeliosCard extends HTMLElement {
               <span class="score-factor-w"  id="h-sf-soc-w"></span>
             </div>
             <span class="score-sep">+</span>
-            <div class="score-factor" id="h-sf-forecast">
-              <div class="score-factor-fill" id="h-sf-forecast-fill"></div>
-              <span class="score-factor-lbl">📈 Prévision</span>
-              <span class="score-factor-val" id="h-sf-forecast-val">—</span>
-              <span class="score-factor-w"  id="h-sf-forecast-w"></span>
+            <div class="score-factor" id="h-sf-solar">
+              <div class="score-factor-fill" id="h-sf-solar-fill"></div>
+              <span class="score-factor-lbl">🌞 Solaire</span>
+              <span class="score-factor-val" id="h-sf-solar-val">—</span>
+              <span class="score-factor-w"  id="h-sf-solar-w"></span>
             </div>
           </div>
           <div class="budget-row" id="h-budget-row">
@@ -775,7 +775,7 @@ class HeliosCard extends HTMLElement {
       { key: "surplus",  fAttr: "f_surplus",  wAttr: "w_surplus"  },
       { key: "tempo",    fAttr: "f_tempo",    wAttr: "w_tempo"    },
       { key: "soc",      fAttr: "f_soc",      wAttr: "w_soc"      },
-      { key: "forecast", fAttr: "f_forecast", wAttr: "w_forecast" },
+      { key: "solar",    fAttr: "f_solar",    wAttr: "w_solar"    },
     ];
     for (const { key, fAttr, wAttr } of factors) {
       const f = this._attr(e.score, fAttr);

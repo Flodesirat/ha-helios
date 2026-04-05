@@ -126,7 +126,7 @@ APPLIANCE_STATE_DONE      = "done"
 CONF_WEIGHT_PV_SURPLUS   = "weight_pv_surplus"
 CONF_WEIGHT_TEMPO        = "weight_tempo"
 CONF_WEIGHT_BATTERY_SOC  = "weight_battery_soc"
-CONF_WEIGHT_FORECAST     = "weight_forecast"
+CONF_WEIGHT_SOLAR        = "weight_solar"
 
 # ---------------------------------------------------------------------------
 # Config entry keys — general / strategy
@@ -226,7 +226,7 @@ DEFAULT_BATTERY_CAPACITY_KWH       = 5.0
 DEFAULT_WEIGHT_PV_SURPLUS          = 0.4
 DEFAULT_WEIGHT_TEMPO               = 0.3
 DEFAULT_WEIGHT_BATTERY_SOC         = 0.2
-DEFAULT_WEIGHT_FORECAST            = 0.1
+DEFAULT_WEIGHT_SOLAR               = 0.1
 
 DEFAULT_DEVICE_PRIORITY            = 5
 DEFAULT_DEVICE_MIN_ON_MINUTES      = 30

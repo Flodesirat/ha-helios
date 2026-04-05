@@ -105,12 +105,12 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
             "f_surplus":  round(eng._score_surplus(score_input.get("surplus_w", 0.0), score_input.get("battery_soc")), 3),
             "f_tempo":    round(eng._score_tempo(score_input.get("tempo_color")), 3),
             "f_soc":      round(eng._score_soc(score_input.get("battery_soc")), 3),
-            "f_forecast": round(eng._score_forecast(score_input), 3),
+            "f_solar": round(eng._score_solar(score_input), 3),
             # Scoring weights (can be tuned by daily optimizer)
             "w_surplus":  round(eng.w_surplus,  3),
             "w_tempo":    round(eng.w_tempo,    3),
             "w_soc":      round(eng.w_soc,      3),
-            "w_forecast": round(eng.w_forecast, 3),
+            "w_solar": round(eng.w_solar, 3),
             # Dispatch context
             "dispatch_threshold": round(c.dispatch_threshold, 3),
             "last_optimized":     c.optimizer_last_run,

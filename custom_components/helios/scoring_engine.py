@@ -5,12 +5,12 @@ from typing import Any
 
 from .const import (
     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
-    CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
+    CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_SOLAR,
     CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
     CONF_BATTERY_ENABLED, CONF_BATTERY_MAX_CHARGE_POWER_W,
     CONF_PEAK_PV_W,
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
-    DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_FORECAST,
+    DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_SOLAR,
     DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
     DEFAULT_PEAK_PV_W,
     TEMPO_BLUE, TEMPO_WHITE, TEMPO_RED,
@@ -21,7 +21,7 @@ from .const import (
 class ScoringEngine:
     """Weighted scoring with fuzzy-style normalization per dimension.
 
-    Score = w1·f_surplus(surplus_w) + w2·f_tempo(color) + w3·f_soc(soc) + w4·f_forecast(…)
+    Score = w1·f_surplus(surplus_w) + w2·f_tempo(color) + w3·f_soc(soc) + w4·f_solar(…)
 
     Each f_* returns a value in [0..1]:
       - 1.0 = strongly favors turning devices ON / using energy now
@@ -32,7 +32,7 @@ class ScoringEngine:
         self.w_surplus       = config.get(CONF_WEIGHT_PV_SURPLUS,  DEFAULT_WEIGHT_PV_SURPLUS)
         self.w_tempo         = config.get(CONF_WEIGHT_TEMPO,        DEFAULT_WEIGHT_TEMPO)
         self.w_soc           = config.get(CONF_WEIGHT_BATTERY_SOC,  DEFAULT_WEIGHT_BATTERY_SOC)
-        self.w_forecast      = config.get(CONF_WEIGHT_FORECAST,     DEFAULT_WEIGHT_FORECAST)
+        self.w_solar         = config.get(CONF_WEIGHT_SOLAR,        DEFAULT_WEIGHT_SOLAR)
         self.soc_min         = float(config.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
         self.soc_max         = float(config.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX))
         self.peak_pv_kw      = float(config.get(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W)) / 1000.0
@@ -47,7 +47,7 @@ class ScoringEngine:
         self.w_surplus  = scoring.get("weight_pv_surplus",  self.w_surplus)
         self.w_tempo    = scoring.get("weight_tempo",        self.w_tempo)
         self.w_soc      = scoring.get("weight_battery_soc",  self.w_soc)
-        self.w_forecast = scoring.get("weight_forecast",     self.w_forecast)
+        self.w_solar    = scoring.get("weight_solar",        self.w_solar)
 
     def get_weights(self) -> dict[str, float]:
         """Return current scoring weights (for persistence)."""
@@ -55,21 +55,21 @@ class ScoringEngine:
             "weight_pv_surplus":  self.w_surplus,
             "weight_tempo":       self.w_tempo,
             "weight_battery_soc": self.w_soc,
-            "weight_forecast":    self.w_forecast,
+            "weight_solar":       self.w_solar,
         }
 
     def compute(self, data: dict[str, Any]) -> float:
         """Return global score in [0..1]."""
-        s_surplus  = self._score_surplus(data.get("surplus_w", 0.0), data.get("battery_soc"))
-        s_tempo    = self._score_tempo(data.get("tempo_color"))
-        s_soc      = self._score_soc(data.get("battery_soc"))
-        s_forecast = self._score_forecast(data)
+        s_surplus = self._score_surplus(data.get("surplus_w", 0.0), data.get("battery_soc"))
+        s_tempo   = self._score_tempo(data.get("tempo_color"))
+        s_soc     = self._score_soc(data.get("battery_soc"))
+        s_solar   = self._score_solar(data)
 
         score = (
-            self.w_surplus  * s_surplus
-            + self.w_tempo    * s_tempo
-            + self.w_soc      * s_soc
-            + self.w_forecast * s_forecast
+            self.w_surplus * s_surplus
+            + self.w_tempo   * s_tempo
+            + self.w_soc     * s_soc
+            + self.w_solar   * s_solar
         )
         return round(min(max(score, 0.0), 1.0), 3)
 
@@ -138,43 +138,24 @@ class ScoringEngine:
             return 0.6 + 0.4 * (soc - pivot) / (self.soc_max - pivot)
         return 1.0
 
-    def _score_forecast(self, data: dict[str, Any]) -> float:
-        """Score based on production density: remaining forecast vs. expected potential.
+    def _score_solar(self, data: dict[str, Any]) -> float:
+        """Solar potential based on sun elevation.
 
-        density = forecast_kwh / (peak_pv_kw × hours_remaining_of_sun)
+        f = max(0, sin(elevation_rad))
 
-        This single dimensionless ratio encodes both the installation size and
-        the time of day — no hardcoded kWh thresholds needed.
+        At solar noon (maximum elevation) → ~1.0
+        At sunrise/sunset (elevation = 0°) → 0.0
+        At night (elevation < 0°) → 0.0
 
-          density ≥ 1.0  → 0.10  full clear-sky day ahead → defer strongly
-          0.5 ≤ d < 1.0  → 0.10→0.50  decent production coming → defer
-          0.1 ≤ d < 0.5  → 0.50→0.85  sun fading or cloudy → act progressively
-          d < 0.1        → 0.90  last scraps / near sunset → urgency
-
-          forecast None or 0 → 0.5  neutral (night: surplus scoring takes over)
-          hour ≥ 19         → 0.5  production negligible — sensor residuals meaningless
-
-        Sunset is approximated at 20 h; remaining window is clamped to ≥ 0.5 h
-        to avoid division by zero near nightfall.
+        In real HA: elevation comes from sun.sun entity attribute.
+        In simulation: synthetic elevation derived from seasonal profile.
+        Falls back to a fixed Gaussian (σ=3h, peak 13h) when elevation
+        is not available.
         """
-        forecast_kwh = data.get("forecast_kwh")
-        if forecast_kwh is None or forecast_kwh <= 0.0:
-            return 0.5
-        if self.peak_pv_kw <= 0.0:
-            return 0.5  # PV peak not configured — can't compute density
-
-        hour = float(data.get("hour", 12))
-        if hour >= 19.0:
-            return 0.5  # After 19h — production negligible, sensor residuals meaningless
-        hours_remaining = max(0.5, 20.0 - hour)
-        density = forecast_kwh / (self.peak_pv_kw * hours_remaining)
-
-        if density >= 1.0:
-            return 0.10
-        if density >= 0.5:
-            # 0.10 → 0.50 as density falls from 1.0 to 0.5
-            return 0.10 + 0.40 * (1.0 - density) / 0.5
-        if density >= 0.1:
-            # 0.50 → 0.85 as density falls from 0.5 to 0.1
-            return 0.50 + 0.35 * (0.5 - density) / 0.4
-        return 0.90
+        import math
+        elevation = data.get("solar_elevation")
+        if elevation is not None:
+            return round(max(0.0, math.sin(math.radians(float(elevation)))), 3)
+        # Fallback: fixed Gaussian centred at 13h, σ=3h
+        hour = float(data.get("hour", 13))
+        return round(math.exp(-((hour - 13.0) ** 2) / 18.0), 3)

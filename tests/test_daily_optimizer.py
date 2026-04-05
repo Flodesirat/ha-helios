@@ -11,7 +11,7 @@ from custom_components.helios.simulation.optimizer import OptResult
 from custom_components.helios.const import (
     CONF_PEAK_PV_W, CONF_BATTERY_ENABLED, CONF_DEVICES, CONF_OPTIMIZER_ALPHA,
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
-    DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_FORECAST,
+    DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_SOLAR,
     DEFAULT_DISPATCH_THRESHOLD,
 )
 
@@ -22,7 +22,7 @@ from custom_components.helios.const import (
 
 def _fake_result(**overrides) -> OptResult:
     defaults = dict(
-        w_surplus=0.5, w_tempo=0.2, w_soc=0.2, w_forecast=0.1,
+        w_surplus=0.5, w_tempo=0.2, w_soc=0.2, w_solar=0.1,
         threshold=0.25,
         autoconsumption=0.88, savings_rate=0.75, cost_eur=1.2, objective=0.82,
     )
@@ -156,13 +156,13 @@ class TestWeightApplicationEndToEnd:
             "weight_pv_surplus":  DEFAULT_WEIGHT_PV_SURPLUS,
             "weight_tempo":       DEFAULT_WEIGHT_TEMPO,
             "weight_battery_soc": DEFAULT_WEIGHT_BATTERY_SOC,
-            "weight_forecast":    DEFAULT_WEIGHT_FORECAST,
+            "weight_solar":    DEFAULT_WEIGHT_SOLAR,
         })
 
         coordinator = _make_coordinator(scoring_engine=real_engine)
         hass = _make_hass()
         hass.async_add_executor_job = AsyncMock(return_value=(
-            [_fake_result(w_surplus=0.7, w_tempo=0.1, w_soc=0.1, w_forecast=0.1, threshold=0.15)],
+            [_fake_result(w_surplus=0.7, w_tempo=0.1, w_soc=0.1, w_solar=0.1, threshold=0.15)],
             [],
         ))
 
@@ -171,7 +171,7 @@ class TestWeightApplicationEndToEnd:
         assert real_engine.w_surplus  == pytest.approx(0.7)
         assert real_engine.w_tempo    == pytest.approx(0.1)
         assert real_engine.w_soc      == pytest.approx(0.1)
-        assert real_engine.w_forecast == pytest.approx(0.1)
+        assert real_engine.w_solar == pytest.approx(0.1)
 
     @pytest.mark.asyncio
     async def test_dispatch_threshold_applied_to_coordinator(self):
@@ -205,7 +205,7 @@ class TestWeightApplicationEndToEnd:
             "weight_pv_surplus":  DEFAULT_WEIGHT_PV_SURPLUS,  # 0.4
             "weight_tempo":       DEFAULT_WEIGHT_TEMPO,        # 0.3
             "weight_battery_soc": DEFAULT_WEIGHT_BATTERY_SOC, # 0.2
-            "weight_forecast":    DEFAULT_WEIGHT_FORECAST,     # 0.1
+            "weight_solar":    DEFAULT_WEIGHT_SOLAR,     # 0.1
         })
         data = {"surplus_w": 100, "tempo_color": "red", "battery_soc": 50}
 
@@ -214,7 +214,7 @@ class TestWeightApplicationEndToEnd:
         coordinator = _make_coordinator(scoring_engine=real_engine)
         hass = _make_hass()
         hass.async_add_executor_job = AsyncMock(return_value=(
-            [_fake_result(w_surplus=0.1, w_tempo=0.1, w_soc=0.7, w_forecast=0.1)],
+            [_fake_result(w_surplus=0.1, w_tempo=0.1, w_soc=0.7, w_solar=0.1)],
             [],
         ))
 
@@ -233,7 +233,7 @@ class TestWeightApplicationEndToEnd:
             "weight_pv_surplus":  DEFAULT_WEIGHT_PV_SURPLUS,
             "weight_tempo":       DEFAULT_WEIGHT_TEMPO,
             "weight_battery_soc": DEFAULT_WEIGHT_BATTERY_SOC,
-            "weight_forecast":    DEFAULT_WEIGHT_FORECAST,
+            "weight_solar":    DEFAULT_WEIGHT_SOLAR,
         })
         coordinator = _make_coordinator(scoring_engine=real_engine)
         coordinator.dispatch_threshold = DEFAULT_DISPATCH_THRESHOLD

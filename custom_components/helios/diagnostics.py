@@ -39,7 +39,7 @@ from .const import (
     CONF_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_PV_SURPLUS,
     CONF_WEIGHT_TEMPO, DEFAULT_WEIGHT_TEMPO,
     CONF_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_BATTERY_SOC,
-    CONF_WEIGHT_FORECAST, DEFAULT_WEIGHT_FORECAST,
+    CONF_WEIGHT_SOLAR, DEFAULT_WEIGHT_SOLAR,
     MODE_AUTO,
 )
 from .coordinator import EnergyOptimizerCoordinator
@@ -131,7 +131,7 @@ async def async_get_config_entry_diagnostics(
     f_surplus  = round(eng._score_surplus(score_input.get("surplus_w", 0.0), score_input.get("battery_soc")), 3)
     f_tempo    = round(eng._score_tempo(score_input.get("tempo_color")), 3)
     f_soc      = round(eng._score_soc(score_input.get("battery_soc")), 3)
-    f_forecast = round(eng._score_forecast(score_input), 3)
+    f_solar = round(eng._score_solar(score_input), 3)
 
     current_state = {
         "mode":               coordinator.mode,
@@ -153,13 +153,13 @@ async def async_get_config_entry_diagnostics(
             "f_surplus":  f_surplus,
             "f_tempo":    f_tempo,
             "f_soc":      f_soc,
-            "f_forecast": f_forecast,
+            "f_solar": f_solar,
         },
         "scoring_weights": {
             "surplus":  round(eng.w_surplus,  3),
             "tempo":    round(eng.w_tempo,    3),
             "soc":      round(eng.w_soc,      3),
-            "forecast": round(eng.w_forecast, 3),
+            "solar":    round(eng.w_solar, 3),
         },
     }
 
@@ -219,7 +219,7 @@ async def async_get_config_entry_diagnostics(
             "weight_pv_surplus":    cfg.get(CONF_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_PV_SURPLUS),
             "weight_tempo":         cfg.get(CONF_WEIGHT_TEMPO, DEFAULT_WEIGHT_TEMPO),
             "weight_battery_soc":   cfg.get(CONF_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_BATTERY_SOC),
-            "weight_forecast":      cfg.get(CONF_WEIGHT_FORECAST, DEFAULT_WEIGHT_FORECAST),
+            "weight_solar":         cfg.get(CONF_WEIGHT_SOLAR, DEFAULT_WEIGHT_SOLAR),
         },
     }
 

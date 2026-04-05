@@ -417,7 +417,7 @@ async def async_run_daily_optimization(
                 "weight_pv_surplus":  best.w_surplus,
                 "weight_tempo":       best.w_tempo,
                 "weight_battery_soc": best.w_soc,
-                "weight_forecast":    best.w_forecast,
+                "weight_solar":    best.w_solar,
             },
             dispatch_threshold=best.threshold,
         )
@@ -465,7 +465,7 @@ async def async_run_daily_optimization(
         "Helios optimizer: best config — surplus=%.0f%% tempo=%.0f%% soc=%.0f%% "
         "forecast=%.0f%% threshold=%.0f%% (objective=%.3f)",
         best.w_surplus * 100, best.w_tempo * 100, best.w_soc * 100,
-        best.w_forecast * 100, best.threshold * 100, best.objective,
+        best.w_solar * 100, best.threshold * 100, best.objective,
     )
 
     # ---- Apply results to coordinator ----
@@ -473,7 +473,7 @@ async def async_run_daily_optimization(
         "weight_pv_surplus":  best.w_surplus,
         "weight_tempo":       best.w_tempo,
         "weight_battery_soc": best.w_soc,
-        "weight_forecast":    best.w_forecast,
+        "weight_solar":    best.w_solar,
     }
     coordinator.scoring_engine.update_weights(new_scoring)
     coordinator.dispatch_threshold = best.threshold
@@ -495,7 +495,7 @@ async def async_run_daily_optimization(
         "w_surplus":      round(best.w_surplus, 3),
         "w_tempo":        round(best.w_tempo, 3),
         "w_soc":          round(best.w_soc, 3),
-        "w_forecast":     round(best.w_forecast, 3),
+        "w_solar":     round(best.w_solar, 3),
         "threshold":      round(best.threshold, 3),
         "autoconsumption": round(best.autoconsumption, 4),
         "savings_rate":   round(best.savings_rate, 4),
@@ -510,7 +510,7 @@ async def async_run_daily_optimization(
             "w_surplus":     round(r.w_surplus, 3),
             "w_tempo":       round(r.w_tempo, 3),
             "w_soc":         round(r.w_soc, 3),
-            "w_forecast":    round(r.w_forecast, 3),
+            "w_solar":    round(r.w_solar, 3),
             "threshold":     round(r.threshold, 3),
             "autoconsumption": round(r.autoconsumption, 4),
             "savings_rate":  round(r.savings_rate, 4),

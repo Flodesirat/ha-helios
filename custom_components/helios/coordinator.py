@@ -345,6 +345,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "tempo_color":      normalize_tempo_color(_str(cfg.get(CONF_TEMPO_COLOR_ENTITY))),
             "tempo_next_color": normalize_tempo_color(_str(cfg.get(CONF_TEMPO_NEXT_COLOR_ENTITY))),
             "forecast_kwh": _float(entity) if (entity := cfg.get(CONF_FORECAST_ENTITY)) else None,
+            "solar_elevation":  self.hass.states.get("sun.sun") and
+                                self.hass.states["sun.sun"].attributes.get("elevation"),
         }
 
     def _update_state(self, raw: dict[str, Any]) -> None:
@@ -355,7 +357,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.battery_power_w = raw["battery_power_w"]
         self.tempo_color      = raw["tempo_color"]
         self.tempo_next_color = raw["tempo_next_color"]
-        self.forecast_kwh  = raw["forecast_kwh"]
+        self.forecast_kwh      = raw["forecast_kwh"]
+        self.solar_elevation   = raw.get("solar_elevation")
         # Surplus = PV production − house consumption (floored at 0)
         self.surplus_w     = max(0.0, self.pv_power_w - self.house_power_w)
         # Battery discharge headroom available for device dispatch
@@ -440,8 +443,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "battery_soc":      self.battery_soc,
             "tempo_color":      self.tempo_color,
             "tempo_next_color": self.tempo_next_color,
-            "forecast_kwh":     self.forecast_kwh,
             "hour":             dt_util.now().hour,
+            "solar_elevation":  self.solar_elevation,
         }
 
     def _snapshot(self) -> dict[str, Any]:

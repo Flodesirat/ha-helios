@@ -13,7 +13,7 @@ from typing import Callable
 
 _TARIFF_JSON = Path(__file__).parent / "config" / "tariff.json"
 
-from .profiles import pv_power_w, base_load_w, tempo_color, Season, CloudCover
+from .profiles import pv_power_w, base_load_w, tempo_color, solar_elevation, Season, CloudCover
 from .devices import SimDevice, default_devices
 from .sim_hass import SimHass
 from custom_components.helios.scoring_engine import ScoringEngine as _ScoringEngine
@@ -79,12 +79,14 @@ def _score(
     soc: float | None,
     forecast_kwh: float | None,
     engine: _ScoringEngine,
+    elevation: float | None = None,
 ) -> float:
     return engine.compute({
-        "surplus_w":    surplus_w,
-        "tempo_color":  tempo,
-        "battery_soc":  soc,
-        "forecast_kwh": forecast_kwh,
+        "surplus_w":       surplus_w,
+        "tempo_color":     tempo,
+        "battery_soc":     soc,
+        "forecast_kwh":    forecast_kwh,
+        "solar_elevation": elevation,
     })
 
 
@@ -226,7 +228,7 @@ class SimConfig:
         "weight_pv_surplus": 0.4,
         "weight_tempo": 0.3,
         "weight_battery_soc": 0.2,
-        "weight_forecast": 0.1,
+        "weight_solar": 0.1,
     })
 
 
@@ -349,6 +351,7 @@ async def async_run(
             pv_w = pv_power_w(hour, cfg.season, cfg.cloud, cfg.peak_pv_w)
             base_w = _base_load(hour) * _bl_mult
             t_color = tempo_color(hour, cfg.tempo)
+            elev = solar_elevation(hour, cfg.season)
 
             # Battery discharge headroom — mirrors coordinator._compute_bat_available_w:
             # available whenever SOC > soc_min, regardless of current PV production.
@@ -377,6 +380,7 @@ async def async_run(
                 bat_soc if cfg.bat_enabled else None,
                 _forecast_table[i],
                 _engine,
+                elevation=elev,
             )
 
             # Real surplus before dispatch (PV − base − currently-ON devices)

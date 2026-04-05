@@ -26,7 +26,7 @@ class OptResult:
     w_surplus: float
     w_tempo: float
     w_soc: float
-    w_forecast: float
+    w_solar: float
     threshold: float
     autoconsumption: float   # [0, 1]
     savings_rate: float      # [0, 1]  (cost_no_pv - cost) / cost_no_pv
@@ -45,7 +45,7 @@ def optimize(
     devices_fn: "Callable[[], list[SimDevice] | tuple[list[SimDevice], list]]",
     *,
     objective_alpha: float = 0.5,
-    w_forecast: float = 0.1,
+    w_solar: float = 0.1,
     threshold_values: list[float] | None = None,
     weight_step: float = 0.1,
     n_runs: int = 1,
@@ -59,7 +59,7 @@ def optimize(
         cfg_base:          Base SimConfig (season, cloud, battery params…).
         devices_fn:        Callable returning a fresh device list for each run.
         objective_alpha:   Weight of autoconsomption in the objective (0=cost only, 1=AC only).
-        w_forecast:        Fixed forecast weight (removed from search space).
+        w_solar:        Fixed forecast weight (removed from search space).
         threshold_values:  Dispatch score thresholds to test.
         weight_step:       Grid resolution for scoring weights (0.1 = 10 % steps).
         n_runs:            Monte Carlo runs per config; variance is estimated across runs.
@@ -72,14 +72,14 @@ def optimize(
     if threshold_values is None:
         threshold_values = [0.10, 0.20, 0.30, 0.40, 0.50, 0.60]
 
-    # Build weight combinations (ws + wt + wb + w_forecast = 1.0)
+    # Build weight combinations (ws + wt + wb + w_solar = 1.0)
     n = round(1.0 / weight_step)
     vals = [round(i * weight_step, 2) for i in range(1, n)]
     combos = [
-        (ws, wt, round(1.0 - w_forecast - ws - wt, 2))
+        (ws, wt, round(1.0 - w_solar - ws - wt, 2))
         for ws in vals
         for wt in vals
-        if round(1.0 - w_forecast - ws - wt, 2) >= weight_step
+        if round(1.0 - w_solar - ws - wt, 2) >= weight_step
     ]
     total = len(combos) * len(threshold_values)
 
@@ -99,7 +99,7 @@ def optimize(
                 "weight_pv_surplus":  ws,
                 "weight_tempo":       wt,
                 "weight_battery_soc": wb,
-                "weight_forecast":    w_forecast,
+                "weight_solar":    w_solar,
             }
             cfg = replace(cfg_base, scoring=scoring, dispatch_threshold=threshold,
                           base_load_noise=base_load_noise)
@@ -131,7 +131,7 @@ def optimize(
             obj      = obj_mean - risk_lambda * obj_std
 
             results.append(OptResult(
-                w_surplus=ws, w_tempo=wt, w_soc=wb, w_forecast=w_forecast,
+                w_surplus=ws, w_tempo=wt, w_soc=wb, w_solar=w_solar,
                 threshold=threshold,
                 autoconsumption=ac,
                 savings_rate=savings,

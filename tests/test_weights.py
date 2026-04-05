@@ -14,7 +14,7 @@ from custom_components.helios.const import (
     DEFAULT_WEIGHT_PV_SURPLUS,
     DEFAULT_WEIGHT_TEMPO,
     DEFAULT_WEIGHT_BATTERY_SOC,
-    DEFAULT_WEIGHT_FORECAST,
+    DEFAULT_WEIGHT_SOLAR,
     DEFAULT_OPTIMIZER_ALPHA,
     DEFAULT_DISPATCH_THRESHOLD,
 )
@@ -32,7 +32,7 @@ class TestScoringEngineWeights:
             "weight_pv_surplus":  DEFAULT_WEIGHT_PV_SURPLUS,
             "weight_tempo":       DEFAULT_WEIGHT_TEMPO,
             "weight_battery_soc": DEFAULT_WEIGHT_BATTERY_SOC,
-            "weight_forecast":    DEFAULT_WEIGHT_FORECAST,
+            "weight_solar":    DEFAULT_WEIGHT_SOLAR,
         }
         cfg.update(overrides)
         return ScoringEngine(cfg)
@@ -42,7 +42,7 @@ class TestScoringEngineWeights:
         assert eng.w_surplus  == DEFAULT_WEIGHT_PV_SURPLUS
         assert eng.w_tempo    == DEFAULT_WEIGHT_TEMPO
         assert eng.w_soc      == DEFAULT_WEIGHT_BATTERY_SOC
-        assert eng.w_forecast == DEFAULT_WEIGHT_FORECAST
+        assert eng.w_solar == DEFAULT_WEIGHT_SOLAR
 
     def test_update_weights_replaces_all(self):
         eng = self._engine()
@@ -50,12 +50,12 @@ class TestScoringEngineWeights:
             "weight_pv_surplus":  0.5,
             "weight_tempo":       0.2,
             "weight_battery_soc": 0.2,
-            "weight_forecast":    0.1,
+            "weight_solar":    0.1,
         })
         assert eng.w_surplus  == 0.5
         assert eng.w_tempo    == 0.2
         assert eng.w_soc      == 0.2
-        assert eng.w_forecast == 0.1
+        assert eng.w_solar == 0.1
 
     def test_update_weights_partial(self):
         """Partial update must only change the supplied keys."""
@@ -64,7 +64,7 @@ class TestScoringEngineWeights:
         assert eng.w_surplus  == 0.6
         assert eng.w_tempo    == DEFAULT_WEIGHT_TEMPO      # unchanged
         assert eng.w_soc      == DEFAULT_WEIGHT_BATTERY_SOC
-        assert eng.w_forecast == DEFAULT_WEIGHT_FORECAST
+        assert eng.w_solar == DEFAULT_WEIGHT_SOLAR
 
     def test_score_range_always_01(self):
         """Computed score must always stay in [0, 1]."""
@@ -97,9 +97,9 @@ class TestScoringEngineWeights:
     def test_surplus_weight_increases_sensitivity(self):
         """Increasing w_surplus must increase the impact of surplus on the score."""
         low_w  = self._engine(weight_pv_surplus=0.1, weight_tempo=0.4,
-                              weight_battery_soc=0.4, weight_forecast=0.1)
+                              weight_battery_soc=0.4, weight_solar=0.1)
         high_w = self._engine(weight_pv_surplus=0.8, weight_tempo=0.1,
-                              weight_battery_soc=0.1, weight_forecast=0.0)
+                              weight_battery_soc=0.1, weight_solar=0.0)
         data_surplus = {"surplus_w": 2000, "tempo_color": "white", "battery_soc": 50}
         data_no_surplus = {"surplus_w": 0,    "tempo_color": "white", "battery_soc": 50}
 
@@ -126,7 +126,7 @@ class TestScoringEngineWeights:
             "weight_pv_surplus":  0.1,
             "weight_tempo":       0.1,
             "weight_battery_soc": 0.7,
-            "weight_forecast":    0.1,
+            "weight_solar":    0.1,
         })
         score_after = eng.compute(data)
         assert score_before != score_after, "Score should change after update_weights"
@@ -198,104 +198,63 @@ class TestSocScoring:
 # ---------------------------------------------------------------------------
 
 class TestForecastScoring:
-    """_score_forecast density-based curve (monotone decreasing).
+    """_score_solar — Gaussian solar potential centred at 13h, σ=3h.
 
-    density = forecast_kwh / (peak_pv_kw × hours_remaining)
-    high density → defer (low score), low density → urgency (high score).
+    f(h) = exp(-((h - 13)² / 18))
+    Peak at noon, tapers off morning/evening, near-zero at night.
+    No external forecast entity required.
     """
 
-    def _engine(self, peak_pv_w=3000.0) -> ScoringEngine:
+    def _engine(self) -> ScoringEngine:
         return ScoringEngine({
             "weight_pv_surplus":  0.0,
             "weight_tempo":       0.0,
             "weight_battery_soc": 0.0,
-            "weight_forecast":    1.0,
-            "peak_pv_w":          peak_pv_w,
+            "weight_solar":    1.0,
         })
 
-    def test_no_forecast_returns_neutral(self):
+    def test_peak_at_noon(self):
+        """Solar noon (13h) → maximum score 1.0."""
         eng = self._engine()
-        assert eng.compute({}) == pytest.approx(0.5)
-        assert eng.compute({"forecast_kwh": None}) == pytest.approx(0.5)
+        assert eng.compute({"hour": 13}) == pytest.approx(1.0, abs=1e-3)
 
-    def test_zero_forecast_returns_neutral(self):
+    def test_symmetric_around_noon(self):
+        """Score at 10h and 16h should be equal (symmetric Gaussian)."""
         eng = self._engine()
-        assert eng.compute({"forecast_kwh": 0.0}) == pytest.approx(0.5)
+        assert eng.compute({"hour": 10}) == pytest.approx(eng.compute({"hour": 16}), abs=1e-3)
 
-    def test_low_density_high_urgency(self):
-        """Near sunset with little left → density low → score near 0.9."""
-        eng = self._engine(peak_pv_w=3000)
-        # hour=18.5, hours_remaining=1.5h, forecast=0.2 kWh → density=0.2/(3×1.5)=0.044
-        score = eng.compute({"forecast_kwh": 0.2, "hour": 18.5})
-        assert score >= 0.85, f"Expected urgency score ≥ 0.85, got {score}"
+    def test_morning_lower_than_noon(self):
+        """8h should score lower than 13h."""
+        eng = self._engine()
+        assert eng.compute({"hour": 8}) < eng.compute({"hour": 13})
 
-    def test_high_density_strong_defer(self):
-        """Morning, sunny forecast → density ≥ 1 → score = 0.1."""
-        eng = self._engine(peak_pv_w=3000)
-        # hour=9, hours_remaining=11h, forecast=36 kWh → density=36/(3×11)=1.09
-        score = eng.compute({"forecast_kwh": 36.0, "hour": 9})
-        assert score == pytest.approx(0.10)
+    def test_night_near_zero(self):
+        """At 1h (night), solar potential is negligible."""
+        eng = self._engine()
+        assert eng.compute({"hour": 1}) < 0.05
 
-    def test_monotone_decreasing_with_forecast(self):
-        """More forecast remaining at same hour → score must not increase."""
-        eng = self._engine(peak_pv_w=3000)
-        forecasts = [0.5, 2.0, 5.0, 10.0, 20.0]
-        scores = [eng.compute({"forecast_kwh": f, "hour": 12}) for f in forecasts]
+    def test_no_hour_defaults_to_noon(self):
+        """Missing hour key defaults to 13h → score ≈ 1.0."""
+        eng = self._engine()
+        assert eng.compute({}) == pytest.approx(1.0, abs=1e-3)
+
+    def test_monotone_morning_to_noon(self):
+        """Score increases from 6h to 13h."""
+        eng = self._engine()
+        hours = [6, 8, 10, 12, 13]
+        scores = [eng.compute({"hour": h}) for h in hours]
         for i in range(len(scores) - 1):
-            assert scores[i] >= scores[i + 1], (
-                f"Score increased from forecast={forecasts[i]} ({scores[i]:.3f}) "
-                f"to forecast={forecasts[i+1]} ({scores[i+1]:.3f})"
+            assert scores[i] < scores[i + 1], (
+                f"Score did not increase from {hours[i]}h ({scores[i]:.3f}) "
+                f"to {hours[i+1]}h ({scores[i+1]:.3f})"
             )
-
-    def test_end_of_day_low_remaining_triggers_urgency(self):
-        """Near sunset with little left → urgency; sunny morning → defer."""
-        eng = self._engine(peak_pv_w=3000)
-        # 17h / 1 kWh → density=1/(3×3)=0.11 → urgency
-        score_end_of_day = eng.compute({"forecast_kwh": 1.0, "hour": 17})
-        # 10h / 20 kWh → density=20/(3×10)=0.67 → defer
-        score_sunny_morning = eng.compute({"forecast_kwh": 20.0, "hour": 10})
-        assert score_end_of_day > score_sunny_morning, (
-            "End-of-day with little remaining must be more urgent than a sunny morning"
-        )
-
-    def test_scales_with_installation_size(self):
-        """A large installation should defer more for the same absolute kWh."""
-        small = self._engine(peak_pv_w=2000)
-        large = self._engine(peak_pv_w=6000)
-        # 6 kWh at noon: small installation has density=6/(2×8)=0.375, large=6/(6×8)=0.125
-        score_small = small.compute({"forecast_kwh": 6.0, "hour": 12})
-        score_large = large.compute({"forecast_kwh": 6.0, "hour": 12})
-        assert score_small < score_large, (
-            "Large installation should see 6 kWh as less urgent than small installation"
-        )
 
     def test_score_range_always_01(self):
+        """Score is always in [0..1] for any hour."""
         eng = self._engine()
-        for hour in (6, 9, 12, 15, 18, 20):
-            for kwh in (0.0, 0.5, 2.0, 5.0, 15.0, 30.0):
-                s = eng.compute({"forecast_kwh": kwh, "hour": hour})
-                assert 0.0 <= s <= 1.0, f"hour={hour}, kwh={kwh} → score={s}"
-
-    def test_after_sunset_residual_returns_neutral(self):
-        """Regression: a tiny forecast residual at night must not produce urgency score.
-
-        At 22:00 the forecast entity may still carry a residual (e.g. 0.03 kWh)
-        instead of 0. With the old code this produced density=0.022 → score=0.90.
-        After the fix, hour ≥ 20 returns 0.5 regardless of the residual.
-        """
-        eng = self._engine(peak_pv_w=2700)
-        for hour in (19.0, 20.0, 21.0, 22.0, 23.0):
-            score = eng.compute({"forecast_kwh": 0.03, "hour": hour})
-            assert score == pytest.approx(0.5), (
-                f"Expected neutral 0.5 at hour={hour} with residual forecast, got {score}"
-            )
-
-    def test_just_before_cutoff_still_active(self):
-        """hour=18.9 is still before the 19h cutoff — forecast score is computed normally."""
-        eng = self._engine(peak_pv_w=2700)
-        # density = 0.5 / (2.7 × 1.1) = 0.17 → between 0.1 and 0.5 → urgency > 0.5
-        score = eng.compute({"forecast_kwh": 0.5, "hour": 18.9})
-        assert score > 0.5, f"Expected urgency score before 19h cutoff, got {score}"
+        for hour in range(0, 24):
+            s = eng.compute({"hour": hour})
+            assert 0.0 <= s <= 1.0, f"hour={hour} → score={s}"
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +334,7 @@ class TestDispatchThresholdApplication:
         from custom_components.helios.simulation.optimizer import OptResult
 
         fake_result = OptResult(
-            w_surplus=0.5, w_tempo=0.1, w_soc=0.3, w_forecast=0.1,
+            w_surplus=0.5, w_tempo=0.1, w_soc=0.3, w_solar=0.1,
             threshold=0.20,
             autoconsumption=0.9, savings_rate=0.8, cost_eur=1.0, objective=0.85,
         )
@@ -403,6 +362,6 @@ class TestDispatchThresholdApplication:
             "weight_pv_surplus":  0.5,
             "weight_tempo":       0.1,
             "weight_battery_soc": 0.3,
-            "weight_forecast":    0.1,
+            "weight_solar":    0.1,
         })
         assert coordinator.dispatch_threshold == 0.20

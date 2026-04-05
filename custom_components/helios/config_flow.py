@@ -50,7 +50,7 @@ from .const import (
     CONF_APPLIANCE_POWER_THRESHOLD_W, CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
     # Scoring weights
     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
-    CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
+    CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_SOLAR,
     # Strategy
     CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
     CONF_GRID_ALLOWANCE_W, CONF_OPTIMIZER_ALPHA,
@@ -64,7 +64,7 @@ from .const import (
     DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
     DEFAULT_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_CAPACITY_KWH,
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
-    DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_FORECAST,
+    DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_SOLAR,
     DEFAULT_SCAN_INTERVAL, DEFAULT_DISPATCH_THRESHOLD, DEFAULT_GRID_ALLOWANCE_W, DEFAULT_OPTIMIZER_ALPHA,
     DEFAULT_BASE_LOAD_NOISE, DEFAULT_OPTIMIZER_N_RUNS, DEFAULT_RISK_LAMBDA, DEFAULT_EMA_ALPHA, DEFAULT_EMA_ENABLED,
     DEFAULT_SAMPLE_INTERVAL_SECONDS,
@@ -387,7 +387,7 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 user_input[CONF_WEIGHT_PV_SURPLUS]
                 + user_input[CONF_WEIGHT_TEMPO]
                 + user_input[CONF_WEIGHT_BATTERY_SOC]
-                + user_input[CONF_WEIGHT_FORECAST]
+                + user_input[CONF_WEIGHT_SOLAR]
             )
             if abs(total - 1.0) > 0.01:
                 errors["base"] = "weights_must_sum_to_one"
@@ -554,7 +554,7 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 user_input[CONF_WEIGHT_PV_SURPLUS]
                 + user_input[CONF_WEIGHT_TEMPO]
                 + user_input[CONF_WEIGHT_BATTERY_SOC]
-                + user_input[CONF_WEIGHT_FORECAST]
+                + user_input[CONF_WEIGHT_SOLAR]
             )
             if abs(total - 1.0) > 0.01:
                 errors["base"] = "weights_must_sum_to_one"
@@ -572,7 +572,7 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 k: self._current(k)
                 for k in (
                     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
-                    CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_FORECAST,
+                    CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_SOLAR,
                     CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
                     CONF_GRID_ALLOWANCE_W, CONF_OPTIMIZER_ALPHA,
                     CONF_BASE_LOAD_NOISE, CONF_OPTIMIZER_N_RUNS, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
@@ -951,8 +951,8 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
             default=d.get(CONF_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_BATTERY_SOC),
         ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
         vol.Optional(
-            CONF_WEIGHT_FORECAST,
-            default=d.get(CONF_WEIGHT_FORECAST, DEFAULT_WEIGHT_FORECAST),
+            CONF_WEIGHT_SOLAR,
+            default=d.get(CONF_WEIGHT_SOLAR, DEFAULT_WEIGHT_SOLAR),
         ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
         vol.Optional(
             CONF_SCAN_INTERVAL_MINUTES,

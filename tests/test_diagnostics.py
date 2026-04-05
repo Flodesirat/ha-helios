@@ -35,13 +35,13 @@ from custom_components.helios.scoring_engine import ScoringEngine
 # ---------------------------------------------------------------------------
 
 def _make_scoring_engine(
-    w_surplus=0.4, w_tempo=0.3, w_soc=0.2, w_forecast=0.1
+    w_surplus=0.4, w_tempo=0.3, w_soc=0.2, w_solar=0.1
 ):
     eng = ScoringEngine({})
     eng.w_surplus  = w_surplus
     eng.w_tempo    = w_tempo
     eng.w_soc      = w_soc
-    eng.w_forecast = w_forecast
+    eng.w_solar = w_solar
     return eng
 
 
@@ -147,7 +147,7 @@ def _make_coordinator(
         "weight_pv_surplus":     0.4,
         "weight_tempo":          0.3,
         "weight_battery_soc":    0.2,
-        "weight_forecast":       0.1,
+        "weight_solar":       0.1,
     }
 
     # Optimizer diagnostics fields
@@ -227,7 +227,7 @@ class TestDiagnosticsStructure:
         result = await async_get_config_entry_diagnostics(hass, entry)
         weights = result["current_state"]["scoring_weights"]
 
-        assert set(weights.keys()) == {"surplus", "tempo", "soc", "forecast"}
+        assert set(weights.keys()) == {"surplus", "tempo", "soc", "solar"}
 
     @pytest.mark.asyncio
     async def test_score_breakdown_present(self):
@@ -239,7 +239,7 @@ class TestDiagnosticsStructure:
 
         assert "score_breakdown" in cs
         bd = cs["score_breakdown"]
-        assert set(bd.keys()) == {"f_surplus", "f_tempo", "f_soc", "f_forecast"}
+        assert set(bd.keys()) == {"f_surplus", "f_tempo", "f_soc", "f_solar"}
         for v in bd.values():
             assert 0.0 <= v <= 1.0, f"score component out of [0, 1]: {v}"
 
@@ -270,7 +270,7 @@ class TestCurrentStateValues:
     async def test_scoring_weights_values(self):
         coordinator = _make_coordinator()
         coordinator.scoring_engine = _make_scoring_engine(
-            w_surplus=0.5, w_tempo=0.2, w_soc=0.2, w_forecast=0.1
+            w_surplus=0.5, w_tempo=0.2, w_soc=0.2, w_solar=0.1
         )
         hass, entry = _make_hass(coordinator)
 
@@ -281,7 +281,7 @@ class TestCurrentStateValues:
         assert weights["surplus"]  == 0.5
         assert weights["tempo"]    == 0.2
         assert weights["soc"]      == 0.2
-        assert weights["forecast"] == 0.1
+        assert weights["solar"]    == 0.1
 
     @pytest.mark.asyncio
     async def test_battery_soc_none(self):
@@ -354,7 +354,7 @@ class TestConfigurationSection:
         assert strat["weight_pv_surplus"]     == 0.4
         assert strat["weight_tempo"]          == 0.3
         assert strat["weight_battery_soc"]    == 0.2
-        assert strat["weight_forecast"]       == 0.1
+        assert strat["weight_solar"]       == 0.1
 
 
 # ---------------------------------------------------------------------------

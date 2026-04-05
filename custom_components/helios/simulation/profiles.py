@@ -31,6 +31,30 @@ _CLOUD_MODIFIERS: dict[str, tuple[float, float, float] | None] = {
 }
 
 
+def solar_elevation(hour: float, season: Season = "summer") -> float:
+    """Return a synthetic solar elevation (degrees) consistent with the PV profile.
+
+    Uses the same seasonal Gaussian parameters as pv_power_w so that the
+    scoring engine's f_solar is coherent with the simulated PV production.
+    Elevation is 0° at sunrise/sunset and peaks at the Gaussian peak hour.
+    The peak elevation is calibrated for France (~47°N):
+      winter ≈ 22°, spring/autumn ≈ 40°, summer ≈ 63°.
+    """
+    _PEAK_ELEVATION: dict[str, float] = {
+        "winter": 22.0,
+        "spring": 40.0,
+        "summer": 63.0,
+        "autumn": 38.0,
+    }
+    p = _SEASON_PARAMS[season]
+    if hour <= p["sunrise"] or hour >= p["sunset"]:
+        return 0.0
+    peak_el = _PEAK_ELEVATION.get(season, 40.0)
+    # Gaussian shape matching the PV profile
+    elev = peak_el * math.exp(-0.5 * ((hour - p["peak_hour"]) / p["sigma"]) ** 2)
+    return max(0.0, elev)
+
+
 def pv_power_w(
     hour: float,
     season: Season = "summer",

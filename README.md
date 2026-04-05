@@ -138,7 +138,7 @@ Un appareil allumé est coupé à chaque cycle si **l'une** des conditions suiva
 | Poids surplus PV | 0.40 | Importance du surplus PV dans le score |
 | Poids Tempo | 0.30 | Importance de la couleur Tempo dans le score |
 | Poids SOC batterie | 0.20 | Importance du SOC dans le score |
-| Poids prévision | 0.10 | Importance de la prévision dans le score |
+| Poids solaire | 0.10 | Importance du potentiel solaire instantané dans le score |
 | Intervalle de scan | 5 min | Fréquence de la boucle de pilotage |
 | Seuil de dispatch | 0.30 | Score global minimum pour activer les appareils |
 | Mode | `auto` | `auto` \| `manual` \| `off` |
@@ -157,7 +157,7 @@ Il sert principalement de **seuil de dispatch** : si le score est inférieur au 
 #### Formule
 
 ```
-score = w_surplus × f_surplus + w_tempo × f_tempo + w_soc × f_soc + w_forecast × f_forecast
+score = w_surplus × f_surplus + w_tempo × f_tempo + w_soc × f_soc + w_solar × f_solar
 ```
 
 Chaque `f_*` ∈ [0..1]. Les poids sont configurés dans l'étape Stratégie et optimisés quotidiennement.
@@ -194,17 +194,27 @@ Avec `soc_min=20%`, `soc_max=95%`, pivot = `57.5%` :
 | pivot → soc_max (57.5%→95%) | 0.6 → 1.0 — rampe plate |
 | ≥ soc_max (95%) | 1.0 — batterie pleine, consomme librement |
 
-#### Composante prévision (`f_forecast`)
+#### Composante prévision (`f_solar`)
 
-Calcule une **densité** = `kWh_restants_aujourd'hui / (puissance_crête_kW × heures_de_soleil_restantes)`. Plus la densité est élevée, plus il reste de production à venir — mieux vaut différer.
+Mesure le **potentiel solaire instantané** à partir de l'élévation du soleil, fournie par l'entité `sun.sun` intégrée dans Home Assistant (pas de configuration requise).
 
-| Densité | Score | Interprétation |
-|---------|-------|----------------|
-| ≥ 1.0 | 0.10 | Belle journée, production abondante — différer |
-| 0.5 – 1.0 | 0.10 → 0.50 | Production correcte — modérer |
-| 0.1 – 0.5 | 0.50 → 0.85 | Soleil faiblissant ou nuageux — agir |
-| < 0.1 | 0.90 | Fin de journée / coucher de soleil — urgence |
-| Non configuré ou après 19h | 0.50 | Neutre |
+```
+f = max(0, sin(élévation_en_radians))
+```
+
+| Élévation | Score | Moment typique |
+|-----------|-------|----------------|
+| ~60–65° | ~0.87–0.91 | Midi solaire en été |
+| ~22° | ~0.37 | Midi solaire en hiver |
+| 0° | 0.00 | Lever / coucher du soleil |
+| < 0° | 0.00 | Nuit |
+
+Avantages par rapport à une Gaussienne fixe :
+- Tient compte des saisons (midi hivernal ≈ 22°, estival ≈ 63° pour la France)
+- Tient compte de l'heure d'été/hiver automatiquement via HA
+- S'arrête exactement au lever et au coucher, sans coupure arbitraire
+
+La météo du moment reste capturée par `f_surplus` (surplus_w faible = nuageux). En simulation, l'élévation est calculée synthétiquement à partir des profils saisonniers pour rester cohérente avec la production PV simulée.
 
 ---
 
@@ -260,7 +270,7 @@ objectif = α × taux_autoconsommation + (1 - α) × taux_économie
 | Attribut `w_surplus` | Poids surplus PV |
 | Attribut `w_tempo` | Poids couleur Tempo |
 | Attribut `w_soc` | Poids SOC batterie |
-| Attribut `w_forecast` | Poids prévision de production |
+| Attribut `w_solar` | Poids solaire de production |
 | Attribut `last_optimized` | Timestamp ISO de la dernière optimisation (5h du matin) |
 
 Avant la première optimisation, l'entité reflète les poids configurés dans l'étape Strategy. Dès que l'optimiseur tourne à 5h, les valeurs sont mises à jour.
@@ -287,8 +297,8 @@ entities:
     name: Poids SOC batterie
   - type: attribute
     entity: sensor.helios_optimizer_weights
-    attribute: w_forecast
-    name: Poids prévision
+    attribute: w_solar
+    name: Poids solaire
   - type: attribute
     entity: sensor.helios_optimizer_weights
     attribute: last_optimized
@@ -378,7 +388,7 @@ python sim.py -v \
     --weight-surplus 0.6 \
     --weight-tempo 0.1 \
     --weight-soc 0.2 \
-    --weight-forecast 0.1 \
+    --weight-solar 0.1 \
     --threshold 0.6
 ```
 
@@ -523,7 +533,7 @@ peu de production restante → urgence (score haut).
 | `--weight-surplus 0-1` | `0.40` | Poids du surplus PV dans le score |
 | `--weight-tempo 0-1` | `0.30` | Poids de la couleur Tempo dans le score |
 | `--weight-soc 0-1` | `0.20` | Poids du SOC batterie dans le score |
-| `--weight-forecast 0-1` | `0.10` | Poids de la prévision dans le score |
+| `--weight-solar 0-1` | `0.10` | Poids du potentiel solaire dans le score |
 
 Pour rejouer une simulation avec les poids trouvés par `--optimize` :
 
@@ -534,7 +544,7 @@ python sim.py --optimize --opt-top 1
 # 2. Rejouer avec ces poids
 python sim.py \
   --weight-surplus 0.5 --weight-tempo 0.2 \
-  --weight-soc 0.2 --weight-forecast 0.1 \
+  --weight-soc 0.2 --weight-solar 0.1 \
   --threshold 0.30 -v
 ```
 
