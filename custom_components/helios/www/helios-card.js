@@ -870,7 +870,12 @@ class HeliosCard extends HTMLElement {
     if (!devicesEl) return;
     if (devCfgs.length === 0) { devicesEl.style.display = "none"; return; }
     devicesEl.style.display = "flex";
-    devicesEl.innerHTML = devCfgs.map(d => this._renderDevice(d)).join("");
+    const sorted = [...devCfgs].sort((a, b) => {
+      const sa = this._attr(a.entity, "last_effective_score") ?? -1;
+      const sb = this._attr(b.entity, "last_effective_score") ?? -1;
+      return sb - sa;
+    });
+    devicesEl.innerHTML = sorted.map(d => this._renderDevice(d)).join("");
     devicesEl.querySelectorAll(".dev-ready-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         const entityId = btn.dataset.readyEntity;
