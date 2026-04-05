@@ -42,6 +42,8 @@
       --secondary-text-color: #aeaeb2;
       --secondary-background-color: #3a3a3c;
       --divider-color: #48484a;
+      --helios-grid-color: #be2afd;
+      --helios-threshold-line-color: rgba(255,255,255,0.55);
     }
   </style>
 </head>
@@ -65,6 +67,11 @@
 <div class="col dark-col">
   <h3>Mode sombre — jour Tempo bleu</h3>
   <helios-card id="card-dark"></helios-card>
+</div>
+
+<div class="col dark-col">
+  <h3>Mode sombre — Flux + appareils</h3>
+  <helios-card id="card-dark2"></helios-card>
 </div>
 
 <script src="./helios-card.js" type="module"></script>
@@ -122,7 +129,7 @@ const hassDay = makeHass({
   "sensor.helios_pv_power":                   state(2800),
   "sensor.helios_grid_power":                 state(-300),   // export
   "sensor.helios_house_power":                state(1200),
-  "sensor.helios_global_score":               state(0.74, { tempo_color: "blue", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 1300, virtual_surplus_w: 2750, bat_available_w: 1200, remaining_w: 620, f_surplus: 0.88, f_tempo: 0.70, f_soc: 0.58, f_forecast: 0.42, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_forecast: 0.1 }),
+  "sensor.helios_global_score":               state(0.74, { tempo_color: "blue", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 1300, virtual_surplus_w: 2750, bat_available_w: 1200, remaining_w: 620, f_surplus: 0.88, f_tempo: 0.70, f_soc: 0.58, f_forecast: 0.42, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_forecast: 0.1, dispatch_threshold: 0.5 }),
   "sensor.helios_battery":                    state("charge", { battery_enabled: true, soc: 58, soc_level: "Optimale", power_w: -650, available_w: 1200 }),
   "switch.helios_auto_mode":                  state("on"),
 
@@ -170,7 +177,7 @@ const hassNight = makeHass({
   "sensor.helios_pv_power":                   state(0),
   "sensor.helios_grid_power":                 state(450),    // import
   "sensor.helios_house_power":                state(900),
-  "sensor.helios_global_score":               state(0.22, { tempo_color: "red", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 0, virtual_surplus_w: 0, bat_available_w: 0, remaining_w: 0, f_surplus: 0.0, f_tempo: 0.10, f_soc: 0.52, f_forecast: 0.15, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_forecast: 0.1 }),
+  "sensor.helios_global_score":               state(0.22, { tempo_color: "red", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 0, virtual_surplus_w: 0, bat_available_w: 0, remaining_w: 0, f_surplus: 0.0, f_tempo: 0.10, f_soc: 0.52, f_forecast: 0.15, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_forecast: 0.1, dispatch_threshold: 0.4 }),
   // no battery configured → sensor absent, battery node hidden
   "switch.helios_auto_mode":                  state("on"),
 
@@ -221,7 +228,7 @@ const hassCompact = makeHass({
   "sensor.helios_pv_power":                   state(1500),
   "sensor.helios_grid_power":                 state(800),    // import
   "sensor.helios_house_power":                state(2200),
-  "sensor.helios_global_score":               state(0.15, { tempo_color: "red", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 0, virtual_surplus_w: 0, bat_available_w: 0, remaining_w: 0, f_surplus: 0.0, f_tempo: 0.10, f_soc: 0.18, f_forecast: 0.10, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_forecast: 0.1 }),
+  "sensor.helios_global_score":               state(0.15, { tempo_color: "red", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000, surplus_w: 0, virtual_surplus_w: 0, bat_available_w: 0, remaining_w: 0, f_surplus: 0.0, f_tempo: 0.10, f_soc: 0.18, f_forecast: 0.10, w_surplus: 0.4, w_tempo: 0.3, w_soc: 0.2, w_forecast: 0.1, dispatch_threshold: 0.5}),
   "sensor.helios_battery":                    state("reserve", { battery_enabled: true, soc: 18, soc_level: "Réserve", power_w: 0, available_w: 0 }),
   "switch.helios_auto_mode":                  state("on"),
 
@@ -262,6 +269,15 @@ const configDark = {
   info_url: "https://example.com",
 };
 
+// ---------------------------------------------------------------------------
+// Scenario 5 — dark mode, 
+// ---------------------------------------------------------------------------
+const configDark2 = {
+  entry_id: MOCK_ENTRY_ID,
+  info_url: "https://example.com",
+};
+
+
 // Wait for custom elements to be defined
 await customElements.whenDefined("helios-card");
 
@@ -269,6 +285,7 @@ const cardFull    = document.getElementById("card-full");
 const cardNight   = document.getElementById("card-night");
 const cardCompact = document.getElementById("card-compact");
 const cardDark    = document.getElementById("card-dark");
+const cardDark2   = document.getElementById("card-dark2");
 
 cardFull.setConfig(configFull);
 cardFull.hass = hassDay;
@@ -281,6 +298,9 @@ cardCompact.hass = hassCompact;
 
 cardDark.setConfig(configDark);
 cardDark.hass = hassDay;
+
+cardDark2.setConfig(configNight);
+cardDark2.hass = hassNight;
 </script>
 </body>
 </html>

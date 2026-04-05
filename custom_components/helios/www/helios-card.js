@@ -112,6 +112,10 @@ class HeliosCard extends HTMLElement {
   }
 
   // ------------------------------------------------------------------ Helpers
+  _gridColor() {
+    return getComputedStyle(this).getPropertyValue("--helios-grid-color").trim() || "#7B1FA2";
+  }
+
   _num(entityId, fallback = 0) {
     if (!entityId || !this._hass) return fallback;
     const s = this._hass.states[entityId];
@@ -153,7 +157,7 @@ class HeliosCard extends HTMLElement {
       <svg viewBox="${L.viewBox}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <marker id="h-arr-pv"      markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5Z" fill="#F9A825"/></marker>
-          <marker id="h-arr-gin"     markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5Z" fill="#7B1FA2"/></marker>
+          <marker id="h-arr-gin"     markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path id="h-arr-gin-path" d="M0,0 L5,2.5 L0,5Z" fill="#7B1FA2"/></marker>
           <marker id="h-arr-gout"    markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5Z" fill="#388E3C"/></marker>
           <marker id="h-arr-bat-chg" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5Z" fill="#1565C0"/></marker>
           <marker id="h-arr-bat-dch" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5Z" fill="#0288D1"/></marker>
@@ -186,7 +190,17 @@ class HeliosCard extends HTMLElement {
   _build() {
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display: block; }
+        :host {
+          display: block;
+          --helios-grid-color: #7B1FA2;
+          --helios-threshold-line-color: rgba(0,0,0,0.55);
+        }
+        @media (prefers-color-scheme: dark) {
+          :host {
+            --helios-grid-color: #be2afd;
+            --helios-threshold-line-color: rgba(255,255,255,0.55);
+          }
+        }
 
         .info-btn {
           position: absolute;
@@ -239,9 +253,6 @@ class HeliosCard extends HTMLElement {
           transition: stroke-dashoffset 0.8s ease, stroke 0.5s ease;
         }
         #h-val-house { fill: var(--primary-text-color, #212121); }
-        @media (prefers-color-scheme: dark) {
-          #h-node-house { fill: #1B5E20; stroke: #66BB6A; }
-        }
         .fl-on {
           stroke-dasharray: 8 5;
           animation: flowDash linear infinite;
@@ -280,7 +291,7 @@ class HeliosCard extends HTMLElement {
           top: -3px;
           width: 2px;
           height: 13px;
-          background: rgba(0,0,0,0.55);
+          background: var(--helios-threshold-line-color);
           border-radius: 1px;
           transform: translateX(-50%);
           display: none;
@@ -685,6 +696,13 @@ class HeliosCard extends HTMLElement {
     this._svgAttr("h-node-grid", "fill",   tempoFill);
     this._svgAttr("h-node-grid", "stroke", tempoStroke);
 
+    // Dark-mode adaptive colors via CSS custom properties
+    const gridColor = this._gridColor();
+    this._svgAttr("h-arr-gin-path", "fill", gridColor);
+    const isDark = gridColor !== "#7B1FA2";
+    this._svgAttr("h-node-house", "fill",   isDark ? "#1B5E20" : "#E8F5E9");
+    this._svgAttr("h-node-house", "stroke", isDark ? "#66BB6A" : "#388E3C");
+
     const L = this._layout;
     this._txt("h-val-bat-soc", soc !== null ? `${Math.round(soc)}%` : "—");
     const batColor = soc !== null
@@ -710,9 +728,9 @@ class HeliosCard extends HTMLElement {
     const gridAbs = Math.abs(grid);
     if (grid > 10) {
       this._flow("h-line-grid", "h-lbl-grid", {
-        active: true, power: gridAbs, color: "#7B1FA2", marker: "h-arr-gin",
+        active: true, power: gridAbs, color: this._gridColor(), marker: "h-arr-gin",
         x1: lg.x1, y1: lg.y1, x2: lg.x2, y2: lg.y2,
-        lblX: lg.lblX, lblY: lg.lblY, lblAnchor: "middle", lblColor: "#7B1FA2",
+        lblX: lg.lblX, lblY: lg.lblY, lblAnchor: "middle", lblColor: this._gridColor(),
       });
     } else if (grid < -10) {
       this._flow("h-line-grid", "h-lbl-grid", {
@@ -785,7 +803,8 @@ class HeliosCard extends HTMLElement {
     this._txt("h-bud-rem",      remainingW !== null ? this._fmt(remainingW) : "—");
 
     // Score bar
-    const scoreColor = score > 0.6 ? "#4CAF50" : score > 0.3 ? "#FF9800" : "#F44336";
+    const threshold = this._attr(e.score, "dispatch_threshold");
+    const scoreColor = score > threshold ? "#4CAF50" : "#F44336";
     const bar = this.shadowRoot.getElementById("h-score-bar");
     if (bar) {
       bar.style.width      = `${Math.round(score * 100)}%`;
@@ -794,7 +813,6 @@ class HeliosCard extends HTMLElement {
     this._txt("h-score-num", this._hass ? score.toFixed(2) : "—");
 
     // Threshold marker
-    const threshold = this._attr(e.score, "dispatch_threshold");
     const threshEl  = this.shadowRoot.getElementById("h-score-threshold");
     if (threshEl) {
       if (threshold !== null && threshold >= 0 && threshold <= 1) {
