@@ -39,6 +39,98 @@ Copier le dossier `custom_components/helios/` dans le répertoire `custom_compon
 | Script charge forcée | Script HA à appeler pour forcer la charge |
 | Script autoconsommation | Script HA pour repasser en mode autoconso |
 
+### Configuration — étape Appareils
+
+Chaque appareil configuré est piloté par Helios via un interrupteur HA. Les paramètres communs :
+
+| Paramètre | Description |
+|-----------|-------------|
+| Nom | Nom affiché dans la carte et les logs |
+| Type | `ev_charger`, `water_heater`, `hvac`, `pool`, `appliance` |
+| Entité switch | Switch HA à piloter |
+| Puissance (W) | Puissance consommée quand l'appareil est actif |
+| Priorité (1–10) | Importance relative — 10 = plus prioritaire |
+| Début / fin de plage | Fenêtre horaire autorisée pour l'activation |
+| Durée minimale allumé | Évite les cycles courts (minutes) |
+
+#### Priorité, poids et ordre de dispatch
+
+À chaque cycle, Helios calcule un **score effectif** pour chaque appareil :
+
+```
+score_effectif = (w_priority × priorité/10 + w_fit × fit + w_urgency × urgence) / total_poids
+```
+
+- **`priorité/10`** — la priorité configurée, normalisée sur [0..1]
+- **`fit`** — à quel point la puissance de l'appareil correspond au surplus disponible (voir détail ci-dessous)
+- **`urgence`** — à quel point l'appareil a besoin de tourner bientôt (voir détail ci-dessous)
+
+Les **poids** (`w_priority`, `w_fit`, `w_urgency`) sont configurables par appareil et doivent sommer à 1.0. Ils déterminent quelle composante prime pour cet appareil :
+
+| Exemple | Réglage conseillé |
+|---------|-------------------|
+| Ballon d'eau chaude (légionellose) | Augmenter `w_urgency` |
+| Piscine (filtration solaire uniquement) | Augmenter `w_fit` |
+| VE (priorité absolue) | Augmenter `w_priority` |
+
+#### Calcul du score de fit [0..1]
+
+Le fit mesure **à quel point l'appareil exploite bien le budget disponible** (surplus PV + batterie). Il ne mesure pas simplement si le solaire suffit.
+
+**Zone 1 — le surplus PV couvre entièrement l'appareil** : `fit = puissance_appareil / surplus`
+
+Le score monte avec la puissance de l'appareil relative au surplus. L'idée : si tu as 2000 W de surplus, un appareil de 200 W l'absorbe très mal (0.10), alors qu'un appareil de 1800 W l'absorbe presque entièrement (0.90). Helios préfère envoyer le surplus vers un appareil qui en profite vraiment.
+
+**Zone 2 — la batterie complète le surplus** : `fit = 1.0 − 0.6 × (puissance_batterie_utilisée / puissance_décharge_disponible)` → toujours entre 0.4 et 1.0 (rejoint exactement le plafond de la zone 3)
+
+**Zone 3 — import réseau nécessaire** : dépend de `grid_allowance_w` (tolérance réseau configurée) et de la couleur Tempo :
+- Jour **Tempo rouge** → fit = 0 (tout import interdit)
+- Import nécessaire **> grid_allowance** → fit = 0 (dépasse le plafond autorisé)
+- Import nécessaire **≤ grid_allowance** → `fit = 0.4 × (1 − import / grid_allowance)` — entre 0 et 0.4, selon la marge restante
+
+Exemples avec surplus PV = 600 W, batterie disponible = 1000 W, grid_allowance = 400 W, jour Tempo bleu :
+
+| Appareil | Puissance | Zone | Calcul | Fit |
+|----------|-----------|------|--------|-----|
+| Pompe piscine | 200 W | 1 — solaire pur | 200 / 600 | **0.33** |
+| Pompe piscine | 500 W | 1 — solaire pur | 500 / 600 | **0.83** |
+| Ballon d'eau chaude | 600 W | 1 — solaire pur | 600 / 600 | **1.00** |
+| Ballon d'eau chaude | 800 W | 2 — batterie appoint | 1 − 0.6 × (200/1000) | **0.88** |
+| VE | 1400 W | 2 — batterie appoint | 1 − 0.6 × (800/1000) | **0.52** |
+| VE | 1800 W | 3 — import 200 W ≤ 400 W | 0.4 × (1 − 200/400) | **0.20** |
+| VE | 2100 W | 3 — import 500 W > 400 W | — | **0.00** |
+
+À noter : un appareil en zone 2 peut avoir un fit **plus élevé** qu'un appareil en zone 1, si ce dernier n'absorbe qu'une petite fraction du surplus. C'est voulu : Helios préfère un appareil de 800 W qui utilise 600 W de solaire + 200 W de batterie (fit 0.92) à un appareil de 200 W qui n'utilise que 200 W sur 600 W de solaire disponible (fit 0.33).
+
+#### Calcul du score d'urgence [0..1]
+
+L'urgence dépend du type d'appareil :
+
+| Type | Calcul |
+|------|--------|
+| **Ballon d'eau chaude** | `(température_cible − température_actuelle) / plage_temp` — monte quand la température baisse. En heures creuses, référence sur le minimum HC plutôt que la cible |
+| **VE** | `0.6 × déficit_SOC + 0.4 × urgence_départ` — combine le déficit de charge et le temps restant avant l'heure de départ configurée |
+| **HVAC** | `écart_consigne / 3°C` — urgence maximale à 3 °C d'écart |
+| **Piscine** | `minutes_de_filtration_manquantes / minutes_restantes_avant_minuit` — monte en fin de journée si le quota n'est pas atteint |
+| **Appareil programmable** | Basé sur le délai avant l'heure limite configurée : `0.3` baseline → `0.8` si < 3h → `1.0` si plus le temps de finir |
+
+Les appareils sont traités en **ordre décroissant de score effectif** : le premier obtient le budget disponible en priorité. Si le surplus restant est insuffisant pour les suivants, ils ne démarrent pas. **La carte Lovelace affiche les appareils dans ce même ordre**, ce qui permet de voir en un coup d'œil quel appareil est le plus susceptible d'être activé (ou coupé) au prochain cycle.
+
+#### Conditions d'extinction
+
+Un appareil allumé est coupé à chaque cycle si **l'une** des conditions suivantes est remplie — dans cet ordre de priorité :
+
+| Condition | Raison affichée dans les logs |
+|-----------|-------------------------------|
+| Hors de la plage horaire autorisée | `outside_window` |
+| Objectif atteint (quota, température cible, SOC VE…) | `satisfied` |
+| Fit < 0.1 — import réseau trop important ou jour Tempo rouge avec import | `fit_negligible` |
+| Overcommit — la consommation totale des appareils actifs dépasse `surplus_PV + batterie_disponible + grid_allowance` ; l'appareil le moins prioritaire est coupé en premier, un seul par cycle | `overcommit` |
+
+**Condition interruptible** : un appareil ne peut être coupé que s'il est marqué `interruptible` **et** que sa durée minimale (`min_on_minutes`) est écoulée depuis la dernière activation. Les appareils non-interruptibles (ex. lave-linge en cycle) ne sont **jamais** coupés par Helios, quelle que soit la situation.
+
+---
+
 ### Configuration — étape Stratégie
 
 | Paramètre | Défaut | Description |
@@ -53,6 +145,66 @@ Copier le dossier `custom_components/helios/` dans le répertoire `custom_compon
 | Alpha optimiseur | 0.50 | Objectif de l'optimiseur quotidien : `0.0` = économies pures, `1.0` = autoconsommation pure |
 
 > Les poids doivent sommer à 1.0 — le formulaire le valide.
+
+---
+
+### Score global
+
+Le score global est un nombre entre 0 et 1 calculé à chaque cycle. Il répond à la question : **faut-il consommer de l'énergie maintenant ?** `1.0` = oui fortement, `0.0` = non.
+
+Il sert principalement de **seuil de dispatch** : si le score est inférieur au seuil configuré (défaut 0.30), aucun appareil n'est activé ce cycle.
+
+#### Formule
+
+```
+score = w_surplus × f_surplus + w_tempo × f_tempo + w_soc × f_soc + w_forecast × f_forecast
+```
+
+Chaque `f_*` ∈ [0..1]. Les poids sont configurés dans l'étape Stratégie et optimisés quotidiennement.
+
+#### Composante surplus (`f_surplus`)
+
+Mesure l'excédent de production PV par rapport à la consommation de base.
+
+**Sans batterie** (ou batterie pleine) : rampe linéaire, 0 W → `0.0`, 500 W → `1.0`.
+
+**Avec batterie active** (SOC < soc_max) : double pente pour éviter d'activer des appareils quand la batterie peut encore absorber le surplus :
+- `[0 W … charge_max_w]` → `0.0` à `0.3` (la batterie peut absorber — pas urgent)
+- `[charge_max_w … +500 W]` → `0.3` à `1.0` (surplus dépasse la capacité de charge — activer les appareils)
+
+#### Composante Tempo (`f_tempo`)
+
+| Couleur | Score |
+|---------|-------|
+| Bleu (pas cher) | 1.0 |
+| Blanc | 0.5 |
+| Rouge (cher) | 0.0 |
+| Non configuré | 0.5 (neutre) |
+
+#### Composante SOC batterie (`f_soc`)
+
+Encourage à consommer quand la batterie est pleine et à économiser quand elle est basse.
+
+Avec `soc_min=20%`, `soc_max=95%`, pivot = `57.5%` :
+
+| SOC | Score |
+|-----|-------|
+| ≤ soc_min (20%) | 0.0 — réserve, rien n'est activé |
+| soc_min → pivot (20%→57.5%) | 0.0 → 0.6 — rampe forte |
+| pivot → soc_max (57.5%→95%) | 0.6 → 1.0 — rampe plate |
+| ≥ soc_max (95%) | 1.0 — batterie pleine, consomme librement |
+
+#### Composante prévision (`f_forecast`)
+
+Calcule une **densité** = `kWh_restants_aujourd'hui / (puissance_crête_kW × heures_de_soleil_restantes)`. Plus la densité est élevée, plus il reste de production à venir — mieux vaut différer.
+
+| Densité | Score | Interprétation |
+|---------|-------|----------------|
+| ≥ 1.0 | 0.10 | Belle journée, production abondante — différer |
+| 0.5 – 1.0 | 0.10 → 0.50 | Production correcte — modérer |
+| 0.1 – 0.5 | 0.50 → 0.85 | Soleil faiblissant ou nuageux — agir |
+| < 0.1 | 0.90 | Fin de journée / coucher de soleil — urgence |
+| Non configuré ou après 19h | 0.50 | Neutre |
 
 ---
 

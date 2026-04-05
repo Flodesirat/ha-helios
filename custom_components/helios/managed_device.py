@@ -443,6 +443,8 @@ class ManagedDevice:
         device_power_w: float,
         surplus_w: float,
         bat_available_w: float,
+        grid_allowance_w: float = 0.0,
+        tempo_red: bool = False,
     ) -> float:
         """
         Zone 1 — device ≤ surplus (solar covers it, no battery needed):
@@ -450,12 +452,13 @@ class ManagedDevice:
             → rewards devices that absorb more of the available solar
 
         Zone 2 — surplus < device ≤ surplus + bat_available (battery helps):
-            fit = 1.0 − 0.4 × (battery_fraction)   [0.6..1.0]
+            fit = 1.0 − 0.6 × (battery_fraction)   [0.4..1.0]
             → acceptable, penalised proportionally to battery usage
 
         Zone 3 — device > surplus + bat_available (grid import needed):
-            fit = 0.4 × (1 − grid_fraction)   [0..0.4]
-            → heavily penalised, only selected as last resort
+            - tempo_red=True → fit = 0 (any grid import is forbidden)
+            - grid_import > grid_allowance_w → fit = 0
+            - otherwise → fit = 0.4 × (1 − grid_import / grid_allowance_w)   [0..0.4]
         """
         if device_power_w <= 0:
             return 0.0
@@ -468,11 +471,13 @@ class ManagedDevice:
 
         if device_power_w <= effective:
             bat_fraction = (device_power_w - surplus_w) / max(bat_available_w, 1.0)
-            return 1.0 - 0.4 * bat_fraction
+            return 1.0 - 0.6 * bat_fraction
 
-        grid_import   = device_power_w - effective
-        grid_fraction = grid_import / device_power_w
-        return max(0.0, 0.4 * (1.0 - grid_fraction))
+        # Zone 3 — grid import required
+        grid_import = device_power_w - effective
+        if tempo_red or grid_allowance_w <= 0 or grid_import > grid_allowance_w:
+            return 0.0
+        return 0.4 * (1.0 - grid_import / grid_allowance_w)
 
     # ------------------------------------------------------------------
     # Composite effective score [0..1]
@@ -482,10 +487,12 @@ class ManagedDevice:
         reader: StateReader,
         surplus_w: float,
         bat_available_w: float,
+        grid_allowance_w: float = 0.0,
+        tempo_red: bool = False,
         now: datetime | None = None,
     ) -> float:
         priority_score = self.priority / 10.0
-        fit     = self.compute_fit_score(self.power_w, surplus_w, bat_available_w)
+        fit     = self.compute_fit_score(self.power_w, surplus_w, bat_available_w, grid_allowance_w, tempo_red)
         urgency = self.urgency_modifier(reader, now=now)
 
         total_w = self.w_priority + self.w_fit + self.w_urgency

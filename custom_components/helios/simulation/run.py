@@ -188,7 +188,7 @@ def print_optimize(results: list[OptResult], top: int, alpha: float, n_runs: int
         cmd = " \\\n    ".join(parts)
         print("  ── Rejouer cette configuration heure par heure ─────────────────────────────────")
         print()
-        print(f"  {cmd}")
+        print(f"  {cmd} --decision")
         print()
 
 

@@ -369,7 +369,7 @@ class DeviceManager:
         ]
         for app in sorted(preparing_apps, key=lambda d: d.priority, reverse=True):
             urgency = app.urgency_modifier(reader)
-            fit = ManagedDevice.compute_fit_score(app.power_w, surplus_w, bat_available_w)
+            fit = ManagedDevice.compute_fit_score(app.power_w, surplus_w, bat_available_w, grid_allowance_w, tempo_color == TEMPO_RED)
             # Conditions to start are already met — no preemption needed
             if (global_score >= 0.4 and fit >= 0.3) or urgency >= 0.8:
                 continue
@@ -395,7 +395,7 @@ class DeviceManager:
                 freed_w += c.actual_power_w(reader)
                 to_preempt.append(c)
                 if ManagedDevice.compute_fit_score(
-                    app.power_w, surplus_w + freed_w, bat_available_w
+                    app.power_w, surplus_w + freed_w, bat_available_w, grid_allowance_w, tempo_color == TEMPO_RED
                 ) >= 0.3:
                     break
             else:
@@ -435,7 +435,7 @@ class DeviceManager:
                 if device.appliance_state != APPLIANCE_STATE_PREPARING:
                     continue  # Already handled in pre-pass
                 urgency        = device.urgency_modifier(reader)
-                fit            = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
+                fit            = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w, grid_allowance_w, tempo_color == TEMPO_RED)
                 priority_score = device.priority / 10.0
                 score          = min(global_score * priority_score * fit + urgency * 0.3, 1.0)
                 device.last_effective_score = round(score, 3)
@@ -466,7 +466,7 @@ class DeviceManager:
                     await self._async_set_switch(hass, device, False, reason="satisfied", context=_base_ctx)
                 continue
 
-            score = device.effective_score(reader, surplus_w, bat_available_w)
+            score = device.effective_score(reader, surplus_w, bat_available_w, grid_allowance_w, tempo_color == TEMPO_RED)
             device.last_effective_score = round(score, 3)
             scored.append((score, device))
 
@@ -485,7 +485,7 @@ class DeviceManager:
             # PREPARING / RUNNING appliances
             if device.device_type == DEVICE_TYPE_APPLIANCE:
                 urgency    = device.urgency_modifier(reader)
-                fit        = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w)
+                fit        = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w, grid_allowance_w, tempo_color == TEMPO_RED)
                 should_start = (global_score >= 0.4 and fit >= 0.3) or urgency >= 0.8
                 if not should_start:
                     continue
@@ -505,7 +505,7 @@ class DeviceManager:
             # Use actual_power_w: a water heater whose thermostat has cut (0 W actual)
             # must not inflate fit_surplus with its nominal power.
             fit_surplus = surplus_w + (device.actual_power_w(reader) if device.is_on else 0)
-            fit = ManagedDevice.compute_fit_score(device.power_w, fit_surplus, bat_available_w)
+            fit = ManagedDevice.compute_fit_score(device.power_w, fit_surplus, bat_available_w, grid_allowance_w, tempo_color == TEMPO_RED)
 
             # Skip if fit is negligible (would import too much from grid)
             if fit < 0.1:

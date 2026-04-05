@@ -100,12 +100,12 @@ def _score_input(
 async def test_grid_allowance_active_at_soc_max():
     """SOC == soc_max → grid_allowance_w doit être inclus dans le budget."""
     device = _make_wh_device()
-    device.power_w = 2500  # > surplus seul, nécessite grid_allowance_w
+    device.power_w = 2300  # > surplus seul, nécessite grid_allowance_w
     mgr = _make_manager([device])
     hass = _make_hass()  # wh_temp=50 : temp > min (pas must_run), temp < target (éligible)
 
     # surplus=2000, bat=0, grid_allowance=500 → budget total = 2500
-    # device.power_w=2500, donc ça tient exactement avec grid_allowance activé
+    # device.power_w=2300, grid_import=300 < grid_allowance=500 → fit=0.4*(1-300/500)=0.16 → éligible
     await mgr.async_dispatch(hass, _score_input(
         surplus_w=2000.0,
         bat_available_w=0.0,
@@ -142,7 +142,7 @@ async def test_grid_allowance_inactive_below_soc_max():
 async def test_grid_allowance_active_above_soc_max():
     """SOC > soc_max → grid_allowance_w activé."""
     device = _make_wh_device()
-    device.power_w = 2500
+    device.power_w = 2300
     mgr = _make_manager([device])
     hass = _make_hass()
 
@@ -184,7 +184,7 @@ async def test_grid_allowance_inactive_when_soc_none():
 async def test_custom_soc_max_90_activates_at_90():
     """soc_max=90 → grid_allowance_w activé à SOC=90, pas à SOC=89."""
     device = _make_wh_device()
-    device.power_w = 2500
+    device.power_w = 2300  # grid_import=300 < grid_allowance=500 → fit > 0
     mgr_on  = _make_manager([device])
     hass_on = _make_hass()
 
@@ -237,7 +237,7 @@ async def test_hardcoded_96_no_longer_used():
 async def test_soc_max_fallback_activates_at_95():
     """soc_max absent du score_input → fallback 95.0 → activé à SOC=95."""
     device = _make_wh_device()
-    device.power_w = 2500
+    device.power_w = 2300  # grid_import=300 < grid_allowance=500 → fit > 0
     mgr = _make_manager([device])
     hass = _make_hass()
 
