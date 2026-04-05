@@ -328,7 +328,7 @@ class DeviceManager:
             if suppressed:
                 suppressed_names = frozenset(d.name for d in suppressed)
                 if suppressed_names != self._last_suppressed_names:
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "Dispatch: SOC=%.0f%% (Réserve) — must_run supprimé pour: %s",
                         battery_soc,
                         ", ".join(d.name for d in suppressed),
