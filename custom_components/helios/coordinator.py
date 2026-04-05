@@ -345,8 +345,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "tempo_color":      normalize_tempo_color(_str(cfg.get(CONF_TEMPO_COLOR_ENTITY))),
             "tempo_next_color": normalize_tempo_color(_str(cfg.get(CONF_TEMPO_NEXT_COLOR_ENTITY))),
             "forecast_kwh": _float(entity) if (entity := cfg.get(CONF_FORECAST_ENTITY)) else None,
-            "solar_elevation":  self.hass.states.get("sun.sun") and
-                                self.hass.states["sun.sun"].attributes.get("elevation"),
+            "solar_elevation":  (s := self.hass.states.get("sun.sun")) and
+                                s.attributes.get("elevation"),
         }
 
     def _update_state(self, raw: dict[str, Any]) -> None:
