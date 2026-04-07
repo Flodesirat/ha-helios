@@ -224,15 +224,16 @@ class TestMustRunNow:
             )
             assert device.must_run_now(reader) is False
 
-    def test_on_peak_below_off_peak_min_forces_on(self):
-        """Outside HC, temp below the configured off-peak minimum → must_run = True.
+    def test_on_peak_below_off_peak_min_no_force(self):
+        """Outside HC, temp below the off-peak minimum but above the legionella floor → must_run = False.
 
-        temp_min_entity (53°C in real config, here OFF_PEAK_MIN=50°C) must
-        also protect the water heater during on-peak hours so the temperature
-        doesn't stay below the configured minimum all day.
+        During peak hours the only threshold that matters is wh_temp_min (LEGIONELLA=45°C).
+        off_peak_min (50°C) is exclusively an off-peak target; using it during peak hours
+        would cause spurious forced starts (the real bug: temp=40°C < off_peak_min=50°C
+        while wh_temp_min=10°C → must_run wrongly fired at 20:20 outside HC).
         """
         device = _make_device()
-        # temp=48 < off_peak_min=50 → must force on even outside HC
+        # temp=48 < off_peak_min=50, but 48 > LEGIONELLA=45 → must NOT force on
         reader = _reader(temp=48.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
@@ -240,10 +241,10 @@ class TestMustRunNow:
                 "custom_components.helios.managed_device.datetime",
                 _fixed_datetime(time(14, 0)),  # on-peak hour
             )
-            assert device.must_run_now(reader) is True
+            assert device.must_run_now(reader) is False
 
     def test_on_peak_exactly_at_off_peak_min_no_force(self):
-        """Outside HC, temp exactly at off-peak minimum → must_run = False (threshold is exclusive)."""
+        """Outside HC, temp exactly at off-peak minimum → must_run = False."""
         device = _make_device()
         reader = _reader(temp=50.0, off_peak_min=50.0)
 

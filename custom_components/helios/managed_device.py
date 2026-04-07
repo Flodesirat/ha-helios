@@ -359,17 +359,20 @@ class ManagedDevice:
                 if minutes_left is not None and minutes_left < self.min_on_minutes:
                     return False
                 return temp < off_peak_min - self.wh_off_peak_hysteresis_k
-            # Peak hours: force on when temperature is below the configured minimum.
-            # temp_min_entity (e.g. a thermostat setpoint) is used when available;
-            # otherwise falls back to the static wh_temp_min.
-            return temp < off_peak_min
+            # Peak hours: force on only when temperature is below the legionella safety
+            # floor (wh_temp_min).  off_peak_min is the off-peak target — it must
+            # NOT be used here or the heater fires during peak hours whenever the
+            # tank is below the HC set-point (e.g. 40 °C < 50 °C).
+            return temp < self.wh_temp_min
 
         if self.device_type == DEVICE_TYPE_POOL:
-            # Only considered in the last _POOL_MUST_RUN_WINDOW_H hours of the day.
-            # Earlier, solar production may still cover the deficit naturally.
-            _now     = now or datetime.now()
-            midnight = datetime.combine(_now.date() + timedelta(days=1), time(0, 0))
-            minutes_left = (midnight - _now).total_seconds() / 60
+            # Only considered in the last _POOL_MUST_RUN_WINDOW_H hours before the
+            # pool's allowed_end (or midnight if no window is set).
+            # Using allowed_end rather than midnight ensures must_run fires in time
+            # even when the pool cannot run after e.g. 22:00.
+            _now      = now or datetime.now()
+            deadline  = self._pool_deadline_dt(_now)
+            minutes_left = (deadline - _now).total_seconds() / 60
             if minutes_left > _POOL_MUST_RUN_WINDOW_H * 60:
                 return False
             required_m = self._pool_required_minutes(reader)
@@ -419,9 +422,8 @@ class ManagedDevice:
             if required_m <= 0:
                 return 0.0
             deficit_m = max(0.0, required_m - self.pool_daily_run_minutes)
-            _now     = now or datetime.now()
-            midnight = datetime.combine(_now.date() + timedelta(days=1), time(0, 0))
-            minutes_left = max(1.0, (midnight - _now).total_seconds() / 60)
+            _now = now or datetime.now()
+            minutes_left = max(1.0, (self._pool_deadline_dt(_now) - _now).total_seconds() / 60)
             return min(1.0, deficit_m / minutes_left)
 
         if self.device_type == DEVICE_TYPE_APPLIANCE:
@@ -546,6 +548,21 @@ class ManagedDevice:
             "Pool '%s': captured daily required filtration = %.1f min at %02d:xx",
             self.name, raw, current_hour,
         )
+
+    def _pool_deadline_dt(self, now: datetime) -> datetime:
+        """Return the datetime of the pool's daily deadline (allowed_end or midnight).
+
+        This is the latest moment the pool can still be running, used by must_run_now
+        and urgency_modifier to measure how much time is left in the day.
+        Falls back to tomorrow's midnight when no allowed_end is configured.
+        """
+        end_t = self._allowed_end_t
+        if end_t is not None:
+            candidate = datetime.combine(now.date(), end_t)
+            if candidate <= now:
+                candidate += timedelta(days=1)
+            return candidate
+        return datetime.combine(now.date() + timedelta(days=1), time(0, 0))
 
     def _pool_required_minutes_live(self, reader: StateReader) -> float:
         """Read the filtration entity directly (only used for the 05:00 snapshot)."""
