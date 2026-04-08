@@ -361,6 +361,10 @@ class DeviceManager:
         # If a high-priority appliance is ready to start (score+fit or urgency)
         # but can't fit because lower-priority interruptible devices are running,
         # turn off those devices to free budget within this cycle.
+        # Preempted devices are tracked so the greedy loop doesn't immediately
+        # re-activate them with the freed budget.
+        preempted_this_cycle: set[ManagedDevice] = set()
+
         preparing_apps = [
             d for d in self.devices
             if d.device_type == DEVICE_TYPE_APPLIANCE
@@ -410,6 +414,7 @@ class DeviceManager:
                     reason="preempted",
                     context={**_base_ctx, "preempted_by": app.name},
                 )
+                preempted_this_cycle.add(c)
             surplus_w += freed_w  # Make freed budget visible to appliance state machine
 
         # ---- Pre-pass: IDLE / RUNNING / DONE appliance states ----
@@ -440,6 +445,12 @@ class DeviceManager:
                 score          = min(global_score * priority_score * fit + urgency * 0.3, 1.0)
                 device.last_effective_score = round(score, 3)
                 scored.append((score, device))
+                continue
+
+            # Devices preempted earlier this cycle must not be re-activated by the
+            # greedy loop: the freed budget was earmarked for the appliance that
+            # triggered the preemption.
+            if device in preempted_this_cycle:
                 continue
 
             # Must-run override → bypass allowed window and force on immediately.
