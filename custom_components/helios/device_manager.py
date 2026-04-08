@@ -354,7 +354,7 @@ class DeviceManager:
                     satisfied = device.is_satisfied(reader)
                     reason = "satisfied" if satisfied else "score_too_low"
                     await self._async_set_switch(hass, device, False, reason=reason, context=_base_ctx)
-            self.remaining_w = 0.0
+            self.remaining_w = float(score_input.get("real_surplus_w", surplus_w)) + bat_available_w + grid_allowance_w
             return
 
         # ---- Priority preemption for PREPARING appliances ----

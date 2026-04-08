@@ -73,6 +73,19 @@ Les **poids** (`w_priority`, `w_fit`, `w_urgency`) sont configurables par appare
 | Piscine (filtration solaire uniquement) | Augmenter `w_fit` |
 | VE (priorité absolue) | Augmenter `w_priority` |
 
+#### Grandeurs clés du dispatch
+
+Ces quatre valeurs sont calculées à chaque cycle et pilotent l'ensemble de la logique de dispatch.
+
+| Grandeur | Formule / source | Rôle |
+|----------|-----------------|------|
+| **Surplus** (`surplus_w`) | `max(0, PV − maison)` | Excédent PV brut après consommation de la maison. Sert de point de départ au budget `remaining`. |
+| **Surplus virtuel** (`virtual_surplus_w`) | `max(0, PV − maison + Σ appareils Helios actifs)` | Surplus corrigé en réajoutant la consommation des appareils Helios déjà allumés. Utilisé dans le scoring (`f_surplus`) pour éviter le chattering : sans cette correction, les appareils actifs gonflent la consommation maison → le surplus chute → le score passe sous le seuil → extinction → rallumage → oscillation. |
+| **Batterie disponible** (`bat_available_w`) | `min(énergie_utilisable × 500, max_discharge) − décharge_en_cours` | Puissance de décharge additionnelle que la batterie peut fournir aux appareils au-delà de ce qu'elle fournit déjà à la maison. Tient compte du SOC restant au-dessus du plancher (soc_min ou soc_réserve_rouge), de la puissance max de l'onduleur, et déduit la décharge déjà en cours pour éviter un double-comptage. Vaut 0 si le SOC est sous le plancher. |
+| **Remaining** (`remaining_w`) | `surplus_réel + bat_available + grid_allowance` | Budget de dispatch résiduel après l'allocation greedy. Décrémenté à chaque nouvel appareil démarré. Les appareils déjà actifs ne le réduisent pas — leur puissance est déjà absente du surplus réel (`real_surplus_w`). |
+
+> **Surplus réel vs surplus virtuel** : les deux valeurs divergent dès qu'au moins un appareil Helios est allumé. Le surplus virtuel (`virtual_surplus_w`) est passé au moteur de scoring (`f_surplus`) et au calcul de fit. Le surplus réel (`surplus_w` = `max(0, PV − maison)`) sert de base au budget `remaining`. Cette séparation garantit que le score reste stable pendant qu'un appareil tourne, tout en maintenant un budget de dispatch fidèle à la réalité mesurée.
+
 #### Calcul du score de fit [0..1]
 
 Le fit mesure **à quel point l'appareil exploite bien le budget disponible** (surplus PV + batterie). Il ne mesure pas simplement si le solaire suffit.
