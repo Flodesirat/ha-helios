@@ -55,6 +55,7 @@ class HeliosCard extends HTMLElement {
     this._hass = null;
     this._config = null;
     this._layout = this._makeLayout();
+    this._modalSlug = null;
   }
 
   // ------------------------------------------------------------------ Layout (full vs compact)
@@ -473,6 +474,133 @@ class HeliosCard extends HTMLElement {
           font-size: 11px;
           font-weight: 700;
         }
+
+        /* ---- Modal overlay ---- */
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.45);
+          z-index: 999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .modal-overlay[hidden] { display: none; }
+        .modal-box {
+          background: var(--card-background-color, #fff);
+          border-radius: 12px;
+          padding: 16px;
+          min-width: 260px;
+          max-width: 380px;
+          width: 90%;
+          max-height: 80vh;
+          overflow-y: auto;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .hm-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .hm-icon { font-size: 22px; }
+        .hm-title { flex: 1; font-size: 16px; font-weight: 700; }
+        .hm-hdr-dot {
+          width: 10px; height: 10px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+        .hm-hdr-status { font-size: 12px; color: var(--secondary-text-color); }
+        .hm-close {
+          margin-left: 4px;
+          background: none;
+          border: none;
+          font-size: 16px;
+          cursor: pointer;
+          color: var(--secondary-text-color);
+          padding: 2px 6px;
+          border-radius: 4px;
+        }
+        .hm-close:hover { background: var(--secondary-background-color); }
+        .hm-section {
+          border-top: 1px solid var(--divider-color, #e0e0e0);
+          padding-top: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .hm-section-title {
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--secondary-text-color);
+        }
+        .hm-manual-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .hm-manual-label { font-size: 13px; }
+        .hm-manual-btn {
+          font-size: 12px;
+          font-weight: 600;
+          padding: 5px 12px;
+          border-radius: 6px;
+          border: none;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .hm-manual-on  { background: #FF9800; color: #fff; }
+        .hm-manual-off { background: var(--secondary-background-color, #f0f0f0); color: var(--primary-text-color); }
+        .hm-factors-row {
+          display: flex;
+          gap: 4px;
+          align-items: flex-end;
+        }
+        .hm-factor {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          border-radius: 6px;
+          padding: 3px 4px;
+          background: var(--secondary-background-color, #f0f0f0);
+          position: relative;
+          overflow: hidden;
+          min-height: 52px;
+        }
+        .hm-factor-fill {
+          position: absolute;
+          bottom: 0; left: 0; right: 0;
+          transition: height 0.6s ease;
+        }
+        .hm-factor-lbl { font-size: 9px; color: var(--secondary-text-color); white-space: nowrap; position: relative; }
+        .hm-factor-val { font-size: 11px; font-weight: 700; position: relative; }
+        .hm-factor-w   { font-size: 8px;  color: var(--secondary-text-color); position: relative; }
+        .hm-factor-sep {
+          display: flex; align-items: center;
+          font-size: 12px; font-weight: 700;
+          color: var(--secondary-text-color);
+          flex-shrink: 0; padding-bottom: 4px;
+        }
+        .hm-reason { font-size: 12px; color: var(--secondary-text-color); }
+        .hm-stat   { font-size: 12px; }
+        .hm-progress-wrap { display: flex; flex-direction: column; gap: 4px; }
+        .hm-bar-bg {
+          width: 100%; height: 8px;
+          background: var(--secondary-background-color, #f0f0f0);
+          border-radius: 4px; overflow: hidden;
+        }
+        .hm-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+        .hm-bar-text  { font-size: 12px; }
+        .hm-force-lbl { font-size: 11px; color: #FF9800; font-weight: 600; }
+        .hm-window { font-size: 14px; font-weight: 600; }
+        .dev-row { cursor: pointer; }
+        .dev-row:hover { background: var(--divider-color, #e8e8e8); }
       </style>
 
       <div class="card">
@@ -541,6 +669,10 @@ class HeliosCard extends HTMLElement {
 
         <div class="devices" id="h-devices" style="display:none"></div>
       </div>
+
+      <div class="modal-overlay" id="h-modal" hidden>
+        <div class="modal-box" id="h-modal-box"></div>
+      </div>
     `;
 
     this.shadowRoot.getElementById("h-info-btn").addEventListener("click", () => {
@@ -551,6 +683,34 @@ class HeliosCard extends HTMLElement {
       } else {
         history.pushState(null, "", url);
         window.dispatchEvent(new Event("location-changed", { bubbles: true, composed: true }));
+      }
+    });
+
+    // Device row click → open modal (delegation sur l'élément stable #h-devices)
+    // Ignore les clics sur les boutons d'action inline (ex. "Prêt !")
+    this.shadowRoot.getElementById("h-devices").addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      const row = e.target.closest(".dev-row[data-slug]");
+      if (row) this._openModal(row.dataset.slug);
+    });
+
+    // Modal actions (delegation sur l'overlay, attaché une seule fois)
+    const modal = this.shadowRoot.getElementById("h-modal");
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) { this._closeModal(); return; }
+      const btn = e.target.closest("[data-action]");
+      if (!btn) return;
+      const action = btn.dataset.action;
+      if (action === "close") { this._closeModal(); return; }
+      if (action === "toggle-manual" && this._modalSlug) {
+        const { devices } = this._resolveAll();
+        const dev = devices.find(d => this._devSlug(d) === this._modalSlug);
+        if (dev) this._toggleManual(dev);
+      }
+      if (action === "ready") {
+        const readyEntity = btn.dataset.readyEntity;
+        if (readyEntity && this._hass)
+          this._hass.callService("input_boolean", "turn_on", { entity_id: readyEntity });
       }
     });
 
@@ -862,6 +1022,9 @@ class HeliosCard extends HTMLElement {
 
     // Devices section (full mode uniquement)
     if (!compact) this._updateDevices(discoveredDevices);
+
+    // Rafraîchit la modale si elle est ouverte
+    if (this._modalSlug) this._refreshModal();
   }
 
   // ------------------------------------------------------------------ Devices
@@ -909,13 +1072,14 @@ class HeliosCard extends HTMLElement {
     // Appliance "ready" button — visible only when idle and ready_entity is configured
     const applianceState = dev.type === "appliance" ? this._attr(dev.entity, "appliance_state") : null;
     const readyEntity    = dev.type === "appliance" ? this._attr(dev.entity, "appliance_ready_entity") : null;
-    const showReadyBtn   = applianceState === "idle" && readyEntity;
+    const showReadyBtn   = this._str(dev.entity) === "off" && applianceState === "idle" && readyEntity;
     const readyBtnHtml   = showReadyBtn
       ? `<button class="dev-ready-btn" data-ready-entity="${readyEntity}">Prêt !</button>`
       : "";
 
+    const slug = this._devSlug(dev);
     return `
-      <div class="dev-row">
+      <div class="dev-row" data-slug="${slug}">
         <div class="dev-icon">${icon}</div>
         <div class="dev-info">
           <div class="dev-name-row">
@@ -1028,6 +1192,196 @@ class HeliosCard extends HTMLElement {
       manual:         "Manuel",
     };
     return map[reason] ?? reason;
+  }
+
+  // ------------------------------------------------------------------ Modal
+  _devSlug(dev) {
+    return dev.entity.replace(/^sensor\.helios_/, "");
+  }
+
+  _manualSwitchEntity(dev) {
+    const candidate = `switch.helios_${this._devSlug(dev)}_manual`;
+    return this._hass?.states[candidate] !== undefined ? candidate : null;
+  }
+
+  _toggleManual(dev) {
+    const sw = this._manualSwitchEntity(dev);
+    if (!sw || !this._hass) return;
+    const isOn = this._hass.states[sw]?.state === "on";
+    this._hass.callService("homeassistant", isOn ? "turn_off" : "turn_on", { entity_id: sw });
+  }
+
+  _openModal(slug) {
+    this._modalSlug = slug;
+    const modal = this.shadowRoot.getElementById("h-modal");
+    if (modal) {
+      modal.removeAttribute("hidden");
+      this._refreshModal();
+    }
+  }
+
+  _closeModal() {
+    this._modalSlug = null;
+    const modal = this.shadowRoot.getElementById("h-modal");
+    if (modal) modal.setAttribute("hidden", "");
+  }
+
+  _refreshModal() {
+    if (!this._modalSlug) return;
+    const { devices } = this._resolveAll();
+    const dev = devices.find(d => this._devSlug(d) === this._modalSlug);
+    const box = this.shadowRoot.getElementById("h-modal-box");
+    if (!dev || !box) return;
+    box.innerHTML = this._buildModalContent(dev);
+  }
+
+  _buildModalContent(dev) {
+    const icon    = dev.icon || this._defaultIcon(dev.type);
+    const isOn    = this._deviceIsOn(dev);
+    const { dotColor, statusText } = this._deviceStatus(dev, isOn);
+    const manual  = this._attr(dev.entity, "manual_mode") === true;
+    const swEntity = this._manualSwitchEntity(dev);
+
+    // En-tête
+    const headerHtml = `
+      <div class="hm-header">
+        <span class="hm-icon">${icon}</span>
+        <span class="hm-title">${dev.name || ""}</span>
+        <div class="hm-hdr-dot" style="background:${dotColor}"></div>
+        <span class="hm-hdr-status">${statusText}</span>
+        <button class="hm-close" data-action="close">✕</button>
+      </div>`;
+
+    // Contrôle manuel
+    const manualHtml = swEntity ? `
+      <div class="hm-section">
+        <div class="hm-section-title">Contrôle</div>
+        <div class="hm-manual-row">
+          <span class="hm-manual-label">${manual ? "Mode manuel actif" : "Mode automatique"}</span>
+          <button class="hm-manual-btn ${manual ? "hm-manual-on" : "hm-manual-off"}" data-action="toggle-manual">
+            ${manual ? "Repasser en auto" : "Forcer manuel"}
+          </button>
+        </div>
+      </div>` : "";
+
+    // Détail type-spécifique
+    const detailBody = this._buildModalDetail(dev);
+    const detailHtml = detailBody ? `
+      <div class="hm-section">
+        <div class="hm-section-title">État</div>
+        ${detailBody}
+      </div>` : "";
+
+    // Score de l'appareil — composantes propres (pas les facteurs globaux)
+    const effScore     = this._attr(dev.entity, "last_effective_score");
+    const priorityScore= this._attr(dev.entity, "last_priority_score");
+    const fit          = this._attr(dev.entity, "last_fit");
+    const urgency      = this._attr(dev.entity, "last_urgency");
+    const reason       = this._attr(dev.entity, "last_decision_reason");
+    const dailyMin     = this._attr(dev.entity, "daily_on_minutes");
+    const priority     = this._attr(dev.entity, "device_priority") ?? dev.priority;
+
+    const devFactors = [
+      { label: "🎯 Priorité", val: priorityScore },
+      { label: "⚡ Fit",      val: fit           },
+      { label: "⏱ Urgence",  val: urgency       },
+    ];
+    const factorChips = devFactors.map(({ label, val }) => {
+      const fc = val === null ? "#9E9E9E" : val > 0.6 ? "#4CAF50" : val > 0.3 ? "#FF9800" : "#F44336";
+      return `
+        <div class="hm-factor">
+          <div class="hm-factor-fill" style="height:${val !== null ? Math.round(val * 100) : 0}%;background:${fc}33"></div>
+          <span class="hm-factor-lbl">${label}</span>
+          <span class="hm-factor-val" style="color:${fc}">${val !== null ? val.toFixed(2) : "—"}</span>
+        </div>`;
+    }).join('<span class="hm-factor-sep">×</span>');
+
+    const titleScore = effScore !== null
+      ? `Score — effectif : <strong>${effScore.toFixed(3)}</strong>`
+      : "Score";
+    const reasonHtml = reason
+      ? `<div class="hm-reason">Décision : ${this._reasonLabel(reason)}</div>` : "";
+    const dailyHtml = dailyMin !== null && dailyMin > 0
+      ? `<div class="hm-stat">Aujourd'hui : ${(dailyMin / 60).toFixed(1)} h ON</div>` : "";
+    const priorityHtml = priority !== null
+      ? `<div class="hm-stat">Priorité : P${priority} / 10</div>` : "";
+
+    const scoreHtml = `
+      <div class="hm-section">
+        <div class="hm-section-title">${titleScore}</div>
+        <div class="hm-factors-row">${factorChips}</div>
+        ${reasonHtml}${dailyHtml}${priorityHtml}
+      </div>`;
+
+    // Plage horaire (uniquement si non 00:00–24:00)
+    const start = this._attr(dev.entity, "allowed_start");
+    const end   = this._attr(dev.entity, "allowed_end");
+    const hasWindow = start && end && !(start === "00:00" && (end === "24:00" || end === "23:59"));
+    const windowHtml = hasWindow ? `
+      <div class="hm-section">
+        <div class="hm-section-title">Plage autorisée</div>
+        <div class="hm-window">🕐 ${start} → ${end}</div>
+      </div>` : "";
+
+    return headerHtml + manualHtml + detailHtml + scoreHtml + windowHtml;
+  }
+
+  _buildModalDetail(dev) {
+    switch (dev.type) {
+      case "pool": {
+        const doneMin  = this._attr(dev.entity, "filtration_done_min");
+        const reqMin   = this._attr(dev.entity, "filtration_required_min");
+        const forceRem = this._attr(dev.entity, "force_remaining_min") ?? 0;
+        if (doneMin === null || reqMin === null) return "";
+        const pct      = Math.min(100, reqMin > 0 ? Math.round(doneMin / reqMin * 100) : 100);
+        const barColor = pct >= 100 ? "#4CAF50" : "#2196F3";
+        return `
+          <div class="hm-progress-wrap">
+            <div class="hm-bar-bg"><div class="hm-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+            <span class="hm-bar-text">Filtration : ${(doneMin / 60).toFixed(1)} h / ${(reqMin / 60).toFixed(1)} h (${pct} %)</span>
+            ${forceRem > 1 ? `<span class="hm-force-lbl">🔒 Forcé — ${Math.round(forceRem)} min restantes</span>` : ""}
+          </div>`;
+      }
+      case "water_heater": {
+        const temp   = this._attr(dev.entity, "temperature");
+        const target = this._attr(dev.entity, "wh_temp_target");
+        if (temp === null) return "";
+        const pct      = target ? Math.min(100, Math.round(temp / target * 100)) : null;
+        const barColor = target
+          ? (temp >= target ? "#4CAF50" : temp > target * 0.8 ? "#FF9800" : "#F44336")
+          : "#2196F3";
+        return `
+          <div class="hm-progress-wrap">
+            ${pct !== null ? `<div class="hm-bar-bg"><div class="hm-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>` : ""}
+            <span class="hm-bar-text">Température : ${temp.toFixed(1)} °C${target !== null ? ` / ${target} °C` : ""}</span>
+          </div>`;
+      }
+      case "ev":
+      case "ev_charger": {
+        const soc     = this._attr(dev.entity, "soc");
+        const plugged = this._attr(dev.entity, "plugged");
+        const parts   = [];
+        if (plugged === false) parts.push("Non branché");
+        if (soc !== null) {
+          const sc = soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336";
+          parts.push(`<span style="color:${sc}">SOC : ${Math.round(soc)} %</span>`);
+        }
+        return parts.length ? `<div class="hm-stat">${parts.join(" · ")}</div>` : "";
+      }
+      case "appliance": {
+        const appState  = this._attr(dev.entity, "appliance_state");
+        const readyEnt  = this._attr(dev.entity, "appliance_ready_entity");
+        const showReady = this._str(dev.entity) === "off" && appState === "idle" && readyEnt;
+        const stateLabel = { idle: "En attente", waiting: "En attente", running: "En marche", off: "Arrêt" }[appState] ?? appState;
+        return `
+          <div class="hm-manual-row">
+            <span class="hm-stat">${stateLabel ?? "—"}</span>
+            ${showReady ? `<button class="dev-ready-btn" data-action="ready" data-ready-entity="${readyEnt}">Prêt !</button>` : ""}
+          </div>`;
+      }
+      default:
+        return "";
+    }
   }
 
   // ------------------------------------------------------------------ SVG helpers

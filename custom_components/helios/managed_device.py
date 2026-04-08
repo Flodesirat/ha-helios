@@ -187,6 +187,9 @@ class ManagedDevice:
         # Diagnostics — updated every dispatch cycle, exposed via switch extra_state_attributes
         self.last_effective_score: float      = 0.0
         self.last_decision_reason: str        = ""
+        self.last_priority_score: float       = 0.0
+        self.last_fit: float                  = 0.0
+        self.last_urgency: float              = 0.0
 
         # Generic — daily on-time tracking (all device types)
         self.daily_on_minutes: float             = 0.0
@@ -496,6 +499,10 @@ class ManagedDevice:
         priority_score = self.priority / 10.0
         fit     = self.compute_fit_score(self.power_w, surplus_w, bat_available_w, grid_allowance_w, tempo_red)
         urgency = self.urgency_modifier(reader, now=now)
+
+        self.last_priority_score = round(priority_score, 3)
+        self.last_fit            = round(fit, 3)
+        self.last_urgency        = round(urgency, 3)
 
         total_w = self.w_priority + self.w_fit + self.w_urgency
         if total_w <= 0:
