@@ -48,6 +48,7 @@ from .const import (
     CONF_APPLIANCE_READY_ENTITY, CONF_APPLIANCE_PREPARE_SCRIPT,
     CONF_APPLIANCE_START_SCRIPT, CONF_APPLIANCE_POWER_ENTITY,
     CONF_APPLIANCE_POWER_THRESHOLD_W, CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
+    CONF_APPLIANCE_DEADLINE_SLOTS,
     # Scoring weights
     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
     CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_SOLAR,
@@ -76,6 +77,7 @@ from .const import (
     DEFAULT_HVAC_HYSTERESIS_K, DEFAULT_HVAC_MIN_OFF_MINUTES,
     DEFAULT_POOL_SPLIT_SESSIONS,
     DEFAULT_APPLIANCE_POWER_THRESHOLD_W, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES,
+    DEFAULT_APPLIANCE_DEADLINE_SLOTS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -314,6 +316,12 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                     default=DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES,
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=10, max=480, step=5, unit_of_measurement="min")
+                ),
+                vol.Optional(
+                    CONF_APPLIANCE_DEADLINE_SLOTS,
+                    default=DEFAULT_APPLIANCE_DEADLINE_SLOTS,
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
                 ),
                 vol.Optional(CONF_DEVICE_DEADLINE): selector.TimeSelector(),
             }),
@@ -809,6 +817,9 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 ),
                 vol.Optional(CONF_APPLIANCE_CYCLE_DURATION_MINUTES, default=cd.get(CONF_APPLIANCE_CYCLE_DURATION_MINUTES, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES)): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=10, max=480, step=5, unit_of_measurement="min")
+                ),
+                vol.Optional(CONF_APPLIANCE_DEADLINE_SLOTS, default=cd.get(CONF_APPLIANCE_DEADLINE_SLOTS, DEFAULT_APPLIANCE_DEADLINE_SLOTS)): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
                 ),
                 vol.Optional(CONF_DEVICE_DEADLINE, **_opt_default(cd, CONF_DEVICE_DEADLINE)): selector.TimeSelector(),
             }),

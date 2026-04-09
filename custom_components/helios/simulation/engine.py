@@ -18,6 +18,7 @@ from .devices import SimDevice, default_devices
 from .sim_hass import SimHass
 from custom_components.helios.scoring_engine import ScoringEngine as _ScoringEngine
 from custom_components.helios.managed_device import ManagedDevice as _ManagedDevice
+from custom_components.helios.const import APPLIANCE_STATE_IDLE, APPLIANCE_STATE_PREPARING
 from custom_components.helios.device_manager import DeviceManager as _DeviceManager
 
 
@@ -418,6 +419,16 @@ async def async_run(
             step_epoch = _sim_date_epoch + float(i * STEP_MINUTES * 60)
             _time_stdlib.time = lambda _e=step_epoch: _e
             _sim_dt_proxy.set_now(sim_now)
+
+            # Trigger appliance PREPARING when the configured hour is reached
+            for sd, md in zip(devices, managed_devices):
+                if (
+                    sd.appliance_ready_at_hour is not None
+                    and hour >= sd.appliance_ready_at_hour
+                    and md.appliance_state == APPLIANCE_STATE_IDLE
+                ):
+                    md.appliance_state       = APPLIANCE_STATE_PREPARING
+                    md.appliance_deadline_dt = md._compute_auto_deadline(sim_now)
 
             dm_log_len = len(dm.decision_log)
             await dm.async_dispatch(sim_hass, score_input)

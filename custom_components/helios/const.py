@@ -112,6 +112,7 @@ CONF_APPLIANCE_START_SCRIPT      = "appliance_start_script"    # triggers the cy
 CONF_APPLIANCE_POWER_ENTITY      = "appliance_power_entity"    # optional — cycle detection
 CONF_APPLIANCE_POWER_THRESHOLD_W = "appliance_power_threshold_w"
 CONF_APPLIANCE_CYCLE_DURATION_MINUTES = "appliance_cycle_duration_minutes"
+CONF_APPLIANCE_DEADLINE_SLOTS    = "appliance_deadline_slots"  # e.g. "12:00,18:00"
 
 # Appliance internal states (not persisted in config)
 APPLIANCE_STATE_IDLE      = "idle"
@@ -251,3 +252,4 @@ DEFAULT_POOL_SPLIT_SESSIONS        = True
 
 DEFAULT_APPLIANCE_POWER_THRESHOLD_W     = 10.0   # W — "cycle ended" detection
 DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES = 120   # min — fallback if no power sensor
+DEFAULT_APPLIANCE_DEADLINE_SLOTS        = "12:00,18:00"

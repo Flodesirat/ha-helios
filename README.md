@@ -125,7 +125,29 @@ L'urgence dépend du type d'appareil :
 | **VE** | `0.6 × déficit_SOC + 0.4 × urgence_départ` — combine le déficit de charge et le temps restant avant l'heure de départ configurée |
 | **HVAC** | `écart_consigne / 3°C` — urgence maximale à 3 °C d'écart |
 | **Piscine** | `minutes_de_filtration_manquantes / minutes_restantes_avant_minuit` — monte en fin de journée si le quota n'est pas atteint |
-| **Appareil programmable** | Basé sur le délai avant l'heure limite configurée : `0.3` baseline → `0.8` si < 3h → `1.0` si plus le temps de finir |
+| **Appareil programmable** | Basé sur la deadline automatique calculée au moment de la mise en attente : `0.3` baseline → rampe vers `0.8` si < 3h de marge → `0.8` si < 1h → `1.0` si plus le temps de finir le cycle |
+
+##### Deadline automatique pour l'électroménager
+
+Quand tu indiques qu'un appareil (lave-vaisselle, lave-linge…) est prêt à tourner, Helios calcule automatiquement une **deadline de fin de cycle** selon l'heure de la mise en attente :
+
+| Heure de mise en attente | Deadline calculée |
+|--------------------------|-------------------|
+| Avant 12h00 | 12h00 — cycle terminé avant le déjeuner |
+| 12h00 – 17h59 | 18h00 — cycle terminé en fin d'après-midi |
+| 18h00 ou après | Minuit |
+
+Cette deadline pilote la montée en urgence : l'appareil attend d'abord du surplus solaire, puis accélère à mesure que la deadline approche, et force le démarrage si le cycle ne peut plus se terminer à temps.
+
+Les créneaux sont configurables par appareil via le champ **Deadline slots** (config flow, étape Appareils, type `appliance`). La valeur est une liste d'heures séparées par des virgules :
+
+| Exemple | Comportement |
+|---------|--------------|
+| `12:00,18:00` | Défaut — finir avant midi ou avant 18h |
+| `18:00` | Un seul créneau — finir avant 18h quelle que soit l'heure de lancement |
+| `10:00,14:00,20:00` | Trois créneaux — finir avant 10h, 14h ou 20h |
+
+Si tous les créneaux sont dépassés, la deadline tombe à minuit.
 
 Les appareils sont traités en **ordre décroissant de score effectif** : le premier obtient le budget disponible en priorité. Si le surplus restant est insuffisant pour les suivants, ils ne démarrent pas. **La carte Lovelace affiche les appareils dans ce même ordre**, ce qui permet de voir en un coup d'œil quel appareil est le plus susceptible d'être activé (ou coupé) au prochain cycle.
 

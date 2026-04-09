@@ -169,9 +169,12 @@ class DeviceManager:
         Runs the prepare script (if any) and immediately resets the ready entity
         so the user's helper switch reflects that preparation is in progress.
         """
-        device.appliance_state = APPLIANCE_STATE_PREPARING
+        device.appliance_state       = APPLIANCE_STATE_PREPARING
+        device.appliance_deadline_dt = device._compute_auto_deadline(datetime.now())
         _LOGGER.info(
-            "Appliance '%s': preparing — waiting for optimal start window", device.name
+            "Appliance '%s': preparing — deadline auto %s",
+            device.name,
+            device.appliance_deadline_dt.strftime("%H:%M"),
         )
         if device.appliance_prepare_script:
             await hass.services.async_call(
@@ -444,6 +447,9 @@ class DeviceManager:
                 priority_score = device.priority / 10.0
                 score          = min(global_score * priority_score * fit + urgency * 0.3, 1.0)
                 device.last_effective_score = round(score, 3)
+                device.last_priority_score  = round(priority_score, 3)
+                device.last_fit             = round(fit, 3)
+                device.last_urgency         = round(urgency, 3)
                 scored.append((score, device))
                 continue
 
@@ -653,6 +659,7 @@ class DeviceManager:
                 device.turned_off_at            = now_ts
                 device.appliance_cycle_start    = None
                 device.appliance_low_power_since = None
+                device.appliance_deadline_dt    = None
                 _LOGGER.info("Appliance '%s': cycle complete", device.name)
                 self.decision_log.append({
                     "ts":     datetime.now().isoformat(timespec="seconds"),

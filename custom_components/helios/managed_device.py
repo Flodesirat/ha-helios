@@ -39,6 +39,7 @@ from .const import (
     CONF_APPLIANCE_READY_ENTITY, CONF_APPLIANCE_PREPARE_SCRIPT,
     CONF_APPLIANCE_START_SCRIPT, CONF_APPLIANCE_POWER_ENTITY,
     CONF_APPLIANCE_POWER_THRESHOLD_W, CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
+    CONF_APPLIANCE_DEADLINE_SLOTS,
     APPLIANCE_STATE_IDLE, APPLIANCE_STATE_PREPARING,
     APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_DONE,
     # Off-peak slots
@@ -53,6 +54,7 @@ from .const import (
     DEFAULT_HVAC_HYSTERESIS_K, DEFAULT_HVAC_MIN_OFF_MINUTES,
     DEFAULT_POOL_SPLIT_SESSIONS,
     DEFAULT_APPLIANCE_POWER_THRESHOLD_W, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES,
+    DEFAULT_APPLIANCE_DEADLINE_SLOTS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -177,6 +179,12 @@ class ManagedDevice:
         self.appliance_cycle_duration_minutes: int = int(config.get(
             CONF_APPLIANCE_CYCLE_DURATION_MINUTES, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES
         ))
+        # Deadline slots: comma-separated "HH:MM" strings, e.g. "12:00,18:00"
+        raw_slots = config.get(CONF_APPLIANCE_DEADLINE_SLOTS, DEFAULT_APPLIANCE_DEADLINE_SLOTS)
+        self.appliance_deadline_slots: list[time] = [
+            t for s in (raw_slots or "").split(",")
+            if (t := _parse_time(s.strip())) is not None
+        ]
 
         # ---- Runtime state ----
         self.is_on: bool                      = False
@@ -213,6 +221,9 @@ class ManagedDevice:
         self.appliance_state: str             = APPLIANCE_STATE_IDLE
         self.appliance_cycle_start: float | None = None
         self.appliance_low_power_since: float | None = None
+        # Auto-computed deadline set when the appliance transitions to PREPARING.
+        # Before noon → 12:00 ; afternoon → 18:00 ; evening → midnight.
+        self.appliance_deadline_dt: datetime | None = None
 
     # ------------------------------------------------------------------
     # Allowed time window
@@ -432,10 +443,15 @@ class ManagedDevice:
         if self.device_type == DEVICE_TYPE_APPLIANCE:
             if self.appliance_state != APPLIANCE_STATE_PREPARING:
                 return 0.0
-            energy_wh = (
+            cycle_s = (
                 (self.appliance_cycle_duration_minutes or DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES)
-                / 60 * self.power_w
+                * 60
             )
+            deadline_dt = self.appliance_deadline_dt
+            if deadline_dt is not None:
+                return self._deadline_urgency_dt(deadline_dt, seconds_needed=cycle_s, now=now)
+            # Fallback: user-configured deadline string (legacy / override)
+            energy_wh = cycle_s / 3600 * self.power_w
             return self._deadline_urgency(self.deadline, energy_wh=energy_wh, power_w=self.power_w)
 
         return 0.5  # neutral for unknown types
@@ -587,6 +603,43 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     # Deadline / departure urgency helper
     # ------------------------------------------------------------------
+    def _compute_auto_deadline(self, now: datetime) -> datetime:
+        """Auto-deadline based on configured slots (default: "12:00,18:00").
+
+        Picks the first slot still in the future relative to *now*.
+        If all slots have passed, falls back to midnight.
+        """
+        now_t = now.time().replace(second=0, microsecond=0)
+        for slot in sorted(self.appliance_deadline_slots):
+            if slot > now_t:
+                return now.replace(hour=slot.hour, minute=slot.minute, second=0, microsecond=0)
+        return (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def _deadline_urgency_dt(
+        self,
+        deadline_dt: datetime,
+        seconds_needed: float,
+        now: datetime | None = None,
+    ) -> float:
+        """Urgency ramp [0..1] from a concrete deadline datetime.
+
+        margin = temps restant − durée du cycle
+        ≤ 0       → 1.0  (plus assez de temps, démarrage forcé)
+        < 1 h     → 0.8  (démarrage prioritaire)
+        < 3 h     → rampe linéaire 0.3 → 0.8
+        ≥ 3 h     → 0.3  (baseline)
+        """
+        _now = now or datetime.now()
+        seconds_left = (deadline_dt - _now).total_seconds()
+        margin = seconds_left - seconds_needed
+        if margin <= 0:
+            return 1.0
+        if margin < 3_600:
+            return 0.8
+        if margin < 10_800:
+            return 0.3 + 0.5 * (1.0 - margin / 10_800)
+        return 0.3
+
     def _deadline_urgency(
         self,
         deadline_str: str | None,
@@ -596,6 +649,7 @@ class ManagedDevice:
         """Returns [0..1] — rises as deadline approaches.
 
         0.3 baseline when no deadline; 1.0 when no time left.
+        Used for EV departure time and legacy appliance deadline strings.
         """
         parsed = _parse_time(deadline_str)
         if not deadline_str or parsed is None:
@@ -606,8 +660,6 @@ class ManagedDevice:
         if deadline_dt <= now:
             deadline_dt += timedelta(days=1)  # already passed today → tomorrow
 
-        seconds_left = (deadline_dt - now).total_seconds()
-
         if energy_wh is not None and power_w:
             seconds_needed = (energy_wh / power_w) * 3600
         elif self.appliance_cycle_duration_minutes:
@@ -615,14 +667,7 @@ class ManagedDevice:
         else:
             seconds_needed = 3600  # 1 h fallback
 
-        margin = seconds_left - seconds_needed
-        if margin <= 0:
-            return 1.0
-        if margin < 3_600:       # less than 1 h margin
-            return 0.8
-        if margin < 10_800:      # less than 3 h margin — ramp 0.3→0.8
-            return 0.3 + 0.5 * (1.0 - margin / 10_800)
-        return 0.3
+        return self._deadline_urgency_dt(deadline_dt, seconds_needed, now=now)
 
     # ------------------------------------------------------------------
     # State readers — decoupled from HomeAssistant via StateReader callable

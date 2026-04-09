@@ -58,7 +58,8 @@ class SimDevice:
 
     # Appliance state machine
     appliance_cycle_duration_minutes: int | None = None  # None → ManagedDevice default (120 min)
-    appliance_ready_at_start: bool = False  # True → pre-set ManagedDevice to PREPARING
+    appliance_ready_at_start: bool = False    # True → pre-set ManagedDevice to PREPARING at t=0
+    appliance_ready_at_hour: float | None = None  # Set to PREPARING when sim hour >= this value
 
     # ---- Runtime state (reset each simulation run) ----
     active: bool = field(default=False, init=False)
@@ -269,6 +270,7 @@ def load_devices_from_json(path: str) -> list[SimDevice]:
             pool_required_min=pool_required_min,
             appliance_cycle_duration_minutes=int(cycle_min) if cycle_min is not None else None,
             appliance_ready_at_start=bool(d.get("appliance_ready_at_start", False)),
+            appliance_ready_at_hour=float(h) if (h := d.get("appliance_ready_at_hour")) is not None else None,
             w_priority=float(d.get("w_priority", 0.30)),
             w_fit=float(d.get("w_fit", 0.40)),
             w_urgency=float(d.get("w_urgency", 0.30)),
