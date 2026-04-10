@@ -14,14 +14,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.helios.coordinator import EnergyOptimizerCoordinator
-from custom_components.helios.const import MODE_AUTO, MODE_OFF
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_coordinator(mode: str = MODE_AUTO) -> MagicMock:
+def _make_coordinator(enabled: bool = True) -> MagicMock:
     """Build a minimal coordinator mock with _async_update_data bound to it."""
     coord = MagicMock(spec=EnergyOptimizerCoordinator)
 
@@ -29,7 +28,7 @@ def _make_coordinator(mode: str = MODE_AUTO) -> MagicMock:
     coord.hass = MagicMock()
 
     # Core state
-    coord.mode = mode
+    coord.enabled = enabled
     coord._cfg = {"battery_enabled": False}
     coord.dispatch_threshold = 0.3
     coord.grid_allowance_w   = 250.0
@@ -64,7 +63,7 @@ def _make_coordinator(mode: str = MODE_AUTO) -> MagicMock:
     coord._read_sensors = AsyncMock(return_value=_raw)
     coord._update_state = MagicMock()
     coord._build_score_input = MagicMock(return_value={"surplus_w": 800.0})
-    coord._snapshot = MagicMock(return_value={"mode": mode})
+    coord._snapshot = MagicMock(return_value={"enabled": enabled})
 
     # Bind the real method
     coord._async_update_data = (
@@ -119,7 +118,7 @@ class TestWarmupBlocked:
 
         result = await coord._async_update_data()
 
-        assert result == {"mode": MODE_AUTO}
+        assert result == {"enabled": True}
 
 
 # ---------------------------------------------------------------------------
@@ -161,14 +160,14 @@ class TestWarmupElapsed:
 
 
 # ---------------------------------------------------------------------------
-# MODE_OFF — always skips dispatch regardless of warmup state
+# enabled=False — always skips dispatch regardless of warmup state
 # ---------------------------------------------------------------------------
 
-class TestModeOff:
+class TestDisabled:
 
     @pytest.mark.asyncio
-    async def test_dispatch_not_called_in_mode_off_during_warmup(self):
-        coord = _make_coordinator(mode=MODE_OFF)
+    async def test_dispatch_not_called_when_disabled_during_warmup(self):
+        coord = _make_coordinator(enabled=False)
         coord._dispatch_ready_at = _time.monotonic() + 9999
 
         await coord._async_update_data()
@@ -176,9 +175,9 @@ class TestModeOff:
         coord.device_manager.async_dispatch.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_dispatch_not_called_in_mode_off_after_warmup(self):
-        """MODE_OFF must skip dispatch even after warmup has elapsed."""
-        coord = _make_coordinator(mode=MODE_OFF)
+    async def test_dispatch_not_called_when_disabled_after_warmup(self):
+        """Disabled must skip dispatch even after warmup has elapsed."""
+        coord = _make_coordinator(enabled=False)
         coord._dispatch_ready_at = _time.monotonic() - 1
 
         await coord._async_update_data()

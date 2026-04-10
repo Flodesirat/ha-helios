@@ -12,7 +12,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
 from .const import (
-    DOMAIN, MODE_AUTO, MODE_OFF,
+    DOMAIN,
     DEVICE_TYPE_POOL, DEVICE_TYPE_EV,
 )
 from .coordinator import EnergyOptimizerCoordinator
@@ -92,14 +92,14 @@ class EnergyOptimizerModeSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator.mode == MODE_AUTO
+        return self.coordinator.enabled
 
     async def async_turn_on(self, **kwargs) -> None:
-        self.coordinator.mode = MODE_AUTO
+        self.coordinator.enabled = True
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs) -> None:
-        self.coordinator.mode = MODE_OFF
+        self.coordinator.enabled = False
         self.async_write_ha_state()
 
     @property

@@ -26,7 +26,7 @@ from .const import (
     CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
     CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     # Strategy
-    CONF_MODE, DEFAULT_SCAN_INTERVAL,
+    CONF_ENABLED, DEFAULT_ENABLED, DEFAULT_SCAN_INTERVAL,
     CONF_SCAN_INTERVAL_MINUTES,
     CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD,
     CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W,
@@ -40,7 +40,6 @@ from .const import (
     CONF_WEIGHT_TEMPO, DEFAULT_WEIGHT_TEMPO,
     CONF_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_BATTERY_SOC,
     CONF_WEIGHT_SOLAR, DEFAULT_WEIGHT_SOLAR,
-    MODE_AUTO,
 )
 from .coordinator import EnergyOptimizerCoordinator
 from .managed_device import ManagedDevice
@@ -134,7 +133,7 @@ async def async_get_config_entry_diagnostics(
     f_solar = round(eng._score_solar(score_input), 3)
 
     current_state = {
-        "mode":               coordinator.mode,
+        "enabled":            coordinator.enabled,
         "global_score":       coordinator.global_score,
         "dispatch_threshold": coordinator.dispatch_threshold,
         "surplus_w":          coordinator.surplus_w,
@@ -207,7 +206,7 @@ async def async_get_config_entry_diagnostics(
             "max_discharge_power_w": cfg.get(CONF_BATTERY_MAX_DISCHARGE_POWER_W),
         },
         "strategy": {
-            "mode":                 cfg.get(CONF_MODE, MODE_AUTO),
+            "enabled":              cfg.get(CONF_ENABLED, DEFAULT_ENABLED),
             "scan_interval_minutes": cfg.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL),
             "dispatch_threshold":   cfg.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD),
             "grid_allowance_w":     cfg.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W),

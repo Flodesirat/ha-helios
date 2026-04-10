@@ -88,7 +88,7 @@ Chaque type a sa propre logique de satisfaction (quand s'arrêter) et d'urgence 
 | Mode | `heat` ou `cool` |
 | Hystérésis | Bande morte en °C pour éviter les cycles courts |
 
-**`pool`** — pompe de piscine. Satisfait quand le quota journalier de filtration est atteint (heures ou minutes). En fin de fenêtre horaire, Helios force le démarrage (`must_run`) si le quota n'est pas atteint. L'urgence monte linéairement : `minutes manquantes / minutes restantes avant la fin de plage`.
+**`pool`** — pompe de piscine. Satisfait quand le quota journalier de filtration est atteint. En fin de fenêtre horaire, Helios force le démarrage (`must_run`) si le quota n'est pas atteint. L'urgence monte linéairement : `minutes manquantes / minutes restantes avant la fin de plage`.
 
 | Paramètre spécifique | Description |
 |----------------------|-------------|
@@ -115,6 +115,8 @@ score_effectif = (w_priority × priorité/10 + w_fit × fit + w_urgency × urgen
 - **`fit`** — à quel point la puissance de l'appareil correspond au surplus disponible (voir détail ci-dessous)
 - **`urgence`** — à quel point l'appareil a besoin de tourner bientôt (voir détail ci-dessous)
 
+> **Rôle du score effectif** — Le score ne décide pas directement si un appareil est allumé ou éteint. La décision repose sur d'autres critères : satisfaction de l'objectif, budget `remaining` disponible, `fit >= 0.1`. Le score effectif sert uniquement à **trier les appareils** dans l'allocation greedy : en cas de budget limité, l'appareil au score le plus élevé est servi en premier. Il est aussi exposé dans la carte Lovelace pour visualiser l'état de chaque appareil.
+
 Les **poids** (`w_priority`, `w_fit`, `w_urgency`) sont configurables par appareil et doivent sommer à 1.0. Ils déterminent quelle composante prime pour cet appareil :
 
 | Exemple | Réglage conseillé |
@@ -125,7 +127,7 @@ Les **poids** (`w_priority`, `w_fit`, `w_urgency`) sont configurables par appare
 
 #### Grandeurs clés du dispatch
 
-Ces quatre valeurs sont calculées à chaque cycle et pilotent l'ensemble de la logique de dispatch.
+Ces valeurs sont calculées à chaque cycle et pilotent l'ensemble de la logique de dispatch.
 
 | Grandeur | Formule / source | Rôle |
 |----------|-----------------|------|
@@ -228,6 +230,8 @@ Un appareil allumé est coupé à chaque cycle si **l'une** des conditions suiva
 | Seuil de dispatch | 0.30 | Score global minimum pour activer les appareils |
 | Mode | `auto` | `auto` \| `manual` \| `off` |
 | Alpha optimiseur | 0.50 | Objectif de l'optimiseur quotidien : `0.0` = économies pures, `1.0` = autoconsommation pure |
+
+> **Poids et optimiseur** — Les poids configurés ici servent uniquement de valeurs initiales au premier démarrage, avant que l'optimiseur quotidien n'ait tourné. Dès 5h00, l'optimiseur les recalcule et les écrase (résultat persisté). En cas d'échec de l'optimiseur, ces valeurs font office de fallback. En pratique, les laisser aux valeurs par défaut suffit.
 
 > Les poids doivent sommer à 1.0 — le formulaire le valide.
 

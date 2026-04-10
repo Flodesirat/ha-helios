@@ -88,7 +88,7 @@ def _make_coordinator(
     )
 
     # Coordinator state
-    coordinator.mode              = "auto"
+    coordinator.enabled           = True
     coordinator.global_score      = 0.72
     coordinator.dispatch_threshold = 0.30
     coordinator.surplus_w         = 1200.0
@@ -135,7 +135,7 @@ def _make_coordinator(
         "battery_max_charge_power_w":    3000,
         "battery_max_discharge_power_w": 3000,
         # Strategy
-        "mode":                  "auto",
+        "enabled":               True,
         "scan_interval_minutes": 5,
         "dispatch_threshold":    0.3,
         "grid_allowance_w":      250,
@@ -200,7 +200,7 @@ class TestDiagnosticsStructure:
         cs = result["current_state"]
 
         for key in (
-            "mode", "global_score", "dispatch_threshold",
+            "enabled", "global_score", "dispatch_threshold",
             "surplus_w", "pv_power_w", "grid_power_w", "house_power_w",
             "bat_available_w", "battery_soc", "battery_action",
             "tempo_color", "forecast_kwh", "grid_allowance_w",
@@ -257,7 +257,7 @@ class TestCurrentStateValues:
 
         cs = (await async_get_config_entry_diagnostics(hass, entry))["current_state"]
 
-        assert cs["mode"]               == "auto"
+        assert cs["enabled"]            == True
         assert cs["global_score"]       == 0.72
         assert cs["surplus_w"]          == 1200.0
         assert cs["pv_power_w"]         == 2500.0
@@ -345,7 +345,7 @@ class TestConfigurationSection:
 
         strat = (await async_get_config_entry_diagnostics(hass, entry))["configuration"]["strategy"]
 
-        assert strat["mode"]                  == "auto"
+        assert strat["enabled"]               == True
         assert strat["scan_interval_minutes"] == 5
         assert strat["dispatch_threshold"]    == 0.3
         assert strat["grid_allowance_w"]      == 250

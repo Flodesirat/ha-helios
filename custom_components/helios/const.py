@@ -132,7 +132,6 @@ CONF_WEIGHT_SOLAR        = "weight_solar"
 # Config entry keys — general / strategy
 # ---------------------------------------------------------------------------
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
-CONF_MODE                  = "mode"
 CONF_DISPATCH_THRESHOLD    = "dispatch_threshold"  # global_score below which no dispatch
 CONF_GRID_ALLOWANCE_W      = "grid_allowance_w"    # W autorisés depuis le réseau en mode Pleine (SOC ≥ 96 %)
 CONF_OPTIMIZER_ALPHA       = "optimizer_alpha"     # 0.0 = économies pures, 1.0 = autoconsommation pure
@@ -192,10 +191,8 @@ def normalize_tempo_color(raw: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 # Operating modes
 # ---------------------------------------------------------------------------
-MODE_AUTO   = "auto"
-MODE_MANUAL = "manual"
-MODE_OFF    = "off"
-MODES = [MODE_AUTO, MODE_MANUAL, MODE_OFF]
+CONF_ENABLED         = "enabled"
+DEFAULT_ENABLED      = True
 
 # ---------------------------------------------------------------------------
 # Storage

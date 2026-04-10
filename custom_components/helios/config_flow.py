@@ -53,7 +53,7 @@ from .const import (
     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
     CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_SOLAR,
     # Strategy
-    CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
+    CONF_SCAN_INTERVAL_MINUTES, CONF_ENABLED, DEFAULT_ENABLED, CONF_DISPATCH_THRESHOLD,
     CONF_GRID_ALLOWANCE_W, CONF_OPTIMIZER_ALPHA,
     CONF_BASE_LOAD_NOISE, CONF_OPTIMIZER_N_RUNS, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
     CONF_SAMPLE_INTERVAL_SECONDS,
@@ -61,7 +61,6 @@ from .const import (
     # Device / general types and defaults
     DEVICE_TYPES, DEVICE_TYPE_GENERIC, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER,
     DEVICE_TYPE_HVAC, DEVICE_TYPE_APPLIANCE, DEVICE_TYPE_POOL,
-    MODES, MODE_AUTO,
     DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
     DEFAULT_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_CAPACITY_KWH,
     DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
@@ -580,7 +579,7 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 for k in (
                     CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
                     CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_SOLAR,
-                    CONF_SCAN_INTERVAL_MINUTES, CONF_MODE, CONF_DISPATCH_THRESHOLD,
+                    CONF_SCAN_INTERVAL_MINUTES, CONF_ENABLED, CONF_DISPATCH_THRESHOLD,
                     CONF_GRID_ALLOWANCE_W, CONF_OPTIMIZER_ALPHA,
                     CONF_BASE_LOAD_NOISE, CONF_OPTIMIZER_N_RUNS, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
                     CONF_SAMPLE_INTERVAL_SECONDS,
@@ -988,11 +987,9 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
             selector.NumberSelectorConfig(min=0, max=2000, step=50, unit_of_measurement="W")
         ),
         vol.Optional(
-            CONF_MODE,
-            default=d.get(CONF_MODE, MODE_AUTO),
-        ): selector.SelectSelector(
-            selector.SelectSelectorConfig(options=MODES, translation_key="mode")
-        ),
+            CONF_ENABLED,
+            default=d.get(CONF_ENABLED, DEFAULT_ENABLED),
+        ): selector.BooleanSelector(),
         vol.Optional(
             CONF_OPTIMIZER_ALPHA,
             default=d.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA),

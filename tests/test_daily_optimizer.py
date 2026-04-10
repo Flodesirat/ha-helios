@@ -91,14 +91,13 @@ class TestDailyOptimizerScheduling:
         ) as mock_track:
             from custom_components.helios.coordinator import EnergyOptimizerCoordinator
             from custom_components.helios.const import (
-                CONF_SCAN_INTERVAL_MINUTES, CONF_DEVICES, CONF_MODE,
+                CONF_SCAN_INTERVAL_MINUTES, CONF_DEVICES,
             )
 
             entry = MagicMock()
             entry.data = {
                 CONF_SCAN_INTERVAL_MINUTES: 5,
                 CONF_DEVICES: [],
-                CONF_MODE: "auto",
             }
             entry.options = {}
 
@@ -124,14 +123,13 @@ class TestDailyOptimizerScheduling:
         ) as mock_opt:
             from custom_components.helios.coordinator import EnergyOptimizerCoordinator
             from custom_components.helios.const import (
-                CONF_SCAN_INTERVAL_MINUTES, CONF_DEVICES, CONF_MODE,
+                CONF_SCAN_INTERVAL_MINUTES, CONF_DEVICES,
             )
 
             entry = MagicMock()
             entry.data = {
                 CONF_SCAN_INTERVAL_MINUTES: 5,
                 CONF_DEVICES: [],
-                CONF_MODE: "auto",
             }
             entry.options = {}
             hass = MagicMock()

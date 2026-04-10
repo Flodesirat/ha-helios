@@ -26,11 +26,10 @@ from .const import (
     CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX,
     CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
-    CONF_DEVICES, CONF_MODE, CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD,
+    CONF_DEVICES, CONF_ENABLED, DEFAULT_ENABLED, CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD,
     CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W,
     CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA,
     CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS,
-    MODE_AUTO, MODE_OFF,
     BATTERY_ACTION_AUTOCONSOMMATION,
     normalize_tempo_color,
     CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN,
@@ -109,7 +108,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.global_score:    float       = 0.0
         self.battery_action:  str         = BATTERY_ACTION_AUTOCONSOMMATION
         self.forecast_kwh:       float | None = None
-        self.mode:               str         = cfg.get(CONF_MODE, MODE_AUTO)
+        self.enabled:            bool        = bool(cfg.get(CONF_ENABLED, DEFAULT_ENABLED))
         self.optimizer_last_run: str | None  = None   # ISO timestamp set by daily_optimizer
         self.optimizer_context:          dict              = {}
         self.optimizer_top20:            list[dict]        = []
@@ -259,7 +258,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             raw = await self._read_sensors()
             self._update_state(raw)
 
-            if self.mode == MODE_OFF:
+            if not self.enabled:
                 return self._snapshot()
 
             # Skip scoring and dispatch until entities have stabilised after startup.
@@ -279,7 +278,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                 self.battery_action = self.battery_strategy.decide(score_input)
                 await self.battery_strategy.async_apply(self.hass, self.battery_action)
 
-            if self.mode == MODE_AUTO:
+            if self.enabled:
                 dispatch_input = {
                     **score_input,
                     "global_score":       self.global_score,
@@ -459,5 +458,5 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "forecast_kwh":    self.forecast_kwh,
             "global_score":    self.global_score,
             "battery_action":  self.battery_action,
-            "mode":            self.mode,
+            "enabled":         self.enabled,
         }
