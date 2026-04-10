@@ -30,7 +30,7 @@
     "min_on_minutes": 30
   },
   {
-    "_comment": "Prêt à 8h → deadline auto 12h00",
+    "_comment": "Heure de déclenchement définie dans appliance_schedule.json",
     "name": "Lave-vaisselle",
     "device_type": "appliance",
     "power_w": 2000,
@@ -39,11 +39,10 @@
     "priority": 9,
     "min_on_minutes": 30,
     "appliance_cycle_duration_minutes": 30,
-    "appliance_deadline_slots": "12:00,18:00",
-    "appliance_ready_at_hour": 8.0
+    "appliance_deadline_slots": "12:00,18:00"
   },
   {
-    "_comment": "Prêt à 13h → deadline auto 18h00",
+    "_comment": "Heure de déclenchement définie dans appliance_schedule.json",
     "name": "Lave-linge",
     "device_type": "appliance",
     "power_w": 2000,
@@ -51,8 +50,7 @@
     "allowed_end": 18.0,
     "priority": 7,
     "min_on_minutes": 15,
-    "appliance_cycle_duration_minutes": 90,
-    "appliance_deadline_slots": "12:00,18:00",
-    "appliance_ready_at_hour": 13.0
+    "appliance_cycle_duration_minutes": 30,
+    "appliance_deadline_slots": "12:00,18:00"
   }
 ]

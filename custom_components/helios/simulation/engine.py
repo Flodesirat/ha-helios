@@ -420,7 +420,7 @@ async def async_run(
             _time_stdlib.time = lambda _e=step_epoch: _e
             _sim_dt_proxy.set_now(sim_now)
 
-            # Trigger appliance PREPARING when the configured hour is reached
+            # Trigger appliance PREPARING when the configured hour is reached (once)
             for sd, md in zip(devices, managed_devices):
                 if (
                     sd.appliance_ready_at_hour is not None
@@ -429,6 +429,7 @@ async def async_run(
                 ):
                     md.appliance_state       = APPLIANCE_STATE_PREPARING
                     md.appliance_deadline_dt = md._compute_auto_deadline(sim_now)
+                    sd.appliance_ready_at_hour = None  # consume — don't re-trigger after DONE→IDLE
 
             dm_log_len = len(dm.decision_log)
             await dm.async_dispatch(sim_hass, score_input)

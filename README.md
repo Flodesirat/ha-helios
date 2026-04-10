@@ -433,10 +433,10 @@ Tous les paramètres métier sont dans `custom_components/helios/simulation/conf
 
 | Fichier | Contenu |
 |---------|---------|
-| `devices.json` | Liste des appareils pilotés (puissance, fenêtre horaire, quotas) |
-| `base_load.json` | Consommation de fond de la maison (segments horaires) |
-| `base_load_with_car_charge.json` | Profil alternatif avec charge VE nocturne |
-| `tariff.json` | Tarifs EDF Tempo HC/HP par couleur (€/kWh) |
+| `devices.json` | Appareils fictifs pour la simulation sur PC — **indépendant de la config HA** (les appareils réels sont configurés via le config flow) |
+| `appliance_schedule.json` | Planning de déclenchement des appareils programmables — **partagé** entre le simulateur et l'optimiseur quotidien HA |
+| `base_load.json` | Consommation de fond — utilisé par la simulation **et** par l'intégration HA au démarrage (cold start EMA) ; remplacé progressivement par le profil appris |
+| `tariff.json` | Tarifs EDF Tempo HC/HP — utilisé par la simulation **et** par l'optimiseur quotidien HA (calcul du taux d'économies dans la fonction objectif) |
 
 ```bash
 python sim.py \
@@ -447,45 +447,131 @@ python sim.py \
 
 #### Format `devices.json`
 
+**Champs communs** à tous les types :
+
 ```json
 [
   {
-    "name": "Chauffe-eau",
-    "power_w": 2000,
+    "name": "Pompe piscine",
+    "device_type": "pool",
+    "power_w": 620,
     "allowed_start": 8.0,
-    "allowed_end": 18.0,
-    "priority": 8,
-    "min_on_minutes": 30,
-    "run_quota_h": 2.0,
-    "must_run_daily": true
+    "allowed_end": 20.0,
+    "priority": 6,
+    "min_on_minutes": 15,
+    "run_quota_h": 3.0
+  }
+]
+```
+
+| Champ | Défaut | Description |
+|-------|--------|-------------|
+| `name` | — | Nom affiché dans les logs et sorties |
+| `device_type` | `"generic"` | `generic`, `pool`, `appliance` (voir ci-dessous) |
+| `power_w` | — | Puissance consommée (W) |
+| `allowed_start` / `allowed_end` | `0.0` / `24.0` | Fenêtre horaire autorisée (heures décimales, ex. `8.0` = 8h00) |
+| `priority` | `5` | Priorité de dispatch 1–10 (10 = plus prioritaire) |
+| `min_on_minutes` | `0` | Durée minimale allumé avant que Helios puisse éteindre |
+| `run_quota_h` | — | Quota journalier en heures (l'appareil s'arrête une fois la durée atteinte) |
+| `must_run_daily` | `false` | Force au moins un cycle par jour |
+| `w_priority` / `w_fit` / `w_urgency` | `0.30/0.40/0.30` | Poids des composantes du score effectif (doivent sommer à 1.0) |
+
+**Type `pool`** — suit un quota de filtration journalier (`run_quota_h`).
+
+**Type `appliance`** — lave-linge, lave-vaisselle : cycle unique non interruptible déclenché manuellement.
+
+```json
+{
+  "name": "Lave-vaisselle",
+  "device_type": "appliance",
+  "power_w": 2000,
+  "allowed_start": 8.0,
+  "allowed_end": 18.0,
+  "priority": 9,
+  "min_on_minutes": 30,
+  "appliance_cycle_duration_minutes": 30,
+  "appliance_deadline_slots": "12:00,18:00"
+}
+```
+
+| Champ | Défaut | Description |
+|-------|--------|-------------|
+| `appliance_cycle_duration_minutes` | `120` | Durée estimée du cycle (min) — sert au calcul d'urgence et à la détection de fin si pas de capteur de puissance |
+| `appliance_deadline_slots` | `"12:00,18:00"` | Créneaux de fin souhaités (heures séparées par des virgules). Helios choisit le premier slot encore atteignable au moment de la mise en attente et monte l'urgence en conséquence |
+| `appliance_ready_at_start` | `false` | Si `true`, l'appareil est mis en attente dès le début de la simulation (rarement utile — préférer `appliance_schedule.json`) |
+
+> L'heure de déclenchement (`ready_at_hour`) se configure dans `appliance_schedule.json`, pas dans `devices.json`. Cette séparation permet de rejouer la simulation avec des horaires différents sans modifier la définition des appareils.
+
+#### Format `appliance_schedule.json`
+
+`appliance_schedule.json` définit **quand** chaque appareil programmable est mis en attente (bouton "Prêt" pressé). Il est **distinct de `devices.json`** qui décrit *ce que* fait l'appareil : puissance, priorité, deadline slots…
+
+Ce fichier est utilisé par deux composants :
+- **Le simulateur** — chargé automatiquement depuis `simulation/config/appliance_schedule.json` (ou via `--appliance-schedule chemin/vers/fichier.json`)
+- **L'optimiseur quotidien HA** — lu au démarrage de `ha_devices_to_sim()` depuis le même chemin bundlé
+
+```json
+[
+  {
+    "_comment": "Lave-vaisselle prêt à 8h → deadline auto 12:00",
+    "name": "Lave-vaisselle",
+    "ready_at_hour": 8.0
+  },
+  {
+    "_comment": "Lave-linge prêt à 13h → deadline auto 18:00",
+    "name": "Lave-linge",
+    "ready_at_hour": 13.0
   }
 ]
 ```
 
 | Champ | Description |
 |-------|-------------|
-| `power_w` | Puissance de l'appareil (W) |
-| `allowed_start` / `allowed_end` | Fenêtre horaire autorisée (heures décimales) |
-| `priority` | Priorité de dispatch 1–10 (10 = plus prioritaire) |
-| `min_on_minutes` | Durée minimale avant extinction |
-| `run_quota_h` | Quota journalier (l'appareil s'arrête une fois la durée atteinte) |
-| `must_run_daily` | Force au moins un cycle par jour |
+| `name` | Nom de l'appareil — doit correspondre exactement au `name` dans `devices.json` |
+| `ready_at_hour` | Heure décimale à laquelle l'appareil passe en état PREPARING (ex. `8.0` = 8h00, `13.5` = 13h30) |
+
+La deadline est calculée automatiquement en fonction de `ready_at_hour` et des `appliance_deadline_slots` définis dans `devices.json`. Par exemple, un appareil mis en attente à 8h00 avec les slots `"12:00,18:00"` recevra une deadline à 12:00.
+
+Si le fichier est absent ou illisible, la simulation et l'optimiseur continuent sans déclencher d'appareils programmables (log debug uniquement, pas d'erreur).
 
 #### Format `base_load.json`
 
-Segments avec interpolation linéaire entre `w_start` et `w_end` :
+> **Note** — Ce fichier est une configuration temporaire destinée à la simulation. En production, Helios apprend automatiquement le profil de consommation de la maison grâce à l'EMA intégrée (`sensor.helios_base_load_profile`), sans nécessiter ce fichier.
+
+`base_load.json` décrit la consommation de fond de la maison **sans les appareils pilotés** sous forme de segments horaires. Chaque segment définit une plage avec interpolation linéaire entre `w_start` et `w_end`.
 
 ```json
 {
   "segments": [
-    {"from": 0.0,  "to": 5.5,  "w_start": 300, "w_end": 300},
-    {"from": 5.5,  "to": 7.0,  "w_start": 300, "w_end": 1000},
-    {"from": 7.0,  "to": 9.0,  "w_start": 1000, "w_end": 1000}
+    {"from": 0.0,  "to": 2.0,  "w_start": 400,  "w_end": 400},
+    {"from": 2.0,  "to": 5.5,  "w_start": 250,  "w_end": 250},
+    {"from": 5.5,  "to": 7.0,  "w_start": 250,  "w_end": 500},
+    {"from": 7.0,  "to": 11.5, "w_start": 500,  "w_end": 450},
+    {"from": 11.5, "to": 12.5, "w_start": 2000, "w_end": 2000},
+    {"from": 12.5, "to": 18.5, "w_start": 450,  "w_end": 450},
+    {"from": 18.5, "to": 21.0, "w_start": 1100, "w_end": 1100},
+    {"from": 21.0, "to": 24.0, "w_start": 400,  "w_end": 400}
   ]
 }
 ```
 
+| Champ | Description |
+|-------|-------------|
+| `from` / `to` | Plage horaire en heures décimales (0.0 = minuit, 12.5 = 12h30) |
+| `w_start` | Puissance en W au début du segment |
+| `w_end` | Puissance en W à la fin du segment — interpolation linéaire entre les deux |
+
+Les segments doivent couvrir la journée complète de 0.0 à 24.0 sans chevauchement ni trou. La puissance représente uniquement la consommation de fond (éclairage, électroménager passif, veille…), **sans** inclure les appareils déclarés dans `devices.json`.
+
 #### Format `tariff.json`
+
+> **Note** — Ce fichier est temporaire. À terme, le tarif sera configurable directement dans le config flow de HA avec trois modes : tarif fixe, HP/HC et EDF Tempo.
+
+`tariff.json` définit les prix d'achat du kWh selon la plage horaire et la couleur Tempo. Il est utilisé par deux composants :
+- **Le simulateur** (`--tariff chemin/vers/fichier.json`, ou le fichier bundlé par défaut)
+- **L'optimiseur quotidien HA** (tourne à 05:00) — pour calculer le taux d'économies dans sa fonction objectif : `α × autoconsommation + (1−α) × économies`
+
+**Mode actuel : EDF Tempo** (seul mode supporté)
 
 ```json
 {
@@ -496,6 +582,24 @@ Segments avec interpolation linéaire entre `w_start` et `w_end` :
   "red":   { "hc": 0.1575, "hp": 0.7060 }
 }
 ```
+
+| Champ | Description |
+|-------|-------------|
+| `hc_start` | Heure de début des Heures Creuses (format décimal, ex. `22.0` = 22h00) |
+| `hc_end` | Heure de fin des HC (ex. `6.0` = 6h00) — la plage traverse minuit |
+| `blue.hc` / `blue.hp` | Prix HC et HP les jours bleus (€/kWh TTC) |
+| `white.hc` / `white.hp` | Prix HC et HP les jours blancs (€/kWh TTC) |
+| `red.hc` / `red.hp` | Prix HC et HP les jours rouges (€/kWh TTC) |
+
+Les valeurs par défaut correspondent aux tarifs EDF Tempo TTC en vigueur au 03/03/2026.
+
+**Modes à implémenter (roadmap config flow)**
+
+| Mode | Description | Format cible |
+|------|-------------|--------------|
+| `flat` | Tarif fixe, même prix 24h/24 | `{ "type": "flat", "price": 0.25 }` |
+| `hphc` | HP/HC classique, sans Tempo | `{ "type": "hphc", "hc_start": 22.0, "hc_end": 6.0, "hc": 0.17, "hp": 0.25 }` |
+| `tempo` | EDF Tempo (actuel) | format ci-dessus |
 
 ### Options complètes
 

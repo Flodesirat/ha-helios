@@ -243,6 +243,20 @@ class SimDevice:
 # Load from JSON / Default device set
 # ---------------------------------------------------------------------------
 
+def load_appliance_schedule(path: str) -> dict[str, float]:
+    """Load appliance schedule JSON → dict {device_name: ready_at_hour}."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return {entry["name"]: float(entry["ready_at_hour"]) for entry in data if "name" in entry and "ready_at_hour" in entry}
+
+
+def apply_appliance_schedule(devices: list[SimDevice], schedule: dict[str, float]) -> None:
+    """Inject ready_at_hour into appliance SimDevices from a schedule dict (in-place)."""
+    for dev in devices:
+        if dev.device_type == "appliance" and dev.name in schedule:
+            dev.appliance_ready_at_hour = schedule[dev.name]
+
+
 def load_devices_from_json(path: str) -> list[SimDevice]:
     """Load a device list from a JSON file."""
     with open(path, encoding="utf-8") as f:

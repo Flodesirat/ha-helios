@@ -1,0 +1,12 @@
+[
+  {
+    "_comment": "Lave-vaisselle prêt à 8h → deadline auto 12:00",
+    "name": "Lave-vaisselle",
+    "ready_at_hour": 8.0
+  },
+  {
+    "_comment": "Lave-linge prêt à 13h → deadline auto 18:00",
+    "name": "Lave-linge",
+    "ready_at_hour": 13.0
+  }
+]

@@ -14,11 +14,14 @@ Examples:
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from .engine import SimConfig, SimResult, Tariff, run
-from .devices import default_devices, load_devices_from_json
+from .devices import default_devices, load_devices_from_json, load_appliance_schedule, apply_appliance_schedule
 from .profiles import load_base_load_from_json
 from .optimizer import OptResult, optimize
+
+_DEFAULT_SCHED = Path(__file__).parent / "config" / "appliance_schedule.json"
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +313,8 @@ def main() -> None:
                         help="Path to base load JSON (default: built-in profile)")
     parser.add_argument("--tariff", metavar="JSON",
                         help="Path to tariff JSON (default: EDF Tempo 03/03/2026)")
+    parser.add_argument("--appliance-schedule", metavar="JSON",
+                        help="Path to appliance schedule JSON — list of {name, ready_at_hour}")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Print hourly table")
     parser.add_argument("--decisions", action="store_true",
@@ -319,6 +324,12 @@ def main() -> None:
     base_load_fn = load_base_load_from_json(args.base_load) if args.base_load else None
     devices = load_devices_from_json(args.devices) if args.devices else None
     tariff = Tariff.from_json(args.tariff) if args.tariff else Tariff.default()
+    _sched_path = Path(args.appliance_schedule) if args.appliance_schedule else (_DEFAULT_SCHED if _DEFAULT_SCHED.exists() else None)
+    if _sched_path:
+        schedule = load_appliance_schedule(_sched_path)
+        if devices is None:
+            devices = default_devices()
+        apply_appliance_schedule(devices, schedule)
 
     # Build scoring dict — only override keys that were explicitly passed
     scoring = {
@@ -362,8 +373,21 @@ def main() -> None:
             devices,
         )
     elif args.optimize:
-        devices_fn = (lambda p: lambda: load_devices_from_json(p))(args.devices) \
-            if args.devices else default_devices
+        _opt_sched_path = Path(args.appliance_schedule) if args.appliance_schedule else (_DEFAULT_SCHED if _DEFAULT_SCHED.exists() else None)
+        _sched = load_appliance_schedule(_opt_sched_path) if _opt_sched_path else {}
+        if args.devices:
+            def devices_fn(_p=args.devices, _s=_sched):
+                devs = load_devices_from_json(_p)
+                if _s:
+                    apply_appliance_schedule(devs, _s)
+                return devs
+        elif _sched:
+            def devices_fn(_s=_sched):
+                devs = default_devices()
+                apply_appliance_schedule(devs, _s)
+                return devs
+        else:
+            devices_fn = default_devices
         results = optimize(
             cfg,
             devices_fn,

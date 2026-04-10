@@ -58,7 +58,8 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-_BASE_LOAD_PATH = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
+_BASE_LOAD_PATH      = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
+_APPLIANCE_SCHED_PATH = pathlib.Path(__file__).parent / "simulation" / "config" / "appliance_schedule.json"
 
 # ---------------------------------------------------------------------------
 # Seasonal helpers
@@ -137,8 +138,16 @@ def ha_devices_to_sim(
         hass: Optional HomeAssistant instance; when provided, reads current physical
             state (WH temp, EV SOC) from HA to seed the simulation accurately.
     """
-    from .simulation.devices import SimDevice
+    from .simulation.devices import SimDevice, load_appliance_schedule, apply_appliance_schedule
     from .managed_device import ManagedDevice
+
+    # Load appliance schedule (ready_at_hour per device name)
+    _appliance_schedule: dict[str, float] = {}
+    try:
+        _appliance_schedule = load_appliance_schedule(_APPLIANCE_SCHED_PATH)
+        _LOGGER.debug("Helios optimizer: appliance schedule loaded — %s", _appliance_schedule)
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.debug("Helios optimizer: no appliance schedule (%s)", exc)
 
     def _t(v: str, default: str) -> float:
         """Parse 'HH:MM' time string to decimal hours, or return default."""
@@ -222,6 +231,14 @@ def ha_devices_to_sim(
                 pool_filtration_entity=pool_ent,
             )
 
+        elif dev_type == "appliance":
+            from .const import CONF_APPLIANCE_CYCLE_DURATION_MINUTES, CONF_APPLIANCE_DEADLINE_SLOTS, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES, DEFAULT_APPLIANCE_DEADLINE_SLOTS
+            cycle_min = d.get(CONF_APPLIANCE_CYCLE_DURATION_MINUTES, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES)
+            sd_kwargs.update(
+                appliance_cycle_duration_minutes=int(cycle_min),
+                device_type="appliance",
+            )
+
         sim_dev = SimDevice(**sd_kwargs)
 
         # ---- Build ManagedDevice (real dispatch logic) ----
@@ -235,6 +252,9 @@ def ha_devices_to_sim(
 
         sim_devices.append(sim_dev)
         managed_devices.append(managed_dev)
+
+    if _appliance_schedule:
+        apply_appliance_schedule(sim_devices, _appliance_schedule)
 
     return sim_devices, managed_devices
 
