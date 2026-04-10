@@ -33,11 +33,12 @@ Copier le dossier `custom_components/helios/` dans le répertoire `custom_compon
 | Batterie activée | Active tout le module batterie |
 | Entité SOC | Sensor état de charge (%) |
 | Capacité (kWh) | Capacité utile de la batterie |
-| SOC min / max | Limites de décharge / charge (%) |
-| SOC réserve rouge | SOC à maintenir les jours Tempo rouge (%) |
+| SOC min | Plancher de décharge (%). En dessous de ce seuil, aucun nouvel appareil n'est activé — la batterie est prioritaire. Les appareils déjà allumés et ceux en `must_run` ne sont pas bloqués. |
+| SOC max | Plafond de charge (%). Quand le SOC atteint ce seuil, Helios active une tolérance réseau : il autorise un léger tirage du réseau pour continuer à faire tourner les appareils et éviter que la batterie stagne à 100 % en perdant en efficacité. |
+| SOC réserve rouge | SOC à préserver les jours Tempo rouge (%). En dessous de ce seuil, les appareils ne peuvent pas puiser sur la batterie — seul le surplus PV direct les alimente. Au-dessus, le fonctionnement redevient normal. |
 | Puissance max charge / décharge | Limites de puissance de l'onduleur (W) |
-| Script charge forcée | Script HA à appeler pour forcer la charge |
-| Script autoconsommation | Script HA pour repasser en mode autoconso |
+| Script charge forcée | Script HA appelé **une seule fois** quand Helios décide de charger la batterie depuis le réseau (la nuit précédant un jour Tempo rouge, pendant les heures creuses). Le script doit mettre l'onduleur en mode "charge forcée réseau" — Helios ne contrôle pas la puissance ni la durée, c'est le BMS/onduleur qui gère. |
+| Script autoconsommation | Script HA appelé **une seule fois** quand Helios revient en mode normal (fin des HC, jour non rouge, etc.). Le script doit remettre l'onduleur en mode "autoconsommation" — la batterie absorbe le surplus PV et décharge sur déficit maison selon sa propre logique. |
 
 ### Configuration — étape Appareils
 
@@ -46,12 +47,59 @@ Chaque appareil configuré est piloté par Helios via un interrupteur HA. Les pa
 | Paramètre | Description |
 |-----------|-------------|
 | Nom | Nom affiché dans la carte et les logs |
-| Type | `ev_charger`, `water_heater`, `hvac`, `pool`, `appliance` |
+| Type | `generic`, `ev_charger`, `water_heater`, `hvac`, `pool`, `appliance` |
 | Entité switch | Switch HA à piloter |
 | Puissance (W) | Puissance consommée quand l'appareil est actif |
 | Priorité (1–10) | Importance relative — 10 = plus prioritaire |
 | Début / fin de plage | Fenêtre horaire autorisée pour l'activation |
 | Durée minimale allumé | Évite les cycles courts (minutes) |
+
+#### Types d'appareils
+
+Chaque type a sa propre logique de satisfaction (quand s'arrêter) et d'urgence (à quel point il est pressé).
+
+**`generic`** — appareil générique interruptible. Helios l'active quand le score global dépasse le seuil et l'éteint dès que le surplus disparaît. Pas de critère de satisfaction interne : il fonctionne tant que les conditions sont favorables.
+
+**`water_heater`** — ballon d'eau chaude. Satisfait quand la température atteint la cible (°C). En heures creuses, Helios peut forcer le démarrage (`must_run`) si la température est sous un plancher légionellose. L'urgence monte en proportion du déficit de température.
+
+| Paramètre spécifique | Description |
+|----------------------|-------------|
+| Entité température | Sensor °C du ballon |
+| Température cible | Seuil de satisfaction (°C) |
+| Température min | Plancher légionellose — déclenche `must_run` si atteint |
+| Hystérésis HC | Bande de tolérance en heures creuses : redémarre si temp < cible − hystérésis |
+
+**`ev_charger`** — chargeur de véhicule électrique. Satisfait quand le SOC atteint la cible (%). L'urgence combine le déficit de SOC et la proximité d'un éventuel départ. Si le véhicule n'est pas branché (`ev_plugged_entity = off`), l'appareil est ignoré.
+
+| Paramètre spécifique | Description |
+|----------------------|-------------|
+| Entité SOC | Sensor % de la batterie du VE |
+| SOC cible | Seuil de satisfaction (%) |
+| Entité branché | Sensor/binary_sensor indiquant si le VE est branché |
+
+**`hvac`** — climatisation / pompe à chaleur. Satisfait quand la température mesurée atteint la consigne (chauffage : temp ≥ consigne − hystérésis ; refroidissement : temp ≤ consigne + hystérésis). L'urgence est proportionnelle à l'écart température mesurée / consigne.
+
+| Paramètre spécifique | Description |
+|----------------------|-------------|
+| Entité température | Sensor °C de la pièce |
+| Entité consigne | Sensor ou input_number de la température cible |
+| Mode | `heat` ou `cool` |
+| Hystérésis | Bande morte en °C pour éviter les cycles courts |
+
+**`pool`** — pompe de piscine. Satisfait quand le quota journalier de filtration est atteint (heures ou minutes). En fin de fenêtre horaire, Helios force le démarrage (`must_run`) si le quota n'est pas atteint. L'urgence monte linéairement : `minutes manquantes / minutes restantes avant la fin de plage`.
+
+| Paramètre spécifique | Description |
+|----------------------|-------------|
+| Quota journalier | Durée de filtration cible (heures) |
+| Entité filtration | Sensor indiquant le temps de filtration déjà effectué (heures) |
+
+**`appliance`** — électroménager à cycle unique (lave-vaisselle, lave-linge…). Non interruptible : une fois démarré, Helios ne l'éteint pas avant la fin du cycle. Le cycle est déclenché manuellement (bouton "Prêt" dans la carte) ou automatiquement via `appliance_schedule.json` en simulation. L'urgence est pilotée par la deadline automatique calculée au moment de la mise en attente (voir [Deadline automatique pour l'électroménager](#deadline-automatique-pour-lélectroménager)).
+
+| Paramètre spécifique | Description |
+|----------------------|-------------|
+| Durée du cycle | Durée estimée du cycle en minutes — sert au calcul d'urgence |
+| Deadline slots | Créneaux de fin souhaités, ex. `"12:00,18:00"` |
+| Script de démarrage | Script HA appelé au lancement du cycle |
 
 #### Priorité, poids et ordre de dispatch
 
