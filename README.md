@@ -50,6 +50,7 @@ Chaque appareil configuré est piloté par Helios via un interrupteur HA. Les pa
 | Type | `generic`, `ev_charger`, `water_heater`, `hvac`, `pool`, `appliance` |
 | Entité switch | Switch HA à piloter |
 | Puissance (W) | Puissance consommée quand l'appareil est actif |
+| Entité puissance | Sensor de puissance réelle (W) — optionnel, affine le calcul d'énergie consommée |
 | Priorité (1–10) | Importance relative — 10 = plus prioritaire |
 | Début / fin de plage | Fenêtre horaire autorisée pour l'activation |
 | Durée minimale allumé | Évite les cycles courts (minutes) |
@@ -58,16 +59,17 @@ Chaque appareil configuré est piloté par Helios via un interrupteur HA. Les pa
 
 Chaque type a sa propre logique de satisfaction (quand s'arrêter) et d'urgence (à quel point il est pressé).
 
-**`generic`** — appareil générique interruptible. Helios l'active quand le score global dépasse le seuil et l'éteint dès que le surplus disparaît. Pas de critère de satisfaction interne : il fonctionne tant que les conditions sont favorables.
+**`generic`** — appareil générique interruptible. Helios l'active quand le score global dépasse le seuil et l'éteint dès que le surplus disparaît. Pas de critère de satisfaction interne : il fonctionne tant que les conditions sont favorables. Exemples : chargeur de batterie externe, ventilation VMC boostée, déshumidificateur, pompe de relevage, arrosage automatique.
 
-**`water_heater`** — ballon d'eau chaude. Satisfait quand la température atteint la cible (°C). En heures creuses, Helios peut forcer le démarrage (`must_run`) si la température est sous un plancher légionellose. L'urgence monte en proportion du déficit de température.
+**`water_heater`** — ballon d'eau chaude. Satisfait quand la température atteint la cible (°C). Helios peut forcer le démarrage (`must_run`) si la température descend sous le plancher configuré, ou en heures creuses si elle est sous le seuil HC. L'urgence monte en proportion du déficit de température.
 
 | Paramètre spécifique | Description |
 |----------------------|-------------|
 | Entité température | Sensor °C du ballon |
-| Température cible | Seuil de satisfaction (°C) |
-| Température min | Plancher légionellose — déclenche `must_run` si atteint |
-| Hystérésis HC | Bande de tolérance en heures creuses : redémarre si temp < cible − hystérésis |
+| Température cible | Seuil de satisfaction en heures pleines (°C) — le chauffe-eau s'arrête une fois atteint |
+| Température min | Plancher bas — déclenche `must_run` si la température descend sous ce seuil, indépendamment du score et du surplus |
+| Entité température min HC | Sensor ou `input_number` fixant la température à atteindre pendant les heures creuses. Si absent, la température cible principale est utilisée |
+| Hystérésis HC | Bande morte en heures creuses (°C) : Helios force le démarrage seulement si `temp < temp_min_hc − hystérésis`. Évite les cycles courts près du seuil (défaut : 3 °C) |
 
 **`ev_charger`** — chargeur de véhicule électrique. Satisfait quand le SOC atteint la cible (%). L'urgence combine le déficit de SOC et la proximité d'un éventuel départ. Si le véhicule n'est pas branché (`ev_plugged_entity = off`), l'appareil est ignoré.
 

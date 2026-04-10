@@ -75,7 +75,6 @@
           "wh_temp_target": "Target temperature (°C)",
           "wh_temp_min": "Safety minimum temperature (°C)",
           "wh_temp_min_entity": "Off-peak minimum temperature entity (°C)",
-          "wh_power_entity": "Actual power entity (W)",
           "wh_off_peak_hysteresis_k": "Off-peak trigger hysteresis (°C)"
         },
         "data_description": {
@@ -83,7 +82,6 @@
           "wh_temp_target": "Target temperature outside off-peak hours. The water heater stops when this value is reached.",
           "wh_temp_min": "Temperature below which the water heater is forced ON immediately, regardless of time of day or solar score.",
           "wh_temp_min_entity": "Entity defining the minimum temperature to reach during off-peak hours. The heater runs until this value is reached in HC, then stops.",
-          "wh_power_entity": "Actual power sensor (W). Detects when the internal thermostat cuts the heating element. Used for available surplus calculation and base load learning.",
           "wh_off_peak_hysteresis_k": "Prevents short cycles at the start of off-peak periods. The heater only triggers below (off-peak min − hysteresis). Once started, it continues until off-peak min."
         }
       },
@@ -281,7 +279,6 @@
           "wh_temp_target": "Target temperature (°C)",
           "wh_temp_min": "Safety minimum temperature (°C)",
           "wh_temp_min_entity": "Off-peak minimum temperature entity (°C)",
-          "wh_power_entity": "Actual power entity (W)",
           "wh_off_peak_hysteresis_k": "Off-peak trigger hysteresis (°C)"
         },
         "data_description": {
@@ -289,7 +286,6 @@
           "wh_temp_target": "Target temperature outside off-peak hours. The water heater stops when this value is reached.",
           "wh_temp_min": "Temperature below which the water heater is forced ON immediately, regardless of time of day or solar score.",
           "wh_temp_min_entity": "Entity defining the minimum temperature to reach during off-peak hours. The heater runs until this value is reached in HC, then stops.",
-          "wh_power_entity": "Actual power sensor (W). Detects when the internal thermostat cuts the heating element. Used for available surplus calculation and base load learning.",
           "wh_off_peak_hysteresis_k": "Prevents short cycles at the start of off-peak periods. The heater only triggers below (off-peak min − hysteresis). Once started, it continues until off-peak min."
         }
       },

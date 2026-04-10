@@ -37,7 +37,7 @@ from .const import (
     CONF_EV_CHARGE_START_SCRIPT, CONF_EV_CHARGE_STOP_SCRIPT,
     # Water heater
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN, CONF_WH_TEMP_MIN_ENTITY,
-    CONF_WH_POWER_ENTITY, CONF_WH_OFF_PEAK_HYSTERESIS_K,
+    CONF_WH_OFF_PEAK_HYSTERESIS_K,
     # HVAC
     CONF_HVAC_TEMP_ENTITY, CONF_HVAC_SETPOINT_ENTITY,
     CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
@@ -230,9 +230,6 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(CONF_WH_TEMP_MIN_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["sensor", "input_number"])
-                ),
-                vol.Optional(CONF_WH_POWER_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
                 ),
                 vol.Optional(CONF_WH_OFF_PEAK_HYSTERESIS_K, default=DEFAULT_WH_OFF_PEAK_HYSTERESIS_K): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=0, max=10, step=0.5, unit_of_measurement="°C")
@@ -739,9 +736,6 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 ),
                 vol.Optional(CONF_WH_TEMP_MIN_ENTITY, **_opt_default(cd, CONF_WH_TEMP_MIN_ENTITY)): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["sensor", "input_number"])
-                ),
-                vol.Optional(CONF_WH_POWER_ENTITY, **_opt_default(cd, CONF_WH_POWER_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
                 ),
                 vol.Optional(CONF_WH_OFF_PEAK_HYSTERESIS_K, default=cd.get(CONF_WH_OFF_PEAK_HYSTERESIS_K, DEFAULT_WH_OFF_PEAK_HYSTERESIS_K)): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=0, max=10, step=0.5, unit_of_measurement="°C")

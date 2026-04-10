@@ -28,7 +28,7 @@ from .const import (
     CONF_EV_CHARGE_START_SCRIPT, CONF_EV_CHARGE_STOP_SCRIPT,
     # Water heater
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN, CONF_WH_TEMP_MIN_ENTITY,
-    CONF_WH_POWER_ENTITY, CONF_WH_OFF_PEAK_HYSTERESIS_K,
+    CONF_WH_OFF_PEAK_HYSTERESIS_K,
     # HVAC
     CONF_HVAC_TEMP_ENTITY, CONF_HVAC_SETPOINT_ENTITY,
     CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
@@ -148,7 +148,6 @@ class ManagedDevice:
         self.wh_temp_target: float          = float(config.get(CONF_WH_TEMP_TARGET, DEFAULT_WH_TEMP_TARGET))
         self.wh_temp_min: float             = float(config.get(CONF_WH_TEMP_MIN,    DEFAULT_WH_TEMP_MIN))
         self.wh_temp_min_entity: str | None = config.get(CONF_WH_TEMP_MIN_ENTITY)
-        self.wh_power_entity: str | None    = config.get(CONF_WH_POWER_ENTITY)
         self.wh_off_peak_hysteresis_k: float = float(
             config.get(CONF_WH_OFF_PEAK_HYSTERESIS_K, DEFAULT_WH_OFF_PEAK_HYSTERESIS_K)
         )
@@ -247,8 +246,7 @@ class ManagedDevice:
 
         Priority:
         1. Generic device_power_entity (common to all types) — smart plug / sensor.
-        2. Type-specific entity: wh_power_entity for water heaters,
-           appliance_power_entity for appliances.
+        2. appliance_power_entity for appliances.
         3. Fallback: nominal power_w from configuration.
 
         Using the measured value avoids over-estimating the dispatch budget when
@@ -257,8 +255,6 @@ class ManagedDevice:
         """
         if self.power_entity:
             return self._state_float(reader, self.power_entity)
-        if self.device_type == DEVICE_TYPE_WATER_HEATER and self.wh_power_entity:
-            return self._state_float(reader, self.wh_power_entity)
         if self.device_type == DEVICE_TYPE_APPLIANCE and self.appliance_power_entity:
             return self._state_float(reader, self.appliance_power_entity)
         return self.power_w

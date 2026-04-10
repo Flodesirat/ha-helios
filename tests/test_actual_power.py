@@ -19,15 +19,12 @@ from custom_components.helios.const import (
     DEVICE_TYPE_EV, DEVICE_TYPE_POOL, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_APPLIANCE,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
     CONF_DEVICE_POWER_W, CONF_DEVICE_POWER_ENTITY, CONF_DEVICE_PRIORITY,
-    CONF_WH_POWER_ENTITY,
     CONF_APPLIANCE_POWER_ENTITY,
     CONF_EV_PLUGGED_ENTITY, CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET,
     CONF_POOL_FILTRATION_ENTITY,
 )
 
 POWER_ENTITY    = "sensor.device_power"
-WH_POWER_ENTITY = "sensor.wh_power"
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -36,7 +33,6 @@ def _make_device(
     device_type=DEVICE_TYPE_EV,
     power_w=2000,
     power_entity=None,
-    wh_power_entity=None,
     appliance_power_entity=None,
     priority=5,
     is_on=False,
@@ -50,8 +46,6 @@ def _make_device(
     }
     if power_entity:
         cfg[CONF_DEVICE_POWER_ENTITY] = power_entity
-    if wh_power_entity:
-        cfg[CONF_WH_POWER_ENTITY] = wh_power_entity
     if appliance_power_entity:
         cfg[CONF_APPLIANCE_POWER_ENTITY] = appliance_power_entity
     # EV fields to avoid KeyErrors in is_satisfied
@@ -71,7 +65,7 @@ def _hass(measured_w: float | None = None) -> MagicMock:
 
     def _state(entity_id):
         s = MagicMock()
-        if entity_id in (POWER_ENTITY, WH_POWER_ENTITY) and measured_w is not None:
+        if entity_id in (POWER_ENTITY, POWER_ENTITY) and measured_w is not None:
             s.state = str(measured_w)
         else:
             s.state = "unavailable"
@@ -84,7 +78,7 @@ def _hass(measured_w: float | None = None) -> MagicMock:
 def _reader(measured_w: float | None = None) -> StateReader:
     """StateReader equivalent of _hass."""
     def read(entity_id: str) -> str | None:
-        if entity_id in (POWER_ENTITY, WH_POWER_ENTITY) and measured_w is not None:
+        if entity_id in (POWER_ENTITY, POWER_ENTITY) and measured_w is not None:
             return str(measured_w)
         return "unavailable"
     return read
@@ -137,25 +131,14 @@ class TestActualPowerW:
         assert device.actual_power_w(reader) == 2000.0
 
     def test_generic_entity_takes_priority(self):
-        """device_power_entity is used before type-specific or nominal."""
+        """device_power_entity is used before nominal."""
         device = _make_device(
             device_type=DEVICE_TYPE_WATER_HEATER,
             power_w=2000,
             power_entity=POWER_ENTITY,
-            wh_power_entity=WH_POWER_ENTITY,
         )
         reader = _reader(measured_w=1200)
         assert device.actual_power_w(reader) == 1200.0
-
-    def test_wh_power_entity_fallback(self):
-        """Without device_power_entity, water heater uses wh_power_entity."""
-        device = _make_device(
-            device_type=DEVICE_TYPE_WATER_HEATER,
-            power_w=2000,
-            wh_power_entity=WH_POWER_ENTITY,
-        )
-        reader = _reader(measured_w=0.0)  # thermostat cut
-        assert device.actual_power_w(reader) == 0.0
 
     def test_appliance_power_entity_fallback(self):
         """Without device_power_entity, appliance uses appliance_power_entity."""
@@ -311,7 +294,7 @@ class TestFitSurplus:
         """Water heater thermostat cuts → actual=0W → fit_surplus = surplus only."""
         device = _make_device(
             device_type=DEVICE_TYPE_WATER_HEATER, power_w=2000,
-            wh_power_entity=WH_POWER_ENTITY, is_on=True,
+            power_entity=POWER_ENTITY, is_on=True,
         )
         reader = _reader(measured_w=0.0)
         surplus_w = 500.0

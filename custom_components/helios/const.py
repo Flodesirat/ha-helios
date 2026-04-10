@@ -80,7 +80,6 @@ CONF_WH_TEMP_ENTITY           = "wh_temp_entity"
 CONF_WH_TEMP_TARGET           = "wh_temp_target"
 CONF_WH_TEMP_MIN              = "wh_temp_min"              # legionella floor → safety must_run override
 CONF_WH_TEMP_MIN_ENTITY       = "wh_temp_min_entity"       # entity for off-peak minimum temperature
-CONF_WH_POWER_ENTITY          = "wh_power_entity"          # actual power consumption sensor (W)
 CONF_WH_OFF_PEAK_HYSTERESIS_K = "wh_off_peak_hysteresis_k" # °C below off-peak min before forcing ON
 
 # ---------------------------------------------------------------------------
