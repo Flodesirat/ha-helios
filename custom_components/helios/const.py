@@ -153,12 +153,14 @@ CONF_SAMPLE_INTERVAL_SECONDS = "sample_interval_seconds"  # intervalle d'échant
 # ---------------------------------------------------------------------------
 # Device types
 # ---------------------------------------------------------------------------
+DEVICE_TYPE_GENERIC      = "generic"
 DEVICE_TYPE_EV           = "ev_charger"
 DEVICE_TYPE_WATER_HEATER = "water_heater"
 DEVICE_TYPE_HVAC         = "hvac"
 DEVICE_TYPE_APPLIANCE    = "appliance"
 DEVICE_TYPE_POOL         = "pool"
 DEVICE_TYPES = [
+    DEVICE_TYPE_GENERIC,
     DEVICE_TYPE_EV,
     DEVICE_TYPE_WATER_HEATER,
     DEVICE_TYPE_HVAC,

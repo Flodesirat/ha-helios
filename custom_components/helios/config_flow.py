@@ -59,7 +59,7 @@ from .const import (
     CONF_SAMPLE_INTERVAL_SECONDS,
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END, CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
     # Device / general types and defaults
-    DEVICE_TYPES, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER,
+    DEVICE_TYPES, DEVICE_TYPE_GENERIC, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER,
     DEVICE_TYPE_HVAC, DEVICE_TYPE_APPLIANCE, DEVICE_TYPE_POOL,
     MODES, MODE_AUTO,
     DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
@@ -422,6 +422,8 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
 
     # ------------------------------------------------------------------ Helpers
     async def _route_device_type(self, device_type: str):
+        if device_type == DEVICE_TYPE_GENERIC:
+            return await self.async_step_device_common()
         if device_type == DEVICE_TYPE_EV:
             return await self.async_step_device_ev()
         if device_type == DEVICE_TYPE_WATER_HEATER:
@@ -671,6 +673,8 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
         )
 
     async def _route_opt_device_type(self, device_type: str):
+        if device_type == DEVICE_TYPE_GENERIC:
+            return await self.async_step_opt_device_common()
         if device_type == DEVICE_TYPE_EV:
             return await self.async_step_opt_device_ev()
         if device_type == DEVICE_TYPE_WATER_HEATER:
