@@ -117,7 +117,7 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
             # Raw inputs
             "tempo_color": c.tempo_color,
             "battery_soc": c.battery_soc,
-            "mode":        c.mode,
+            "enabled":     c.enabled,
             # Dispatch budget (used by the Lovelace card)
             "surplus_w":         round(c.surplus_w),
             "virtual_surplus_w": round(c.virtual_surplus_w),
