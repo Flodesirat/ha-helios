@@ -27,6 +27,7 @@ from custom_components.helios.const import (
     CONF_DEVICE_POWER_W, CONF_POOL_FILTRATION_ENTITY,
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
     CONF_DEVICE_MIN_ON_MINUTES,
+    CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
     DEFAULT_DISPATCH_THRESHOLD,
 )
 
@@ -434,6 +435,121 @@ class TestMinOnMinutes_SatisfiedShutoff:
 
         assert device.is_on is False, (
             "Device must be turned off once min_on_minutes elapsed and score path reaches satisfied"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug 5 — Water heater overshoots off-peak minimum during HC
+# ---------------------------------------------------------------------------
+# Root cause: when a WH reaches is_satisfied() during off-peak (temp >= off_peak_min),
+# the min_on_elapsed guard prevented the shutoff if the device had been on for less
+# than min_on_minutes. The physical heating element then kept running to wh_temp_target
+# (controlled by the WH's own internal thermostat).
+#
+# Fix: water heaters bypass min_on_elapsed in both dispatch paths when satisfied
+# during off-peak hours. The internal thermostat handles cycle protection; Helios
+# must cut the switch immediately at the HC threshold.
+# ---------------------------------------------------------------------------
+
+
+def _wh_hc_device(min_on_minutes: int = 30) -> ManagedDevice:
+    """Water heater with off-peak slot 22:00–06:00 and an HC minimum of 50°C."""
+    return ManagedDevice(
+        {
+            CONF_DEVICE_NAME:           "Chauffe-eau HC",
+            CONF_DEVICE_TYPE:           DEVICE_TYPE_WATER_HEATER,
+            CONF_DEVICE_SWITCH_ENTITY:  "switch.wh_hc",
+            CONF_DEVICE_POWER_W:        2000,
+            CONF_WH_TEMP_ENTITY:        "sensor.wh_hc_temp",
+            CONF_WH_TEMP_TARGET:        65.0,
+            CONF_WH_TEMP_MIN:           50.0,  # off-peak minimum / HC target
+            CONF_DEVICE_MIN_ON_MINUTES: min_on_minutes,
+        },
+        {
+            CONF_OFF_PEAK_1_START: "22:00",
+            CONF_OFF_PEAK_1_END:   "06:00",
+        },
+    )
+
+
+def _wh_hc_hass(temp: float) -> MagicMock:
+    hass = MagicMock()
+    hass.services = AsyncMock()
+
+    def _state(entity_id):
+        s = MagicMock()
+        s.state = str(temp) if entity_id == "sensor.wh_hc_temp" else "unavailable"
+        return s
+
+    hass.states.get.side_effect = _state
+    return hass
+
+
+class TestWaterHeaterHCOvershoot:
+    """WH must stop at off_peak_min during HC even if min_on has not elapsed."""
+
+    @pytest.mark.asyncio
+    async def test_wh_cuts_at_off_peak_min_before_min_on_elapsed(self):
+        """WH in off-peak: temp >= off_peak_min → turned off immediately (bypass min_on)."""
+        import datetime as dt_mod
+        device = _wh_hc_device(min_on_minutes=30)
+        device.is_on = True
+        device.turned_on_at = time.time() - 10 * 60  # only 10 min ago
+
+        mgr = _make_manager([device])
+        # temp=51 > wh_temp_min=50 → is_satisfied during HC; score high enough for normal path
+        hass = _wh_hc_hass(temp=51.0)
+
+        with patch("custom_components.helios.device_manager.datetime") as mock_dt:
+            # Simulate 23:00 — inside the 22:00–06:00 off-peak slot
+            _now_t = dt_mod.time(23, 0)
+            mock_dt.now.return_value.time.return_value = _now_t
+            mock_dt.combine.return_value = dt_mod.datetime(2024, 1, 1, 23, 0, 0)
+            await mgr.async_dispatch(hass, _score(global_score=0.9, surplus_w=0.0, dispatch_threshold=0.4))
+
+        assert device.is_on is False, (
+            "WH must be turned off at off-peak minimum regardless of min_on_minutes"
+        )
+
+    @pytest.mark.asyncio
+    async def test_wh_stays_on_below_off_peak_min(self):
+        """WH in off-peak: temp < off_peak_min → stays ON (not satisfied yet)."""
+        import datetime as dt_mod
+        device = _wh_hc_device(min_on_minutes=30)
+        device.is_on = True
+        device.turned_on_at = time.time() - 10 * 60
+
+        mgr = _make_manager([device])
+        hass = _wh_hc_hass(temp=45.0)  # below off_peak_min=50 → not satisfied
+
+        with patch("custom_components.helios.device_manager.datetime") as mock_dt:
+            mock_dt.now.return_value.time.return_value = dt_mod.time(23, 0)
+            mock_dt.combine.return_value = dt_mod.datetime(2024, 1, 1, 23, 0, 0)
+            await mgr.async_dispatch(hass, _score(global_score=0.9, surplus_w=5000.0, dispatch_threshold=0.4))
+
+        assert device.is_on is True, (
+            "WH below off-peak minimum must keep running"
+        )
+
+    @pytest.mark.asyncio
+    async def test_wh_peak_hours_still_respects_min_on(self):
+        """WH during peak hours: min_on_elapsed guard still applies (sensor glitch protection)."""
+        import datetime as dt_mod
+        device = _wh_hc_device(min_on_minutes=30)
+        device.is_on = True
+        device.turned_on_at = time.time() - 60  # 1 min ago
+
+        mgr = _make_manager([device])
+        hass = _wh_hc_hass(temp=66.0)  # above wh_temp_target=65 → satisfied during peak
+
+        with patch("custom_components.helios.device_manager.datetime") as mock_dt:
+            # Simulate 14:00 — peak hours (outside 22:00–06:00 slot)
+            mock_dt.now.return_value.time.return_value = dt_mod.time(14, 0)
+            mock_dt.combine.return_value = dt_mod.datetime(2024, 1, 1, 14, 0, 0)
+            await mgr.async_dispatch(hass, _score(global_score=0.9, surplus_w=5000.0, dispatch_threshold=0.4))
+
+        assert device.is_on is True, (
+            "During peak hours, min_on_minutes must still be respected (sensor glitch protection)"
         )
 
 

@@ -353,9 +353,15 @@ class DeviceManager:
                     continue
                 if not _helios_manages(device):
                     continue  # manual / force / inhibit — hands off
-                if device.is_on and device.interruptible and self._min_on_elapsed(device):
-                    satisfied = device.is_satisfied(reader)
-                    reason = "satisfied" if satisfied else "score_too_low"
+                _now_dt = datetime.combine(date.today(), now)
+                satisfied_now = device.is_satisfied(reader, now=_now_dt)
+                bypass_min_on = (
+                    device.device_type == DEVICE_TYPE_WATER_HEATER
+                    and device._is_off_peak(now)  # noqa: SLF001
+                    and satisfied_now
+                )
+                if device.is_on and device.interruptible and (self._min_on_elapsed(device) or bypass_min_on):
+                    reason = "satisfied" if satisfied_now else "score_too_low"
                     await self._async_set_switch(hass, device, False, reason=reason, context=_base_ctx)
             self.remaining_w = float(score_input.get("real_surplus_w", surplus_w)) + bat_available_w + grid_allowance_w
             return
@@ -477,9 +483,18 @@ class DeviceManager:
 
             # Already satisfied → turn off, but still respect min_on_minutes so a device
             # that was just forced on (e.g. must_run) isn't killed after one cycle.
-            if device.is_satisfied(reader):
+            # Exception: water heaters during off-peak hours bypass min_on_elapsed because
+            # their internal thermostat handles cycle protection. If Helios doesn't cut
+            # the switch promptly at the HC threshold (off_peak_min), the physical heating
+            # element heats all the way to wh_temp_target instead of stopping at the
+            # off-peak minimum.
+            if device.is_satisfied(reader, now=datetime.combine(date.today(), now)):
                 device.last_effective_score = 0.0
-                if device.is_on and device.interruptible and self._min_on_elapsed(device):
+                bypass_min_on = (
+                    device.device_type == DEVICE_TYPE_WATER_HEATER
+                    and device._is_off_peak(now)  # noqa: SLF001
+                )
+                if device.is_on and device.interruptible and (self._min_on_elapsed(device) or bypass_min_on):
                     await self._async_set_switch(hass, device, False, reason="satisfied", context=_base_ctx)
                 continue
 
