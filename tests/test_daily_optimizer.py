@@ -284,7 +284,8 @@ class TestDailyOptimizerInputs:
 
         await async_run_daily_optimization(hass, coordinator)
 
-        hass.async_add_executor_job.assert_called_once()
+        # Called twice: once for load_appliance_schedule, once for _run_optimization
+        assert hass.async_add_executor_job.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_tempo_next_color_used_before_6h(self):

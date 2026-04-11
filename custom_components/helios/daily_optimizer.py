@@ -126,6 +126,7 @@ def ha_devices_to_sim(
     devices_config: list[dict],
     global_cfg: dict | None = None,
     hass=None,
+    appliance_schedule: dict[str, float] | None = None,
 ) -> tuple[list, list]:
     """Convert HA config-entry device dicts to (SimDevice, ManagedDevice) pairs.
 
@@ -137,17 +138,13 @@ def ha_devices_to_sim(
         global_cfg: Global config dict (used for off-peak slot parsing in ManagedDevice).
         hass: Optional HomeAssistant instance; when provided, reads current physical
             state (WH temp, EV SOC) from HA to seed the simulation accurately.
+        appliance_schedule: Pre-loaded schedule dict {device_name: ready_at_hour}.
+            Must be loaded outside the event loop and passed in to avoid blocking I/O.
     """
-    from .simulation.devices import SimDevice, load_appliance_schedule, apply_appliance_schedule
+    from .simulation.devices import SimDevice, apply_appliance_schedule
     from .managed_device import ManagedDevice
 
-    # Load appliance schedule (ready_at_hour per device name)
-    _appliance_schedule: dict[str, float] = {}
-    try:
-        _appliance_schedule = load_appliance_schedule(_APPLIANCE_SCHED_PATH)
-        _LOGGER.debug("Helios optimizer: appliance schedule loaded — %s", _appliance_schedule)
-    except Exception as exc:  # noqa: BLE001
-        _LOGGER.debug("Helios optimizer: no appliance schedule (%s)", exc)
+    _appliance_schedule: dict[str, float] = appliance_schedule or {}
 
     def _t(v: str, default: str) -> float:
         """Parse 'HH:MM' time string to decimal hours, or return default."""
@@ -348,10 +345,21 @@ async def async_run_daily_optimization(
     # ---- Device list from HA config ----
     devices_config = cfg.get(CONF_DEVICES, [])
 
+    # ---- Load appliance schedule outside the event loop ----
+    from .simulation.devices import load_appliance_schedule
+    _appliance_schedule: dict[str, float] = {}
+    try:
+        _appliance_schedule = await hass.async_add_executor_job(
+            load_appliance_schedule, _APPLIANCE_SCHED_PATH
+        )
+        _LOGGER.debug("Helios optimizer: appliance schedule loaded — %s", _appliance_schedule)
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.debug("Helios optimizer: no appliance schedule (%s)", exc)
+
     # ---- Pre-read physical state from HA (async context, before executor) ----
     # This seeds the simulation with real WH temperature and EV SOC at 05:00.
     initial_sim_devices, initial_managed_devices = ha_devices_to_sim(
-        devices_config, global_cfg=cfg, hass=hass
+        devices_config, global_cfg=cfg, hass=hass, appliance_schedule=_appliance_schedule
     )
     _LOGGER.debug(
         "Helios optimizer: %d devices mapped for simulation",
