@@ -3,6 +3,11 @@
 Correct behaviour:
     - Red day  : use soc_reserve_rouge as the SOC floor → protect battery during HP
     - Blue/white day: use battery_soc_min as the floor → full capacity available
+    - Capacity follows a pivot curve (same logic as f_soc):
+        [floor → middle] → 0 → 0.3 × max_discharge  (flat ramp, score stays low)
+        [middle → top]   → 0.3 → 1.0 × max_discharge (steep ramp)
+        > top            → max_discharge
+    - battery_power_w is NOT deducted here (handled upstream).
 """
 from __future__ import annotations
 
@@ -16,10 +21,23 @@ from custom_components.helios.const import (
     CONF_BATTERY_SOC_RESERVE_ROUGE,
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     CONF_BATTERY_SOC_MIN,
+    DEFAULT_BATTERY_SOC_MAX,
     TEMPO_BLUE,
     TEMPO_WHITE,
     TEMPO_RED,
 )
+
+
+def _pivot_capacity(soc: float, soc_floor: float, max_discharge_w: float,
+                    soc_top: float = DEFAULT_BATTERY_SOC_MAX) -> float:
+    """Mirror of _compute_bat_available_w pivot formula for test assertions."""
+    soc_middle = (soc_floor + soc_top) / 2
+    alpha = 0.3
+    if soc > soc_top:
+        return max_discharge_w
+    if soc <= soc_middle:
+        return max_discharge_w * ((soc - soc_floor) / (soc_middle - soc_floor)) * alpha
+    return max_discharge_w * (alpha + (1 - alpha) * ((soc - soc_middle) / (soc_top - soc_middle)))
 
 
 # ---------------------------------------------------------------------------
@@ -67,20 +85,20 @@ def test_blue_day_above_soc_min_returns_positive():
 
 
 def test_blue_day_uses_soc_min_as_floor():
-    """Blue day: usable = (soc - soc_min) / 100 × capacity × 500, capped at max_discharge."""
+    """Blue day: pivot curve with soc_min as floor."""
     coord = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE,
                               soc_reserve_rouge=85.0, soc_min=10.0,
                               capacity_kwh=10.0, max_discharge_w=3000.0)
-    expected = min((85.0 - 10.0) / 100.0 * 10.0 * 500, 3000.0)  # 3000 W
+    expected = _pivot_capacity(soc=85.0, soc_floor=10.0, max_discharge_w=3000.0)
     assert coord._compute_bat_available_w() == pytest.approx(expected)
 
 
 def test_white_day_uses_soc_min_as_floor():
-    """White day behaves the same as blue day."""
+    """White day behaves the same as blue day (same floor logic)."""
     coord = _make_coordinator(soc=60.0, tempo_color=TEMPO_WHITE,
                               soc_reserve_rouge=85.0, soc_min=10.0,
                               capacity_kwh=10.0, max_discharge_w=3000.0)
-    expected = min((60.0 - 10.0) / 100.0 * 10.0 * 500, 3000.0)  # 2500 W
+    expected = _pivot_capacity(soc=60.0, soc_floor=10.0, max_discharge_w=3000.0)
     assert coord._compute_bat_available_w() == pytest.approx(expected)
 
 
@@ -110,11 +128,11 @@ def test_red_day_at_reserve_returns_zero():
 
 
 def test_red_day_above_reserve_returns_positive():
-    """Red day, SOC = 90% > reserve 85% → 5% usable."""
+    """Red day, SOC = 90% > reserve 85% → pivot curve with soc_reserve_rouge as floor."""
     coord = _make_coordinator(soc=90.0, tempo_color=TEMPO_RED,
                               soc_reserve_rouge=85.0, soc_min=10.0,
                               capacity_kwh=10.0, max_discharge_w=3000.0)
-    expected = (90.0 - 85.0) / 100.0 * 10.0 * 500  # 250 W
+    expected = _pivot_capacity(soc=90.0, soc_floor=85.0, max_discharge_w=3000.0)
     assert coord._compute_bat_available_w() == pytest.approx(expected)
 
 
@@ -158,24 +176,29 @@ def test_max_discharge_caps_result():
 # Current discharge deduction
 # ---------------------------------------------------------------------------
 
-def test_current_discharge_reduces_available():
-    """If the battery is already discharging 500 W, that headroom is already spent."""
-    # capacity = 3000 W (capped at max_discharge_w), discharge in progress = 500 W
-    coord = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE,
-                              soc_min=10.0, capacity_kwh=10.0,
-                              max_discharge_w=3000.0,
-                              battery_power_w=500.0)  # positive = discharging
-    result = coord._compute_bat_available_w()
-    assert result == pytest.approx(3000.0 - 500.0)
+def test_current_discharge_does_not_affect_available():
+    """battery_power_w is not deducted in _compute_bat_available_w (handled upstream)."""
+    coord_discharging = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE,
+                                          soc_min=10.0, capacity_kwh=10.0,
+                                          max_discharge_w=3000.0,
+                                          battery_power_w=500.0)
+    coord_idle = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE,
+                                   soc_min=10.0, capacity_kwh=10.0,
+                                   max_discharge_w=3000.0,
+                                   battery_power_w=None)
+    assert coord_discharging._compute_bat_available_w() == pytest.approx(
+        coord_idle._compute_bat_available_w()
+    )
 
 
-def test_discharge_exceeding_capacity_clamps_to_zero():
-    """Current discharge ≥ capacity → 0 W available (no negative result)."""
+def test_low_soc_above_floor_returns_low_capacity():
+    """SOC just above floor stays in the flat ramp zone → low capacity returned."""
     coord = _make_coordinator(soc=50.0, tempo_color=TEMPO_BLUE,
                               soc_min=10.0, capacity_kwh=10.0,
-                              max_discharge_w=3000.0,
-                              battery_power_w=4000.0)
-    assert coord._compute_bat_available_w() == 0.0
+                              max_discharge_w=3000.0)
+    expected = _pivot_capacity(soc=50.0, soc_floor=10.0, max_discharge_w=3000.0)
+    assert coord._compute_bat_available_w() == pytest.approx(expected)
+    assert coord._compute_bat_available_w() < 3000.0 * 0.3  # still in flat zone
 
 
 def test_charging_does_not_reduce_available():
@@ -194,10 +217,10 @@ def test_charging_does_not_reduce_available():
 
 
 def test_no_battery_power_sensor_unchanged():
-    """battery_power_w=None (sensor not configured) → no deduction, same as before."""
+    """battery_power_w=None → pivot-based capacity, no deduction."""
     coord = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE,
                               soc_min=10.0, capacity_kwh=10.0,
                               max_discharge_w=3000.0,
                               battery_power_w=None)
-    expected = min((85.0 - 10.0) / 100.0 * 10.0 * 500, 3000.0)
+    expected = _pivot_capacity(soc=85.0, soc_floor=10.0, max_discharge_w=3000.0)
     assert coord._compute_bat_available_w() == pytest.approx(expected)

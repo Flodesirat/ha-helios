@@ -173,10 +173,10 @@ class TestSocScoring:
             )
 
     def test_pivot_at_midpoint(self):
-        """At the pivot (midpoint), score must be exactly 0.6."""
+        """At the pivot (midpoint), score must be exactly 0.3 (junction flat→steep ramp)."""
         eng = self._engine(soc_min=10, soc_max=90)
         pivot = (10 + 90) / 2.0  # 50.0
-        assert eng._score_soc(pivot) == pytest.approx(0.6)
+        assert eng._score_soc(pivot) == pytest.approx(0.3)
 
     def test_custom_soc_min_shifts_reserve_zone(self):
         """Raising soc_min must keep score=0 over the wider reserve zone."""
