@@ -400,20 +400,20 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
 
         if soc <= soc_floor:
             return 0.0
-
-        capacity_kwh    = cfg.get(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH)
+        
+        soc_top = cfg.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX)
         max_discharge_w = cfg.get(CONF_BATTERY_MAX_DISCHARGE_POWER_W, 0.0)
+        soc_middle = (soc_floor + soc_top) / 2
+        soc_middle_alpha = 0.3
 
-        # Usable energy above floor, assuming ≤ 2 h discharge window → W
-        usable_fraction = (soc - soc_floor) / 100.0
-        energy_based_w  = usable_fraction * capacity_kwh * 500  # kWh × 500 → W over 2 h
+        if soc > soc_top:
+            capacity_w = max_discharge_w
+        elif soc <= soc_middle:
+            capacity_w = max_discharge_w * ((soc - soc_floor) / (soc_middle - soc_floor)) * soc_middle_alpha
+        else:
+            capacity_w = max_discharge_w * (soc_middle_alpha + (1 - soc_middle_alpha) * ((soc - soc_middle) / (soc_top - soc_middle)))
 
-        capacity_w = min(energy_based_w, max_discharge_w) if max_discharge_w > 0 else energy_based_w
-
-        # Deduct power the battery is already discharging to the house so we
-        # don't double-count headroom that is already consumed.
-        current_discharge_w = max(0.0, self.battery_power_w or 0.0)
-        return max(0.0, capacity_w - current_discharge_w)
+        return capacity_w
 
     def _device_mean_power_w(self, device: ManagedDevice, reader: Any) -> float:
         """Return buffer-averaged power for a device, falling back to direct read if empty."""

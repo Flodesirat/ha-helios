@@ -120,11 +120,12 @@ class ScoringEngine:
         """Map battery SOC to [0..1] using configured soc_min / soc_max.
 
         Réserve  (0 → soc_min)         → 0.0   dispatch bloqué
-        Basse    (soc_min → pivot)      → 0.0 → 0.6   rampe forte
-        Confort  (pivot   → soc_max)    → 0.6 → 1.0   rampe plate
+        Basse    (soc_min → pivot)      → 0.0 → 0.3   rampe plate (score bas)
+        Confort  (pivot   → soc_max)    → 0.3 → 1.0   rampe forte (encourage consommation)
         Pleine   (≥ soc_max)            → 1.0
 
-        pivot = (soc_min + soc_max) / 2  — garantit des pentes de largeur égale.
+        pivot = (soc_min + soc_max) / 2 — le score reste bas tant que la batterie
+        n'a pas atteint le pivot, puis monte fortement vers soc_max.
         None → neutre 0.5.
         """
         if soc is None:
@@ -133,9 +134,9 @@ class ScoringEngine:
             return 0.0
         pivot = (self.soc_min + self.soc_max) / 2.0
         if soc <= pivot:
-            return 0.6 * (soc - self.soc_min) / (pivot - self.soc_min)
+            return 0.3 * (soc - self.soc_min) / (pivot - self.soc_min)
         if soc <= self.soc_max:
-            return 0.6 + 0.4 * (soc - pivot) / (self.soc_max - pivot)
+            return 0.3 + 0.7 * (soc - pivot) / (self.soc_max - pivot)
         return 1.0
 
     def _score_solar(self, data: dict[str, Any]) -> float:

@@ -272,15 +272,15 @@ Mesure l'excédent de production PV par rapport à la consommation de base.
 
 #### Composante SOC batterie (`f_soc`)
 
-Encourage à consommer quand la batterie est pleine et à économiser quand elle est basse.
+Encourage à consommer quand la batterie est suffisamment chargée. Le score reste bas tant que le SOC n'a pas dépassé le pivot, puis monte fortement vers `soc_max`.
 
 Avec `soc_min=20%`, `soc_max=95%`, pivot = `57.5%` :
 
 | SOC | Score |
 |-----|-------|
 | ≤ soc_min (20%) | 0.0 — réserve, rien n'est activé |
-| soc_min → pivot (20%→57.5%) | 0.0 → 0.6 — rampe forte |
-| pivot → soc_max (57.5%→95%) | 0.6 → 1.0 — rampe plate |
+| soc_min → pivot (20%→57.5%) | 0.0 → 0.3 — rampe plate (score bas, batterie prioritaire) |
+| pivot → soc_max (57.5%→95%) | 0.3 → 1.0 — rampe forte (encourage la consommation) |
 | ≥ soc_max (95%) | 1.0 — batterie pleine, consomme librement |
 
 #### Composante prévision (`f_solar`)
