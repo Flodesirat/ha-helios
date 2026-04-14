@@ -20,11 +20,11 @@ Copier le dossier `custom_components/helios/` dans le répertoire `custom_compon
 | Entité puissance réseau | Non | Sensor import/export réseau (W, positif = import) |
 | Entité puissance maison | Non | Sensor consommation totale du foyer (W) |
 | Entité couleur Tempo | Non | Sensor retournant `blue`, `white` ou `red` |
-| Entité couleur Tempo (lendemain) | Non | Couleur du prochain jour HP — utilisée par l'optimiseur à 5h (voir ci-dessous) |
+| Entité couleur Tempo (lendemain) | Non | Couleur du prochain jour HP — utilisée par la prévision journalière à 5h (voir ci-dessous) |
 | Entité prévision PV | Non | Sensor retournant les kWh restants à produire aujourd'hui |
-| Puissance crête PV | Non | Puissance installée en Wc — utilisée par l'optimiseur (défaut : 3000 W) |
+| Puissance crête PV | Non | Puissance installée en Wc — utilisée par la prévision journalière (défaut : 3000 W) |
 
-> **Pourquoi deux entités Tempo ?** L'optimiseur tourne à 5h, encore en heures creuses (22h–6h). La couleur qui s'applique à la journée qui commence (HP 6h–22h) est parfois stockée dans une entité "lendemain" par les intégrations Tempo. Si une seule entité est disponible, laisser l'autre vide.
+> **Pourquoi deux entités Tempo ?** La prévision journalière tourne à 5h, encore en heures creuses (22h–6h). La couleur qui s'applique à la journée qui commence (HP 6h–22h) est parfois stockée dans une entité "lendemain" par les intégrations Tempo. Si une seule entité est disponible, laisser l'autre vide.
 
 ### Configuration — étape Batterie
 
@@ -33,10 +33,12 @@ Copier le dossier `custom_components/helios/` dans le répertoire `custom_compon
 | Batterie activée | Active tout le module batterie |
 | Entité SOC | Sensor état de charge (%) |
 | Capacité (kWh) | Capacité utile de la batterie |
-| SOC min | Plancher de décharge (%). En dessous de ce seuil, aucun nouvel appareil n'est activé — la batterie est prioritaire. Les appareils déjà allumés et ceux en `must_run` ne sont pas bloqués. |
-| SOC max | Plafond de charge (%). Quand le SOC atteint ce seuil, Helios active une tolérance réseau : il autorise un léger tirage du réseau pour continuer à faire tourner les appareils et éviter que la batterie stagne à 100 % en perdant en efficacité. |
-| SOC réserve rouge | SOC à préserver les jours Tempo rouge (%). En dessous de ce seuil, les appareils ne peuvent pas puiser sur la batterie — seul le surplus PV direct les alimente. Au-dessus, le fonctionnement redevient normal. |
-| Puissance max charge / décharge | Limites de puissance de l'onduleur (W) |
+| SOC min | Plancher de charge journalier (%). En dessous de ce seuil, la batterie est prioritaire sur tous les appareils (urgence = 1.0) et `bat_available_w` = 0 (la batterie ne cède rien aux autres). |
+| SOC min jour rouge | Plancher de charge les jours Tempo rouge (%). Remplace `SOC min` en jour rouge — même logique, plancher plus élevé pour protéger la réserve. |
+| SOC max | Plafond de charge (%). La demande de charge de la batterie descend linéairement de `charge_max_w` à 0 entre `SOC min` et `SOC max`. Au-delà, la batterie ne demande plus de budget. |
+| Puissance max charge | Puissance maximale de charge de l'onduleur (W) — demande maximale de la batterie quand SOC = SOC min. |
+| Puissance max décharge | Puissance maximale de décharge de l'onduleur (W) — plafond de `bat_available_w`. |
+| Priorité batterie (1–10) | Importance de la batterie dans l'allocation greedy, sur la même échelle que les appareils. Défaut : 7. Une priorité haute garantit que la batterie est chargée avant les appareils moins importants ; une priorité basse lui permet de passer après eux quand le surplus est limité. Son urgence (dérivée du déficit SOC) peut amplifier ou atténuer l'effet de la priorité. |
 | Script charge forcée | Script HA appelé **une seule fois** quand Helios décide de charger la batterie depuis le réseau (la nuit précédant un jour Tempo rouge, pendant les heures creuses). Le script doit mettre l'onduleur en mode "charge forcée réseau" — Helios ne contrôle pas la puissance ni la durée, c'est le BMS/onduleur qui gère. |
 | Script autoconsommation | Script HA appelé **une seule fois** quand Helios revient en mode normal (fin des HC, jour non rouge, etc.). Le script doit remettre l'onduleur en mode "autoconsommation" — la batterie absorbe le surplus PV et décharge sur déficit maison selon sa propre logique. |
 
@@ -59,15 +61,15 @@ Chaque appareil configuré est piloté par Helios via un interrupteur HA. Les pa
 
 Chaque type a sa propre logique de satisfaction (quand s'arrêter) et d'urgence (à quel point il est pressé).
 
-**`generic`** — appareil générique interruptible. Helios l'active quand le score global dépasse le seuil et l'éteint dès que le surplus disparaît. Pas de critère de satisfaction interne : il fonctionne tant que les conditions sont favorables. Exemples : chargeur de batterie externe, ventilation VMC boostée, déshumidificateur, pompe de relevage, arrosage automatique.
+**`generic`** — appareil générique interruptible. Helios l'active quand le fit est suffisant et qu'il reste du budget disponible, et l'éteint dès que le surplus disparaît. Pas de critère de satisfaction interne : il fonctionne tant que les conditions sont favorables. Exemples : chargeur de batterie externe, ventilation VMC boostée, déshumidificateur, pompe de relevage, arrosage automatique.
 
-**`water_heater`** — ballon d'eau chaude. Satisfait quand la température atteint la cible (°C). Helios peut forcer le démarrage (`must_run`) si la température descend sous le plancher configuré, ou en heures creuses si elle est sous le seuil HC. L'urgence monte en proportion du déficit de température.
+**`water_heater`** — ballon d'eau chaude. Satisfait quand la température atteint la cible (°C). L'urgence monte en proportion du déficit de température — si la température descend sous le plancher configuré, l'urgence atteint 1.0 et le démarrage est forcé indépendamment du surplus.
 
 | Paramètre spécifique | Description |
 |----------------------|-------------|
 | Entité température | Sensor °C du ballon |
 | Température cible | Seuil de satisfaction en heures pleines (°C) — le chauffe-eau s'arrête une fois atteint |
-| Température min | Plancher bas — déclenche `must_run` si la température descend sous ce seuil, indépendamment du score et du surplus |
+| Température min | Plancher bas — si la température descend sous ce seuil, l'urgence atteint 1.0 et le démarrage est forcé indépendamment du surplus |
 | Entité température min HC | Sensor ou `input_number` fixant la température à atteindre pendant les heures creuses. Si absent, la température cible principale est utilisée |
 | Hystérésis HC | Bande morte en heures creuses (°C) : Helios force le démarrage seulement si `temp < temp_min_hc − hystérésis`. Évite les cycles courts près du seuil (défaut : 3 °C) |
 
@@ -88,7 +90,7 @@ Chaque type a sa propre logique de satisfaction (quand s'arrêter) et d'urgence 
 | Mode | `heat` ou `cool` |
 | Hystérésis | Bande morte en °C pour éviter les cycles courts |
 
-**`pool`** — pompe de piscine. Satisfait quand le quota journalier de filtration est atteint. En fin de fenêtre horaire, Helios force le démarrage (`must_run`) si le quota n'est pas atteint. L'urgence monte linéairement : `minutes manquantes / minutes restantes avant la fin de plage`.
+**`pool`** — pompe de piscine. Satisfait quand le quota journalier de filtration est atteint. L'urgence monte linéairement : `minutes manquantes / minutes restantes avant la fin de plage` — elle atteint 1.0 en fin de fenêtre si le quota n'est pas atteint, forçant le démarrage.
 
 | Paramètre spécifique | Description |
 |----------------------|-------------|
@@ -103,27 +105,29 @@ Chaque type a sa propre logique de satisfaction (quand s'arrêter) et d'urgence 
 | Deadline slots | Créneaux de fin souhaités, ex. `"12:00,18:00"` |
 | Script de démarrage | Script HA appelé au lancement du cycle |
 
-#### Priorité, poids et ordre de dispatch
+#### Mode manuel
 
-À chaque cycle, Helios calcule un **score effectif** pour chaque appareil :
+Chaque appareil (y compris la batterie) dispose d'un switch `helios_{slug}_manual`. Quand il est activé, l'appareil est **entièrement ignoré du dispatch** — Helios ne lui alloue pas de budget, ne l'allume pas, ne l'éteint pas. L'utilisateur garde le contrôle total du switch physique associé.
 
+#### Priorité et ordre de dispatch
+
+À chaque cycle, Helios calcule un **score effectif** pour chaque appareil non-manuel, batterie incluse.
+
+**Avec notion d'urgence** (water_heater, ev_charger, hvac, pool, appliance, battery) :
 ```
-score_effectif = (w_priority × priorité/10 + w_fit × fit + w_urgency × urgence) / total_poids
+score_effectif = 0.4 × priorité/10 + 0.3 × fit + 0.3 × urgence
 ```
 
-- **`priorité/10`** — la priorité configurée, normalisée sur [0..1]
-- **`fit`** — à quel point la puissance de l'appareil correspond au surplus disponible (voir détail ci-dessous)
+**Sans notion d'urgence** (generic) :
+```
+score_effectif = 0.5 × priorité/10 + 0.5 × fit
+```
+
+- **`priorité/10`** — la priorité configurée (1–10), normalisée sur [0..1]
+- **`fit`** — à quel point la puissance de l'appareil correspond au budget disponible (voir détail ci-dessous)
 - **`urgence`** — à quel point l'appareil a besoin de tourner bientôt (voir détail ci-dessous)
 
 > **Rôle du score effectif** — Le score ne décide pas directement si un appareil est allumé ou éteint. La décision repose sur d'autres critères : satisfaction de l'objectif, budget `remaining` disponible, `fit >= 0.1`. Le score effectif sert uniquement à **trier les appareils** dans l'allocation greedy : en cas de budget limité, l'appareil au score le plus élevé est servi en premier. Il est aussi exposé dans la carte Lovelace pour visualiser l'état de chaque appareil.
-
-Les **poids** (`w_priority`, `w_fit`, `w_urgency`) sont configurables par appareil et doivent sommer à 1.0. Ils déterminent quelle composante prime pour cet appareil :
-
-| Exemple | Réglage conseillé |
-|---------|-------------------|
-| Ballon d'eau chaude (légionellose) | Augmenter `w_urgency` |
-| Piscine (filtration solaire uniquement) | Augmenter `w_fit` |
-| VE (priorité absolue) | Augmenter `w_priority` |
 
 #### Grandeurs clés du dispatch
 
@@ -131,57 +135,82 @@ Ces valeurs sont calculées à chaque cycle et pilotent l'ensemble de la logique
 
 | Grandeur | Formule / source | Rôle |
 |----------|-----------------|------|
-| **Surplus** (`surplus_w`) | `max(0, PV − maison)` | Excédent PV brut après consommation de la maison. Sert de point de départ au budget `remaining`. |
-| **Surplus virtuel** (`virtual_surplus_w`) | `max(0, PV − maison + Σ appareils Helios actifs)` | Surplus corrigé en réajoutant la consommation des appareils Helios déjà allumés. Utilisé dans le scoring (`f_surplus`) pour éviter le chattering : sans cette correction, les appareils actifs gonflent la consommation maison → le surplus chute → le score passe sous le seuil → extinction → rallumage → oscillation. |
-| **Batterie disponible** (`bat_available_w`) | `min(énergie_utilisable × 500, max_discharge) − décharge_en_cours` | Puissance de décharge additionnelle que la batterie peut fournir aux appareils au-delà de ce qu'elle fournit déjà à la maison. Tient compte du SOC restant au-dessus du plancher (soc_min ou soc_réserve_rouge), de la puissance max de l'onduleur, et déduit la décharge déjà en cours pour éviter un double-comptage. Vaut 0 si le SOC est sous le plancher. |
-| **Remaining** (`remaining_w`) | `surplus_réel + bat_available + grid_allowance` | Budget de dispatch résiduel après l'allocation greedy. Décrémenté à chaque nouvel appareil démarré. Les appareils déjà actifs ne le réduisent pas — leur puissance est déjà absente du surplus réel (`real_surplus_w`). |
+| **Surplus** (`surplus_w`) | `max(0, PV − maison)` soit `max(0, −réseau − décharge + charge)` | Bilan électrique instantané : positif quand le PV excède la consommation maison. La charge/décharge batterie y est implicitement incluse via `house_power_w` — Helios ne pilote pas le BMS directement. Sert de base au budget `remaining`. |
+| **Surplus virtuel** (`virtual_surplus_w`) | `max(0, PV − maison + Σ appareils Helios actifs)` | Surplus corrigé en réajoutant la consommation des appareils que Helios a allumés. La batterie n'est **pas** dans ce Σ — sa charge/décharge est gérée par le BMS et déjà reflétée dans `house_power_w`. Sans cette correction, les appareils actifs gonflent `house_power_w` → surplus chute → fit s'effondre → extinction → rallumage → oscillation. Utilisé pour le calcul de `f_surplus` et de `fit`. |
+| **Batterie disponible** (`bat_available_w`) | courbe pivot sur `[soc_min_jour … soc_max]`, plafonnée à `max_discharge_w` | Puissance de décharge supplémentaire estimée que la batterie peut fournir aux appareils. Vaut **0** si SOC < `soc_min` du jour (bleu/blanc) ou `soc_min_rouge` (jour rouge). Au-dessus, monte selon la courbe pivot : rampe plate jusqu'au pivot (0 → 0.3 × max), rampe forte ensuite (0.3 → 1.0 × max). Indépendant de la charge — `bat_available_w` représente la décharge possible, pas la charge en cours. |
+| **Remaining** (`remaining_w`) | `surplus_virtuel + bat_available_w` (initial) | Budget de dispatch résiduel. Initialisé en début de cycle, puis décrémenté à chaque appareil sélectionné dans l'ordre du score effectif — la `power_w` calculée du `BatteryDevice` est déduite comme n'importe quel appareil. Les appareils déjà actifs ne le réduisent pas — leur puissance est déjà absente de `virtual_surplus`. `grid_allowance_w` n'est **pas** dans `remaining` — il définit une tolérance d'import réseau utilisée uniquement dans la zone 3 du calcul de fit. |
 
-> **Surplus réel vs surplus virtuel** : les deux valeurs divergent dès qu'au moins un appareil Helios est allumé. Le surplus virtuel (`virtual_surplus_w`) est passé au moteur de scoring (`f_surplus`) et au calcul de fit. Le surplus réel (`surplus_w` = `max(0, PV − maison)`) sert de base au budget `remaining`. Cette séparation garantit que le score reste stable pendant qu'un appareil tourne, tout en maintenant un budget de dispatch fidèle à la réalité mesurée.
+> **Surplus réel vs surplus virtuel** : les deux valeurs divergent dès qu'au moins un appareil Helios est allumé. Le surplus virtuel (`virtual_surplus_w`) est utilisé pour `f_surplus` et le calcul de fit — il reflète ce que serait le surplus si ces appareils n'existaient pas. Le surplus réel (`surplus_w`) sert de base au budget `remaining` — il reflète la réalité mesurée. La batterie (gérée par le BMS) n'intervient pas dans cette correction.
 
 #### Calcul du score de fit [0..1]
 
-Le fit mesure **à quel point l'appareil exploite bien le budget disponible** (surplus PV + batterie). Il ne mesure pas simplement si le solaire suffit.
+Le fit mesure **à quel point l'appareil exploite bien le budget disponible**. Il est calculé sur le `remaining_w` courant — recalculé après chaque allocation dans l'ordre du score effectif, de sorte que chaque appareil voit le budget réellement disponible après ceux mieux classés.
 
-**Zone 1 — le surplus PV couvre entièrement l'appareil** : `fit = puissance_appareil / surplus`
+```
+remaining_w = surplus_virtuel + bat_available_w − Σ appareils déjà alloués
+```
 
-Le score monte avec la puissance de l'appareil relative au surplus. L'idée : si tu as 2000 W de surplus, un appareil de 200 W l'absorbe très mal (0.10), alors qu'un appareil de 1800 W l'absorbe presque entièrement (0.90). Helios préfère envoyer le surplus vers un appareil qui en profite vraiment.
+`grid_allowance_w` n'est **pas** inclus dans `remaining` — il définit une tolérance d'import réseau au-delà du budget, utilisée uniquement pour le calcul de fit (zone 3).
 
-**Zone 2 — la batterie complète le surplus** : `fit = 1.0 − 0.6 × (puissance_batterie_utilisée / puissance_décharge_disponible)` → toujours entre 0.4 et 1.0 (rejoint exactement le plafond de la zone 3)
+**Cas particulier — BatteryDevice** : le fit de la batterie vaut toujours **1.0**. Sa demande est déjà calibrée par la courbe `power_w`, c'est l'urgence et la priorité qui la positionnent dans le tri.
 
-**Zone 3 — import réseau nécessaire** : dépend de `grid_allowance_w` (tolérance réseau configurée) et de la couleur Tempo :
-- Jour **Tempo rouge** → fit = 0 (tout import interdit)
-- Import nécessaire **> grid_allowance** → fit = 0 (dépasse le plafond autorisé)
-- Import nécessaire **≤ grid_allowance** → `fit = 0.4 × (1 − import / grid_allowance)` — entre 0 et 0.4, selon la marge restante
+**Zone 1 — surplus pur** (`puissance ≤ remaining − bat_available_w`) :
+```
+fit = puissance / (remaining − bat_available_w)
+```
+Monte avec la puissance de l'appareil relative au surplus disponible. Un appareil de 200 W face à 1000 W de surplus (fit 0.20) est moins bien classé qu'un appareil de 800 W (fit 0.80).
 
-Exemples avec surplus PV = 600 W, batterie disponible = 1000 W, grid_allowance = 400 W, jour Tempo bleu :
+**Zone 2 — la batterie complète** (`remaining − bat_available_w < puissance ≤ remaining`) :
+```
+fit = 1.0 − 0.6 × (puissance_batterie_utilisée / bat_available_w)
+```
+Toujours entre 0.4 et 1.0. Un appareil en zone 2 peut dépasser un appareil en zone 1 qui n'absorbe qu'une petite fraction du surplus.
+
+**Zone 3 — import réseau toléré** (`remaining < puissance ≤ remaining + grid_allowance_w`) :
+```
+fit = 0.4 × (1 − import_nécessaire / grid_allowance_w)
+```
+Entre 0 et 0.4. En **jour Tempo rouge**, `grid_allowance_w = 0` → zone 3 inexistante, tout ce qui dépasse `remaining` a un fit = 0.
+
+**Hors budget** (`puissance > remaining + grid_allowance_w`) : `fit = 0`.
+
+Exemples avec `surplus_virtuel = 1000 W`, `bat_available_w = 1000 W`, `grid_allowance_w = 400 W`, jour Tempo bleu (`remaining = 2000 W`) :
 
 | Appareil | Puissance | Zone | Calcul | Fit |
 |----------|-----------|------|--------|-----|
-| Pompe piscine | 200 W | 1 — solaire pur | 200 / 600 | **0.33** |
-| Pompe piscine | 500 W | 1 — solaire pur | 500 / 600 | **0.83** |
-| Ballon d'eau chaude | 600 W | 1 — solaire pur | 600 / 600 | **1.00** |
-| Ballon d'eau chaude | 800 W | 2 — batterie appoint | 1 − 0.6 × (200/1000) | **0.88** |
-| VE | 1400 W | 2 — batterie appoint | 1 − 0.6 × (800/1000) | **0.52** |
-| VE | 1800 W | 3 — import 200 W ≤ 400 W | 0.4 × (1 − 200/400) | **0.20** |
-| VE | 2100 W | 3 — import 500 W > 400 W | — | **0.00** |
-
-À noter : un appareil en zone 2 peut avoir un fit **plus élevé** qu'un appareil en zone 1, si ce dernier n'absorbe qu'une petite fraction du surplus. C'est voulu : Helios préfère un appareil de 800 W qui utilise 600 W de solaire + 200 W de batterie (fit 0.92) à un appareil de 200 W qui n'utilise que 200 W sur 600 W de solaire disponible (fit 0.33).
+| Batterie | toute `power_w` | — | toujours 1.0 | **1.00** |
+| Pompe piscine | 200 W | 1 — surplus pur | 200 / 1000 | **0.20** |
+| Ballon d'eau chaude | 800 W | 1 — surplus pur | 800 / 1000 | **0.80** |
+| Ballon d'eau chaude | 1200 W | 2 — bat. 200 W | 1 − 0.6 × (200/1000) | **0.88** |
+| VE | 1800 W | 2 — bat. 800 W | 1 − 0.6 × (800/1000) | **0.52** |
+| VE | 2200 W | 3 — import 200 W | 0.4 × (1 − 200/400) | **0.20** |
+| VE | 2500 W | hors budget | — | **0.00** |
 
 #### Calcul du score d'urgence [0..1]
 
-L'urgence dépend du type d'appareil :
+L'urgence dépend du type d'appareil. Les appareils sans notion de deadline (`generic`) n'ont pas d'urgence — leurs poids sont redistribués sur priorité et fit.
 
 | Type | Calcul |
 |------|--------|
+| **Batterie** | `1.0` si SOC < `soc_min` du jour — `0.0` si SOC ≥ `soc_max` — rampe linéaire entre les deux |
 | **Ballon d'eau chaude** | `(température_cible − température_actuelle) / plage_temp` — monte quand la température baisse. En heures creuses, référence sur le minimum HC plutôt que la cible |
 | **VE** | `0.6 × déficit_SOC + 0.4 × urgence_départ` — combine le déficit de charge et le temps restant avant l'heure de départ configurée |
 | **HVAC** | `écart_consigne / 3°C` — urgence maximale à 3 °C d'écart |
-| **Piscine** | `minutes_de_filtration_manquantes / minutes_restantes_avant_minuit` — monte en fin de journée si le quota n'est pas atteint |
+| **Piscine** | `minutes_de_filtration_manquantes / minutes_restantes_avant_fin_de_plage` — monte en fin de fenêtre horaire si le quota n'est pas atteint |
 | **Appareil programmable** | Basé sur la deadline automatique calculée au moment de la mise en attente : `0.3` baseline → rampe vers `0.8` si < 3h de marge → `0.8` si < 1h → `1.0` si plus le temps de finir le cycle |
+| **`generic`** | Pas d'urgence — score effectif : `0.5 × priorité/10 + 0.5 × fit` |
 
 ##### Deadline automatique pour l'électroménager
 
-Quand tu indiques qu'un appareil (lave-vaisselle, lave-linge…) est prêt à tourner, Helios calcule automatiquement une **deadline de fin de cycle** selon l'heure de la mise en attente :
+Quand tu indiques qu'un appareil (lave-vaisselle, lave-linge…) est prêt à tourner, Helios calcule automatiquement une **deadline de fin de cycle** à partir des créneaux configurés via **Deadline slots** (liste d'heures séparées par des virgules) :
+
+| Exemple | Comportement |
+|---------|--------------|
+| `12:00,18:00` | Défaut — le prochain créneau non dépassé devient la deadline |
+| `18:00` | Un seul créneau — finir avant 18h quelle que soit l'heure de lancement |
+| `10:00,14:00,20:00` | Trois créneaux — finir avant 10h, 14h ou 20h |
+
+Avec le réglage par défaut `12:00,18:00`, le comportement est :
 
 | Heure de mise en attente | Deadline calculée |
 |--------------------------|-------------------|
@@ -189,32 +218,49 @@ Quand tu indiques qu'un appareil (lave-vaisselle, lave-linge…) est prêt à to
 | 12h00 – 17h59 | 18h00 — cycle terminé en fin d'après-midi |
 | 18h00 ou après | Minuit |
 
-Cette deadline pilote la montée en urgence : l'appareil attend d'abord du surplus solaire, puis accélère à mesure que la deadline approche, et force le démarrage si le cycle ne peut plus se terminer à temps.
-
-Les créneaux sont configurables par appareil via le champ **Deadline slots** (config flow, étape Appareils, type `appliance`). La valeur est une liste d'heures séparées par des virgules :
-
-| Exemple | Comportement |
-|---------|--------------|
-| `12:00,18:00` | Défaut — finir avant midi ou avant 18h |
-| `18:00` | Un seul créneau — finir avant 18h quelle que soit l'heure de lancement |
-| `10:00,14:00,20:00` | Trois créneaux — finir avant 10h, 14h ou 20h |
-
 Si tous les créneaux sont dépassés, la deadline tombe à minuit.
+
+Cette deadline pilote la montée en urgence : l'appareil attend d'abord du surplus solaire, puis accélère à mesure que la deadline approche. **Quand urgence = 1.0** (plus assez de temps pour finir le cycle), le démarrage est forcé quelle que soit la situation — fit, budget, jour rouge. Les appareils à urgence = 1.0 passent en tête du tri et démarrent inconditionnellement.
+
+> Ce mécanisme s'applique à tout appareil dont l'urgence peut atteindre 1.0 : électroménager (deadline dépassée), ballon d'eau chaude (temp < plancher), batterie (SOC < soc_min du jour).
 
 Les appareils sont traités en **ordre décroissant de score effectif** : le premier obtient le budget disponible en priorité. Si le surplus restant est insuffisant pour les suivants, ils ne démarrent pas. **La carte Lovelace affiche les appareils dans ce même ordre**, ce qui permet de voir en un coup d'œil quel appareil est le plus susceptible d'être activé (ou coupé) au prochain cycle.
 
-#### Conditions d'extinction
+#### Algorithme de dispatch — allumage et extinction unifiés
 
-Un appareil allumé est coupé à chaque cycle si **l'une** des conditions suivantes est remplie — dans cet ordre de priorité :
+Helios ne distingue pas "allumage" et "extinction" en deux passes séparées. À chaque cycle, il recalcule from scratch quels appareils doivent tourner, puis éteint ceux qui n'ont pas été sélectionnés.
 
-| Condition | Raison affichée dans les logs |
-|-----------|-------------------------------|
-| Hors de la plage horaire autorisée | `outside_window` |
-| Objectif atteint (quota, température cible, SOC VE…) | `satisfied` |
-| Fit < 0.1 — import réseau trop important ou jour Tempo rouge avec import | `fit_negligible` |
-| Overcommit — la consommation totale des appareils actifs dépasse `surplus_PV + batterie_disponible + grid_allowance` ; l'appareil le moins prioritaire est coupé en premier, un seul par cycle | `overcommit` |
+**Étape 1 — Budget initial**
+```
+remaining = surplus_virtuel + bat_available_w
+```
 
-**Condition interruptible** : un appareil ne peut être coupé que s'il est marqué `interruptible` **et** que sa durée minimale (`min_on_minutes`) est écoulée depuis la dernière activation. Les appareils non-interruptibles (ex. lave-linge en cycle) ne sont **jamais** coupés par Helios, quelle que soit la situation.
+**Étape 2 — Phase obligatoire**
+
+Les appareils garantis sont servis en premier, dans cet ordre :
+
+| Condition | Raison |
+|-----------|--------|
+| Hors de la plage horaire autorisée | Ignoré — ni allumé ni compté dans `remaining` |
+| Objectif atteint (quota, température cible, SOC VE…) | Ignoré — `satisfied` |
+| Urgence = 1.0 (deadline dépassée, temp sous plancher, batterie sous `soc_min`) | Démarrage forcé — déduit du `remaining` |
+| Déjà allumé et `min_on_minutes` non écoulé | Maintenu — déduit du `remaining` |
+
+Les appareils non-interruptibles (ex. lave-linge en cycle) ne peuvent jamais être éteints par Helios — ils sont traités comme `min_on_minutes` non écoulé.
+
+**Étape 3 — Phase greedy**
+
+Avec le `remaining` après la phase obligatoire, les appareils restants concourent par score effectif décroissant. À chaque tour :
+1. Le fit est recalculé avec le `remaining` courant
+2. Le score effectif est recalculé
+3. L'appareil au meilleur score est sélectionné, `remaining` est décrémenté de sa `power_w`
+4. On recommence jusqu'à épuisement du budget ou des candidats
+
+**Étape 4 — Extinction**
+
+Tout appareil actuellement allumé qui n'a pas été sélectionné aux étapes 2 ou 3 est éteint.
+
+> **Conséquence clé** : un lave-vaisselle à urgence élevée peut naturellement "déloger" une pompe de piscine à urgence basse si le budget est limité — non par une règle d'overcommit, mais parce que la piscine n'est simplement pas sélectionnée à l'étape 3.
 
 ---
 
@@ -222,44 +268,32 @@ Un appareil allumé est coupé à chaque cycle si **l'une** des conditions suiva
 
 | Paramètre | Défaut | Description |
 |-----------|--------|-------------|
-| Poids surplus PV | 0.40 | Importance du surplus PV dans le score |
-| Poids Tempo | 0.30 | Importance de la couleur Tempo dans le score |
-| Poids SOC batterie | 0.20 | Importance du SOC dans le score |
-| Poids solaire | 0.10 | Importance du potentiel solaire instantané dans le score |
 | Intervalle de scan | 5 min | Fréquence de la boucle de pilotage |
-| Seuil de dispatch | 0.30 | Score global minimum pour activer les appareils |
 | Mode | `auto` | `auto` \| `manual` \| `off` |
-| Alpha optimiseur | 0.50 | Objectif de l'optimiseur quotidien : `0.0` = économies pures, `1.0` = autoconsommation pure |
-
-> **Poids et optimiseur** — Les poids configurés ici servent uniquement de valeurs initiales au premier démarrage, avant que l'optimiseur quotidien n'ait tourné. Dès 5h00, l'optimiseur les recalcule et les écrase (résultat persisté). En cas d'échec de l'optimiseur, ces valeurs font office de fallback. En pratique, les laisser aux valeurs par défaut suffit.
-
-> Les poids doivent sommer à 1.0 — le formulaire le valide.
 
 ---
 
 ### Score global
 
-Le score global est un nombre entre 0 et 1 calculé à chaque cycle. Il répond à la question : **faut-il consommer de l'énergie maintenant ?** `1.0` = oui fortement, `0.0` = non.
+Le score global est un nombre entre 0 et 1 calculé à chaque cycle. Il répond à la question : **est-ce un bon moment pour consommer de l'électricité ?** `1.0` = conditions idéales (surplus abondant, tarif bas, bon ensoleillement), `0.0` = défavorable.
 
-Il sert principalement de **seuil de dispatch** : si le score est inférieur au seuil configuré (défaut 0.30), aucun appareil n'est activé ce cycle.
+C'est un **indicateur à destination de l'utilisateur** — il n'intervient pas dans le dispatch automatique des appareils. Il permet de décider si déclencher manuellement un appareil est pertinent, et est affiché de façon proéminente dans la carte Lovelace.
 
 #### Formule
 
 ```
-score = w_surplus × f_surplus + w_tempo × f_tempo + w_soc × f_soc + w_solar × f_solar
+score = 0.5 × f_surplus + 0.3 × f_tempo + 0.2 × f_solar
 ```
 
-Chaque `f_*` ∈ [0..1]. Les poids sont configurés dans l'étape Stratégie et optimisés quotidiennement.
+Chaque `f_*` ∈ [0..1]. Les poids sont fixes.
 
 #### Composante surplus (`f_surplus`)
 
 Mesure l'excédent de production PV par rapport à la consommation de base.
 
-**Sans batterie** (ou batterie pleine) : rampe linéaire, 0 W → `0.0`, 500 W → `1.0`.
+Rampe linéaire de `0 W` à `charge_max_w + 500 W` → `0.0` à `1.0`.
 
-**Avec batterie active** (SOC < soc_max) : double pente pour éviter d'activer des appareils quand la batterie peut encore absorber le surplus :
-- `[0 W … charge_max_w]` → `0.0` à `0.3` (la batterie peut absorber — pas urgent)
-- `[charge_max_w … +500 W]` → `0.3` à `1.0` (surplus dépasse la capacité de charge — activer les appareils)
+Sans batterie, `charge_max_w = 0` → rampe de `0 W` à `500 W`. Avec batterie, le seuil de saturation est repoussé d'autant que la capacité de charge — un surplus de 500 W reste modeste si la batterie peut en absorber 2000 W.
 
 #### Composante Tempo (`f_tempo`)
 
@@ -269,19 +303,6 @@ Mesure l'excédent de production PV par rapport à la consommation de base.
 | Blanc | 0.5 |
 | Rouge (cher) | 0.0 |
 | Non configuré | 0.5 (neutre) |
-
-#### Composante SOC batterie (`f_soc`)
-
-Encourage à consommer quand la batterie est suffisamment chargée. Le score reste bas tant que le SOC n'a pas dépassé le pivot, puis monte fortement vers `soc_max`.
-
-Avec `soc_min=20%`, `soc_max=95%`, pivot = `57.5%` :
-
-| SOC | Score |
-|-----|-------|
-| ≤ soc_min (20%) | 0.0 — réserve, rien n'est activé |
-| soc_min → pivot (20%→57.5%) | 0.0 → 0.3 — rampe plate (score bas, batterie prioritaire) |
-| pivot → soc_max (57.5%→95%) | 0.3 → 1.0 — rampe forte (encourage la consommation) |
-| ≥ soc_max (95%) | 1.0 — batterie pleine, consomme librement |
 
 #### Composante prévision (`f_solar`)
 
@@ -307,92 +328,85 @@ La météo du moment reste capturée par `f_surplus` (surplus_w faible = nuageux
 
 ---
 
-### Optimiseur quotidien
+### Prévision journalière
 
-Chaque matin à **5h00**, Helios lance automatiquement une recherche par grille pour trouver les poids de scoring et le seuil de dispatch optimaux pour la journée.
+Chaque matin à **5h00**, Helios lance une simulation de la journée à venir pour produire une prévision indicative.
 
 #### Fonctionnement
 
-1. **Saison** — déterminée automatiquement à partir de la date du jour (décembre–février → hiver, etc.)
-2. **Couverture nuageuse** — inférée depuis l'entité de prévision PV :
-   - Le ratio `prévision / production théorique ciel clair` détermine `clear` / `partly_cloudy` / `cloudy`
-   - Si l'entité n'est pas configurée, profil ciel clair par défaut
+1. **Saison** — déterminée automatiquement à partir de la date du jour
+2. **Couverture nuageuse** — inférée depuis l'entité de prévision PV (ratio prévision / ciel clair) ; profil ciel clair par défaut si non configurée
 3. **Couleur Tempo** — lue depuis l'entité "couleur lendemain" (prioritaire) puis "couleur du jour"
 4. **SOC initial** — lu depuis l'entité SOC batterie au moment du lancement
-5. **Appareils** — les appareils configurés dans Helios sont convertis en modèles de simulation
-6. **Recherche par grille** — ~168 combinaisons de poids × seuil évaluées en arrière-plan (non-bloquant)
-7. **Application** — les meilleurs poids et seuil remplacent les valeurs courantes pour la journée
+5. **Appareils** — les appareils configurés dans Helios (y compris le BatteryDevice) sont convertis en modèles de simulation
+6. **Simulation** — la journée est simulée pas à pas avec le nouvel algorithme de dispatch
 
-#### Paramètre alpha
+#### Résultats exposés
 
-Le paramètre **alpha** (`CONF_OPTIMIZER_ALPHA`) contrôle l'objectif de la recherche :
+La prévision est disponible en attributs du sensor `helios_forecast` (voir aussi [Détail — `sensor.helios_forecast`](#détail----sensorhelios_forecast)) :
 
-```
-objectif = α × taux_autoconsommation + (1 - α) × taux_économie
-```
-
-| Alpha | Comportement |
-|-------|-------------|
-| `1.0` | Maximise l'autoconsommation (zéro export) |
-| `0.5` | Équilibre autoconsommation et économies (défaut) |
-| `0.0` | Minimise la facture (peut accepter un peu d'export si rentable) |
+| Attribut | Description |
+|----------|-------------|
+| `forecast_pv_kwh` | Production PV estimée (kWh) |
+| `forecast_consumption_kwh` | Consommation totale estimée (kWh) |
+| `forecast_import_kwh` | Import réseau estimé (kWh) |
+| `forecast_export_kwh` | Export réseau estimé (kWh) |
+| `forecast_self_consumption_pct` | Taux d'autoconsommation estimé (% du PV consommé localement) |
+| `forecast_self_sufficiency_pct` | Taux d'autosuffisance estimé (% de la consommation couverte par le PV) |
+| `forecast_cost` | Coût journalier estimé (€) |
+| `forecast_savings` | Économie estimée par rapport à une consommation 100 % réseau (€) |
+| `last_forecast` | Timestamp ISO de la dernière simulation (5h du matin) |
 
 ---
 
 ### Entités exposées
 
+#### Entités système
+
 | Entité | Type | Description |
 |--------|------|-------------|
 | `sensor.helios_pv_power` | Sensor | Production PV instantanée (W) |
-| `sensor.helios_grid_power` | Sensor | Puissance réseau (W) |
+| `sensor.helios_grid_power` | Sensor | Puissance réseau (W, positif = import) |
 | `sensor.helios_house_power` | Sensor | Consommation maison (W) |
-| `sensor.helios_score` | Sensor | Score global [0–1] |
-| `sensor.helios_battery_action` | Sensor | Action batterie : `charge` \| `discharge` \| `reserve` \| `idle` |
-| `sensor.helios_optimizer_weights` | Sensor | Poids du scoring actifs pour la journée (voir ci-dessous) |
+| `sensor.helios_score` | Sensor | Score global [0–1] — indicateur : est-ce un bon moment pour consommer ? Attributs : `f_surplus`, `f_tempo`, `f_solar` (composantes détaillées) |
+| `sensor.helios_forecast` | Sensor | Prévision journalière (mise à jour à 5h). État : taux d'autoconsommation estimé (%). Voir [Détail — `sensor.helios_forecast`](#détail----sensorhelios_forecast) |
 | `switch.helios_auto_mode` | Switch | Active / désactive le pilotage automatique |
 
-#### Détail — `sensor.helios_optimizer_weights`
+#### Entités batterie
 
-| Champ | Description |
-|-------|-------------|
-| État | Seuil de dispatch actif `[0..1]` |
-| Attribut `w_surplus` | Poids surplus PV |
-| Attribut `w_tempo` | Poids couleur Tempo |
-| Attribut `w_soc` | Poids SOC batterie |
-| Attribut `w_solar` | Poids solaire de production |
-| Attribut `last_optimized` | Timestamp ISO de la dernière optimisation (5h du matin) |
+| Entité | Type | Description |
+|--------|------|-------------|
+| `sensor.helios_battery` | Sensor | État du BatteryDevice — `on` (en charge) \| `off`. Attributs : `soc` (%), `power_w` (demande calculée), `urgency` [0–1], `effective_score` [0–1] |
+| `switch.helios_battery_manual` | Switch | Exclut la batterie du dispatch automatique — Helios ne lui alloue plus de budget, le BMS garde le contrôle total |
 
-Avant la première optimisation, l'entité reflète les poids configurés dans l'étape Strategy. Dès que l'optimiseur tourne à 5h, les valeurs sont mises à jour.
+#### Entités par appareil
 
-Exemple de carte Lovelace pour suivre les poids du jour :
+Pour chaque appareil configuré (slug = nom normalisé) :
 
-```yaml
-type: entities
-title: Optimiseur Helios
-entities:
-  - entity: sensor.helios_optimizer_weights
-    name: Seuil de dispatch
-  - type: attribute
-    entity: sensor.helios_optimizer_weights
-    attribute: w_surplus
-    name: Poids surplus PV
-  - type: attribute
-    entity: sensor.helios_optimizer_weights
-    attribute: w_tempo
-    name: Poids Tempo
-  - type: attribute
-    entity: sensor.helios_optimizer_weights
-    attribute: w_soc
-    name: Poids SOC batterie
-  - type: attribute
-    entity: sensor.helios_optimizer_weights
-    attribute: w_solar
-    name: Poids solaire
-  - type: attribute
-    entity: sensor.helios_optimizer_weights
-    attribute: last_optimized
-    name: Dernière optimisation
-```
+| Entité | Type | Description |
+|--------|------|-------------|
+| `sensor.helios_{slug}` | Sensor | État de l'appareil — `on` \| `off` \| `satisfied` \| `waiting`. Attributs : `effective_score`, `fit`, `urgency`, `power_w`, `reason` (dernière décision) |
+| `switch.helios_{slug}_manual` | Switch | Passe l'appareil en mode manuel — Helios ne le pilote plus, l'état du switch physique reste sous contrôle de l'utilisateur |
+
+#### Entité prévision journalière
+
+| Entité | Type | Description |
+|--------|------|-------------|
+| `sensor.helios_forecast` | Sensor | État : taux d'autoconsommation estimé (%). Attributs détaillés ci-dessous. Mis à jour chaque matin à 5h. |
+
+#### Détail — `sensor.helios_forecast`
+
+| Attribut | Description |
+|----------|-------------|
+| `forecast_pv_kwh` | Production PV estimée pour la journée (kWh) |
+| `forecast_consumption_kwh` | Consommation totale estimée (kWh) |
+| `forecast_import_kwh` | Import réseau estimé (kWh) |
+| `forecast_export_kwh` | Export réseau estimé (kWh) |
+| `forecast_self_consumption_pct` | Taux d'autoconsommation estimé (% du PV consommé localement) |
+| `forecast_self_sufficiency_pct` | Taux d'autosuffisance estimé (% de la consommation couverte par le PV) |
+| `forecast_cost` | Coût journalier estimé (€) |
+| `forecast_savings` | Économie estimée par rapport à une consommation 100 % réseau (€) |
+| `last_forecast` | Timestamp ISO de la dernière simulation (5h du matin) |
 
 ### Carte Lovelace
 
@@ -413,25 +427,59 @@ URL : /helios/helios-card.js
 Type : Module JavaScript
 ```
 
-Configuration minimale :
+**Configuration minimale** — la carte détecte automatiquement les entités Helios, aucun identifiant requis :
+
+```yaml
+type: custom:helios-card
+```
+
+**Configuration compacte** — flux d'énergie uniquement, sans section appareils :
+
+```yaml
+type: custom:helios-card
+compact: true
+info_url: /lovelace/energie   # optionnel — URL du bouton ℹ️
+```
+
+**Configuration complète** — entités explicites + section appareils :
 
 ```yaml
 type: custom:helios-card
 entities:
-  pv_power: sensor.helios_pv_power
-  grid_power: sensor.helios_grid_power
-  house_power: sensor.helios_house_power
-  battery_soc: sensor.battery_soc      # optionnel
-  score: sensor.helios_score
-  battery_action: sensor.helios_battery_action
-  auto_mode: switch.helios_auto_mode
+  pv_power:      sensor.helios_pv_power
+  grid_power:    sensor.helios_grid_power   # positif = import, négatif = export
+  house_power:   sensor.helios_house_power
+  battery_soc:   sensor.my_battery_soc      # SOC batterie brut (%)
+  battery_power: sensor.helios_battery_power # négatif = charge, positif = décharge
+  score:         sensor.helios_score
+devices:
+  - name: Piscine
+    type: pool
+    entity:              switch.helios_piscine_manual
+    filtration_done:     sensor.helios_pool_filtration_done     # minutes
+    filtration_required: sensor.helios_pool_filtration_required # minutes
+    force_remaining:     sensor.helios_pool_force_remaining     # optionnel, minutes
+  - name: Chauffe-eau
+    type: water_heater
+    entity:      switch.helios_chauffe_eau_manual
+    temp_entity: sensor.temperature_chauffe_eau
+    temp_target: 61                          # optionnel — cible affichée (°C)
+  - name: Lave-vaisselle
+    type: appliance
+    entity:       switch.helios_lave_vaisselle_manual
+    state_entity: sensor.helios_lave_vaisselle
+  - name: Voiture
+    type: ev_charger
+    entity:         switch.helios_voiture_manual
+    soc_entity:     sensor.ev_soc            # optionnel
+    plugged_entity: binary_sensor.ev_branche # optionnel — on = branché
 ```
 
 ---
 
 ## Simulation
 
-Le moteur de simulation permet de tester et d'optimiser les paramètres de l'intégration hors de Home Assistant, sur une journée complète simulée.
+Le moteur de simulation permet de tester le comportement du dispatch sur une journée complète hors de Home Assistant, et de produire les prévisions journalières.
 
 Le code de simulation est situé **exclusivement** dans `custom_components/helios/simulation/`.
 Le script `sim.py` à la racine du dépôt sert de point d'entrée unique pour le développement.
@@ -458,12 +506,7 @@ python sim.py --season winter --cloud cloudy --tempo red -v
 # Comparer toutes les saisons × conditions météo
 python sim.py --compare
 
-# Optimiser les paramètres du scoring
-python sim.py --optimize
-
-
-# Optimiser complete avec résultat optimisé
-python sim.py --cloud clear --season spring --peak-pv 2800 --tempo blue --bat-soc 20 --bat-capacity 4.2 --bat-charge-max 1200 --bat-discharge-max 1200 --bat-efficiency 0.95 --bat-discharge-start 6 -v --devices custom_components/helios/simulation/config/devices.json --base-load custom_components/helios/simulation/config/base_load.json --optimize --opt-alpha 0.5 --opt-top 20 --opt-runs 10 --base-load-noise 0.20
+# Simulation complète avec batterie et appareils personnalisés
 python sim.py -v \
     --season spring \
     --peak-pv 2800 \
@@ -472,13 +515,9 @@ python sim.py -v \
     --bat-charge-max 1200 \
     --bat-discharge-max 1200 \
     --bat-efficiency 0.95 \
+    --bat-discharge-start 6 \
     --devices custom_components/helios/simulation/config/devices.json \
-    --base-load custom_components/helios/simulation/config/base_load.json \
-    --weight-surplus 0.6 \
-    --weight-tempo 0.1 \
-    --weight-soc 0.2 \
-    --weight-solar 0.1 \
-    --threshold 0.6
+    --base-load custom_components/helios/simulation/config/base_load.json
 ```
 
 ### Fichiers de configuration
@@ -488,9 +527,9 @@ Tous les paramètres métier sont dans `custom_components/helios/simulation/conf
 | Fichier | Contenu |
 |---------|---------|
 | `devices.json` | Appareils fictifs pour la simulation sur PC — **indépendant de la config HA** (les appareils réels sont configurés via le config flow) |
-| `appliance_schedule.json` | Planning de déclenchement des appareils programmables — **partagé** entre le simulateur et l'optimiseur quotidien HA |
+| `appliance_schedule.json` | Planning de déclenchement des appareils programmables — **partagé** entre le simulateur et la prévision journalière HA |
 | `base_load.json` | Consommation de fond — utilisé par la simulation **et** par l'intégration HA au démarrage (cold start EMA) ; remplacé progressivement par le profil appris |
-| `tariff.json` | Tarifs EDF Tempo HC/HP — utilisé par la simulation **et** par l'optimiseur quotidien HA (calcul du taux d'économies dans la fonction objectif) |
+| `tariff.json` | Tarifs EDF Tempo HC/HP — utilisé par la simulation **et** par la prévision journalière HA (calcul du coût et de l'économie estimés) |
 
 ```bash
 python sim.py \
@@ -521,16 +560,14 @@ python sim.py \
 | Champ | Défaut | Description |
 |-------|--------|-------------|
 | `name` | — | Nom affiché dans les logs et sorties |
-| `device_type` | `"generic"` | `generic`, `pool`, `appliance` (voir ci-dessous) |
+| `device_type` | `"generic"` | `generic`, `water_heater`, `ev_charger`, `hvac`, `pool`, `appliance` |
 | `power_w` | — | Puissance consommée (W) |
 | `allowed_start` / `allowed_end` | `0.0` / `24.0` | Fenêtre horaire autorisée (heures décimales, ex. `8.0` = 8h00) |
 | `priority` | `5` | Priorité de dispatch 1–10 (10 = plus prioritaire) |
 | `min_on_minutes` | `0` | Durée minimale allumé avant que Helios puisse éteindre |
-| `run_quota_h` | — | Quota journalier en heures (l'appareil s'arrête une fois la durée atteinte) |
-| `must_run_daily` | `false` | Force au moins un cycle par jour |
-| `w_priority` / `w_fit` / `w_urgency` | `0.30/0.40/0.30` | Poids des composantes du score effectif (doivent sommer à 1.0) |
+| `run_quota_h` | — | Quota journalier en heures — optionnel, applicable à tout type. L'appareil s'arrête une fois la durée atteinte. Pour `pool`, c'est le quota de filtration. |
 
-**Type `pool`** — suit un quota de filtration journalier (`run_quota_h`).
+**Type `pool`** — suit le quota de filtration journalier défini par `run_quota_h`.
 
 **Type `appliance`** — lave-linge, lave-vaisselle : cycle unique non interruptible déclenché manuellement.
 
@@ -562,7 +599,7 @@ python sim.py \
 
 Ce fichier est utilisé par deux composants :
 - **Le simulateur** — chargé automatiquement depuis `simulation/config/appliance_schedule.json` (ou via `--appliance-schedule chemin/vers/fichier.json`)
-- **L'optimiseur quotidien HA** — lu au démarrage de `ha_devices_to_sim()` depuis le même chemin bundlé
+- **La prévision journalière HA** — lu au démarrage de `ha_devices_to_sim()` depuis le même chemin bundlé
 
 ```json
 [
@@ -586,11 +623,11 @@ Ce fichier est utilisé par deux composants :
 
 La deadline est calculée automatiquement en fonction de `ready_at_hour` et des `appliance_deadline_slots` définis dans `devices.json`. Par exemple, un appareil mis en attente à 8h00 avec les slots `"12:00,18:00"` recevra une deadline à 12:00.
 
-Si le fichier est absent ou illisible, la simulation et l'optimiseur continuent sans déclencher d'appareils programmables (log debug uniquement, pas d'erreur).
+Si le fichier est absent ou illisible, la simulation et la prévision journalière continuent sans déclencher d'appareils programmables (log debug uniquement, pas d'erreur).
 
 #### Format `base_load.json`
 
-> **Note** — Ce fichier est une configuration temporaire destinée à la simulation. En production, Helios apprend automatiquement le profil de consommation de la maison grâce à l'EMA intégrée (`sensor.helios_base_load_profile`), sans nécessiter ce fichier.
+> **Note** — Ce fichier est utilisé par la simulation et par la prévision journalière comme profil de consommation de fond. L'apprentissage automatique du profil via EMA (exponentielle mobile) est prévu pour une version future — il permettra à Helios d'apprendre la consommation réelle de la maison sans ce fichier. Cette fonctionnalité n'est pas encore implémentée.
 
 `base_load.json` décrit la consommation de fond de la maison **sans les appareils pilotés** sous forme de segments horaires. Chaque segment définit une plage avec interpolation linéaire entre `w_start` et `w_end`.
 
@@ -623,7 +660,7 @@ Les segments doivent couvrir la journée complète de 0.0 à 24.0 sans chevauche
 
 `tariff.json` définit les prix d'achat du kWh selon la plage horaire et la couleur Tempo. Il est utilisé par deux composants :
 - **Le simulateur** (`--tariff chemin/vers/fichier.json`, ou le fichier bundlé par défaut)
-- **L'optimiseur quotidien HA** (tourne à 05:00) — pour calculer le taux d'économies dans sa fonction objectif : `α × autoconsommation + (1−α) × économies`
+- **La prévision journalière HA** (tourne à 05:00) — pour calculer le coût et l'économie estimés
 
 **Mode actuel : EDF Tempo** (seul mode supporté)
 
@@ -645,17 +682,19 @@ Les segments doivent couvrir la journée complète de 0.0 à 24.0 sans chevauche
 | `white.hc` / `white.hp` | Prix HC et HP les jours blancs (€/kWh TTC) |
 | `red.hc` / `red.hp` | Prix HC et HP les jours rouges (€/kWh TTC) |
 
-Les valeurs par défaut correspondent aux tarifs EDF Tempo TTC en vigueur au 03/03/2026.
+Les valeurs par défaut correspondent aux tarifs EDF Tempo TTC en vigueur au 03/03/2026. Les tarifs évoluent chaque année — vérifier les valeurs actuelles sur [le site EDF](https://www.edf.fr/tarif-tempo).
 
-**Modes à implémenter (roadmap config flow)**
+**Modes à venir (roadmap config flow)**
+
+Le tarif sera à terme configurable directement dans le config flow, sans `tariff.json`. Trois modes prévus :
 
 | Mode | Description | Format cible |
 |------|-------------|--------------|
 | `flat` | Tarif fixe, même prix 24h/24 | `{ "type": "flat", "price": 0.25 }` |
 | `hphc` | HP/HC classique, sans Tempo | `{ "type": "hphc", "hc_start": 22.0, "hc_end": 6.0, "hc": 0.17, "hp": 0.25 }` |
-| `tempo` | EDF Tempo (actuel) | format ci-dessus |
+| `tempo` | EDF Tempo (mode actuel via `tariff.json`) | intégré dans le config flow |
 
-### Options complètes
+### Paramètres CLI
 
 #### Solaire
 
@@ -685,13 +724,15 @@ Courbes calibrées pour la France (~47°N) :
 | `--bat-efficiency` | `0.75` | Rendement aller-retour (0–1) |
 | `--bat-soc-min PCT` | `20` | Plancher de décharge (%) |
 | `--bat-soc-max PCT` | `95` | Plafond de charge (%) |
-| `--bat-discharge-start H` | `6` | Heure à partir de laquelle la décharge est autorisée |
+| `--bat-discharge-start H` | `6` | Heure à partir de laquelle la décharge est autorisée. En jour rouge, la batterie se charge en HC (avant cette heure) puis repasse en autoconsommation. |
+| `--bat-soc-min-red PCT` | `80` | SOC min les jours Tempo rouge (%) |
+| `--bat-priority N` | `7` | Priorité de la batterie dans le dispatch (1–10) |
 | `--no-battery` | — | Désactiver la batterie |
 
 La batterie fonctionne en **mode autoconsommation** à partir de `--bat-discharge-start` :
 - Surplus PV → charge batterie
 - Déficit → décharge batterie pour éviter l'import réseau
-- Avant `bat_discharge_start` : SOC maintenu (pas de décharge nocturne)
+- Avant `bat_discharge_start` : SOC maintenu (pas de décharge nocturne) — en jour rouge, c'est la plage de charge forcée réseau
 
 #### Tarif et coûts
 
@@ -715,31 +756,11 @@ La simulation calcule à chaque pas la **production restante attendue** (courbe 
 puis applique un facteur d'erreur journalier aléatoire `N(1.0, σ)` pour simuler
 l'imprécision d'une vraie entité de prévision.
 
-Cela influence le scoring : beaucoup de production restante → patience (score bas),
-peu de production restante → urgence (score haut).
+Cela alimente la prévision journalière qui en déduit la couverture nuageuse via `cloud_from_forecast` — un écart important entre prévision et ciel clair indique une journée nuageuse et ajuste la simulation de la journée en conséquence.
 
-#### Dispatch et scoring
+#### Dispatch
 
-| Option | Défaut | Description |
-|--------|--------|-------------|
-| `--threshold 0-1` | `0.30` | Seuil de score pour activer les appareils |
-| `--weight-surplus 0-1` | `0.40` | Poids du surplus PV dans le score |
-| `--weight-tempo 0-1` | `0.30` | Poids de la couleur Tempo dans le score |
-| `--weight-soc 0-1` | `0.20` | Poids du SOC batterie dans le score |
-| `--weight-solar 0-1` | `0.10` | Poids du potentiel solaire dans le score |
-
-Pour rejouer une simulation avec les poids trouvés par `--optimize` :
-
-```bash
-# 1. Optimiser et noter la configuration optimale
-python sim.py --optimize --opt-top 1
-
-# 2. Rejouer avec ces poids
-python sim.py \
-  --weight-surplus 0.5 --weight-tempo 0.2 \
-  --weight-soc 0.2 --weight-solar 0.1 \
-  --threshold 0.30 -v
-```
+Le dispatch utilise l'algorithme unifié (phase obligatoire → phase greedy) avec les poids fixes `0.4 × priorité + 0.3 × fit + 0.3 × urgence`. Aucun paramètre configurable.
 
 ### Mode comparaison
 
@@ -750,53 +771,12 @@ python sim.py --compare
 ```
 
 ```
-  Saison    Météo               PV   Import   Export   Autocons.   Autosuff.
-  winter    clear            10.6kWh  16.0kWh   0.6kWh  █████████░ 94.8%  ████░░░░░░ 38.5%
-  winter    partly_cloudy     8.1kWh  17.3kWh   0.5kWh  █████████░ 93.8%  ███░░░░░░░ 30.6%
+  Saison    Météo               PV   Import   Export   Autocons.   Autosuff.    Coût   Économie
+  winter    clear            10.6kWh  16.0kWh   0.6kWh  █████████░ 94.8%  ████░░░░░░ 38.5%   3.21€   4.87€
+  winter    partly_cloudy     8.1kWh  17.3kWh   0.5kWh  █████████░ 93.8%  ███░░░░░░░ 30.6%   3.54€   4.12€
   ...
 ```
 
-### Mode optimisation
-
-Recherche par grille les poids du scoring et le seuil de dispatch qui maximisent
-l'objectif **ajusté au risque** :
-
-```
-objectif = E[α × autoconsommation + (1-α) × taux_économie] − λ × écart-type
-```
-
-Le terme `−λ × std` pénalise les configurations fragiles (bonnes en moyenne mais
-très variables selon la consommation du jour). C'est l'équivalent d'un ratio de Sharpe.
-
-```bash
-# Équilibré autoconsommation / économies (α=0.5), déterministe
-python sim.py --optimize
-
-# Priorité économies sur jour rouge
-python sim.py --optimize --opt-alpha 0.0 --tempo red
-
-# Monte Carlo : 10 runs avec bruit de consommation ±20%, pénalité risque λ=0.5
-python sim.py --optimize --season winter --cloud partly_cloudy \
-  --opt-runs 10 --base-load-noise 0.20 --opt-risk-lambda 0.5 --opt-top 5
-
-# Très conservateur (λ=2) : favorise la stabilité sur la performance moyenne
-python sim.py --optimize --opt-runs 20 --base-load-noise 0.20 --opt-risk-lambda 2.0
-```
-
-| Option | Défaut | Description |
-|--------|--------|-------------|
-| `--opt-alpha 0-1` | `0.5` | `1.0` = autoconsommation pure, `0.0` = économies pures |
-| `--opt-runs N` | `1` | Tirages Monte Carlo par configuration (estimation de variance) |
-| `--opt-risk-lambda 0-2` | `0.5` | Pénalité sur l'écart-type (`0`=pure moyenne, `2`=très conservateur) |
-| `--base-load-noise 0-1` | `0.0` | Bruit multiplicatif journalier sur la charge de fond (σ) |
-| `--opt-top N` | `10` | Nombre de résultats affichés |
-
-La colonne **Obj** affiche l'objectif ajusté au risque (`mean − λ×std`), **Moy** la
-moyenne des runs, **Std** l'écart-type. Avec `--opt-runs 1` (déterministe), Std = 0 et
-Obj = Moy.
-
-La configuration optimale est affichée directement copiable vers `SimConfig` ou
-`custom_components/helios/scoring_engine.py`.
 
 ### Sortie verbose (`-v`)
 
@@ -805,18 +785,19 @@ python sim.py -v
 ```
 
 ```
-      H       PV   Maison    Réseau   Batterie    SOC  Score  Appareils
-  08:00   1.5 kW   1.4 kW     -12 W     +104 W    52%  0.92  Chauffe-eau
-  09:00   2.1 kW   1.5 kW     -67 W     +605 W    50%  0.92  Chauffe-eau, Pompe piscine
+      H       PV   Maison    Réseau   Batterie    SOC  Score  Remaining  Appareils
+  08:00   1.5 kW   1.4 kW     -12 W     +104 W    52%  0.92     1320 W  Chauffe-eau
+  09:00   2.1 kW   1.5 kW     -67 W     +605 W    50%  0.92      480 W  Chauffe-eau, Pompe piscine
   ...
 ```
 
 - **Réseau** : `+` = import, `-` = export
 - **Batterie** : `+` = charge depuis PV, `-` = décharge vers maison
+- **Remaining** : budget de dispatch résiduel après allocation (`surplus_virtuel + bat_available_w − Σ alloués`)
 
 ### Log des décisions (`--decisions`)
 
-Affiche chaque changement d'état d'appareil au pas de 5 minutes, avec le score, la production PV, le surplus et le SOC batterie au moment de la décision.
+Affiche chaque changement d'état d'appareil au pas de 5 minutes, avec le fit, l'urgence, le score effectif, le budget restant et le SOC batterie au moment de la décision.
 
 ```bash
 python sim.py --decisions
@@ -825,11 +806,11 @@ python sim.py -v --decisions   # combinable avec la vue horaire
 
 ```
   ── Décisions appareils (5 min) ──────────────────────────────────────────────
-  Heure  Appareil           Action  Score      PV  Surplus    SOC
-  08:15  Chauffe-eau          on  0.681    873W     387W    49%
-  08:40  Piscine              on  0.749   1039W     557W    49%
-  12:30  Zoé                  on  0.765   2432W    1982W    52%
-  18:20  Zoé                 off  0.590    666W     216W    20%
+  Heure  Appareil       Action  Eff.Score   Fit  Urgency  Remaining    SOC
+  08:15  Chauffe-eau        on      0.721  0.87     0.65     1120 W    49%
+  08:40  Piscine            on      0.634  0.52     0.40      500 W    49%
+  12:30  Zoé                on      0.810  1.00     0.72     1980 W    52%
+  18:20  Zoé               off      0.310  0.12     0.15      220 W    20%
 ```
 
-Utile pour diagnostiquer un **chattering** (cycles ON/OFF rapides) ou vérifier qu'un appareil se déclenche dans la bonne fenêtre horaire.
+Utile pour diagnostiquer un **chattering** (cycles ON/OFF rapides), vérifier qu'un appareil se déclenche dans la bonne fenêtre horaire, ou comprendre pourquoi un appareil n'a pas été sélectionné (fit trop bas, budget insuffisant).
