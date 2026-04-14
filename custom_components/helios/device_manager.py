@@ -14,7 +14,7 @@ from homeassistant.helpers.storage import Store
 from .managed_device import ManagedDevice, BatteryDevice
 
 from .const import (
-    DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE,
+    DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_HVAC, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE,
     CONF_SCAN_INTERVAL_MINUTES,
     CONF_BATTERY_ENABLED, CONF_BATTERY_MAX_CHARGE_POWER_W,
     DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
@@ -31,6 +31,33 @@ _LOGGER = logging.getLogger(__name__)
 _APPLIANCE_LOW_POWER_CONFIRM_S = 180
 
 
+def compute_fit(
+    power_w: float,
+    remaining: float,
+    bat_available_w: float,
+    grid_allowance_w: float,
+) -> float:
+    """Compute fit score [0..1] for a device against the current remaining budget.
+
+    Zone 1 (surplus pur) : device ≤ remaining − bat_available → [0..1]
+    Zone 2 (batterie)    : device ≤ remaining               → [0.4..1]
+    Zone 3 (réseau)      : device ≤ remaining + grid_allowance → [0..0.4]
+    Hors budget          : 0.0
+    """
+    surplus_pur = remaining - bat_available_w
+    if power_w <= 0:
+        return 0.0
+    if power_w <= surplus_pur:
+        return power_w / max(1.0, surplus_pur)
+    if power_w <= remaining:
+        bat_used = power_w - surplus_pur
+        return 1.0 - 0.6 * (bat_used / max(1.0, bat_available_w))
+    if grid_allowance_w > 0 and power_w <= remaining + grid_allowance_w:
+        import_w = power_w - remaining
+        return 0.4 * (1.0 - import_w / grid_allowance_w)
+    return 0.0
+
+
 class DeviceManager:
     """Orchestrates all managed devices: scoring, dispatch, state machines."""
 
@@ -45,8 +72,6 @@ class DeviceManager:
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._coordinator = None  # Set by EnergyOptimizerCoordinator after construction
         self._scan_interval: float = float(config.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL))
-        # Kept for backward compatibility with simulation engine (simulation/ sets this attribute)
-        self._dispatch_threshold: float = float(config.get("dispatch_threshold", 0.3))
         # Decision log — rolling buffer, max 100 entries
         self.decision_log: deque[dict] = deque(maxlen=100)
         # Remaining dispatch budget after last greedy allocation
@@ -225,7 +250,6 @@ class DeviceManager:
         global_score:       float       = score_input.get("global_score",       0.0)
         surplus_w:          float       = score_input.get("surplus_w",          0.0)
         bat_available_w:    float       = score_input.get("bat_available_w",    0.0)
-        dispatch_threshold: float       = score_input.get("dispatch_threshold", self._dispatch_threshold)
         battery_soc:        float | None = score_input.get("battery_soc")
         configured_allowance_w: float   = float(score_input.get("grid_allowance_w", 250.0))
         pv_power_w:         float       = score_input.get("pv_power_w",         0.0)
@@ -397,196 +421,187 @@ class DeviceManager:
             if _helios_manages(device):
                 await self._async_handle_appliance(hass, device)
 
-        # ---- Score all eligible devices (including PREPARING appliances) ----
-        scored: list[tuple[float, ManagedDevice]] = []
+        # ---- Construction de la liste des candidats ----
+        _now_dt = datetime.combine(date.today(), now)
+        all_candidates: list = []
 
         for device in self.devices:
-            # Devices not under Helios control are skipped entirely
             if not _helios_manages(device):
                 continue
-
-            # PREPARING appliances compete in the greedy loop with the correct budget.
-            if device.device_type == DEVICE_TYPE_APPLIANCE:
-                if device.appliance_state != APPLIANCE_STATE_PREPARING:
-                    continue  # Already handled in pre-pass
-                urgency        = device.urgency_modifier(reader)
-                fit            = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w, grid_allowance_w, tempo_color == TEMPO_RED)
-                priority_score = device.priority / 10.0
-                score          = min(global_score * priority_score * fit + urgency * 0.3, 1.0)
-                device.last_effective_score = round(score, 3)
-                device.last_priority_score  = round(priority_score, 3)
-                device.last_fit             = round(fit, 3)
-                device.last_urgency         = round(urgency, 3)
-                scored.append((score, device))
-                continue
-
-            # Devices preempted earlier this cycle must not be re-activated by the
-            # greedy loop: the freed budget was earmarked for the appliance that
-            # triggered the preemption.
             if device in preempted_this_cycle:
                 continue
-
-            # Urgency override (urgency == 1.0) → bypass allowed window and force on.
-            # Replaces must_run: legionella safety, pool deadline, EV departure, etc.
-            _now_dt = datetime.combine(date.today(), now)
-            _urgency = device.urgency_modifier(reader, now=_now_dt)
-            if _urgency >= 1.0:
-                device.last_effective_score = 1.0
-                device.last_urgency = 1.0
-                if not device.is_on:
-                    await self._async_set_switch(hass, device, True, reason="urgency", context=_base_ctx)
-                continue
-
-            # Outside allowed window → turn off
-            if not device.is_in_allowed_window(now):
-                device.last_effective_score = 0.0
-                if device.is_on and device.interruptible and self._min_on_elapsed(device):
-                    await self._async_set_switch(hass, device, False, reason="outside_window", context=_base_ctx)
-                continue
-
-            # Already satisfied → turn off, but still respect min_on_minutes so a device
-            # that was just forced on (e.g. must_run) isn't killed after one cycle.
-            # Exception: water heaters during off-peak hours bypass min_on_elapsed because
-            # their internal thermostat handles cycle protection. If Helios doesn't cut
-            # the switch promptly at the HC threshold (off_peak_min), the physical heating
-            # element heats all the way to wh_temp_target instead of stopping at the
-            # off-peak minimum.
-            if device.is_satisfied(reader, now=datetime.combine(date.today(), now)):
-                device.last_effective_score = 0.0
-                bypass_min_on = (
-                    device.device_type == DEVICE_TYPE_WATER_HEATER
-                    and device._is_off_peak(now)  # noqa: SLF001
-                )
-                if device.is_on and device.interruptible and (self._min_on_elapsed(device) or bypass_min_on):
-                    await self._async_set_switch(hass, device, False, reason="satisfied", context=_base_ctx)
-                continue
-
-            score = device.effective_score(reader, surplus_w, bat_available_w, grid_allowance_w, tempo_color == TEMPO_RED)
-            device.last_effective_score = round(score, 3)
-            scored.append((score, device))
-
-        # ---- Greedy allocation (highest score first) ----
-        scored.sort(key=lambda x: x[0], reverse=True)
-
-        # Use real_surplus_w (PV – base – currently-ON-helios-draw) as the budget for
-        # NEW activations.  surplus_w is virtual (real_surplus + helios_on_w) and is kept
-        # only for fit scoring.  Because ON-device power is already excluded from
-        # real_surplus_w, those devices need no budget deduction here; only newly
-        # activated devices reduce `remaining`.
-        real_surplus_w: float = float(score_input.get("real_surplus_w", surplus_w))
-        remaining = real_surplus_w + bat_available_w + grid_allowance_w
-
-        for score, device in scored:
-            # PREPARING / RUNNING appliances
             if device.device_type == DEVICE_TYPE_APPLIANCE:
-                urgency    = device.urgency_modifier(reader)
-                fit        = ManagedDevice.compute_fit_score(device.power_w, surplus_w, bat_available_w, grid_allowance_w, tempo_color == TEMPO_RED)
-                should_start = (global_score >= 0.4 and fit >= 0.3) or urgency >= 0.8
-                if not should_start:
+                if device.appliance_state in (APPLIANCE_STATE_IDLE, APPLIANCE_STATE_DONE):
+                    continue  # Le pré-pass gère ces états
+                # PREPARING et RUNNING : inclus pour le suivi budgétaire
+            all_candidates.append(device)
+
+        if self.battery_device is not None and not self.battery_device.is_manual(reader):
+            if not self.battery_device.satisfied:
+                all_candidates.append(self.battery_device)
+            else:
+                self.battery_device.is_on = False
+
+        # ---- Phase 1 — Budget initial (surplus virtuel + batterie, sans tolérance réseau) ----
+        remaining = surplus_w + bat_available_w
+
+        # ---- Phase 2 — Appareils obligatoires ----
+        obligatoire: set = set()
+
+        for device in all_candidates:
+            if isinstance(device, BatteryDevice):
+                _urgency = device.urgency
+            else:
+                # Appareils RUNNING : maintenir actifs et déduire du budget
+                if device.device_type == DEVICE_TYPE_APPLIANCE and device.appliance_state == APPLIANCE_STATE_RUNNING:
+                    if device.is_on:
+                        remaining -= device.power_w
+                        obligatoire.add(device)
                     continue
-                if device.is_on:
-                    # Already running: real_surplus already excludes its draw — no deduction.
-                    await self._async_start_appliance(hass, device, global_score, fit, urgency)
-                elif device.power_w <= remaining:
-                    remaining -= device.power_w
-                    await self._async_start_appliance(hass, device, global_score, fit, urgency)
-                elif urgency >= 0.8:
-                    # Deadline imminent: start anyway; overcommit check will shed if needed.
-                    await self._async_start_appliance(hass, device, global_score, fit, urgency)
-                continue
 
-            # For fit calculation, add back this device's actual draw if already ON
-            # so it doesn't penalise itself when re-evaluated each cycle.
-            # Use actual_power_w: a water heater whose thermostat has cut (0 W actual)
-            # must not inflate fit_surplus with its nominal power.
-            fit_surplus = surplus_w + (device.actual_power_w(reader) if device.is_on else 0)
-            fit = ManagedDevice.compute_fit_score(device.power_w, fit_surplus, bat_available_w, grid_allowance_w, tempo_color == TEMPO_RED)
+                # Hors plage horaire : ignoré (Phase 4 éteint si allumé et interruptible)
+                if not device.is_in_allowed_window(now):
+                    continue
 
-            # Skip if fit is negligible (would import too much from grid)
-            if fit < 0.1:
-                if device.is_on and device.interruptible and self._min_on_elapsed(device):
-                    await self._async_set_switch(hass, device, False, reason="fit_negligible", context=_base_ctx)
-                continue
-
-            if device.is_on:
-                # Already running: real_surplus already excludes its draw.
-                # The fit_negligible gate above is the only reason to turn it off here.
-                pass
-            elif device.power_w <= remaining:
-                # Red-day strict guard: on red days below battery reserve, only
-                # activate NEW devices that fit within the PV surplus alone.
-                if _red_strict and device.power_w > surplus_w:
-                    _LOGGER.debug(
-                        "Dispatch: '%s' blocked — red day strict mode "
-                        "(SOC=%.0f%% < reserve=%.0f%%, power=%dW > surplus=%dW)",
-                        device.name, battery_soc, soc_reserve_rouge,
-                        device.power_w, surplus_w,
+                # Satisfait : éteindre si possible
+                if device.is_satisfied(reader, now=_now_dt):
+                    bypass_min_on = (
+                        device.device_type == DEVICE_TYPE_WATER_HEATER
+                        and device._is_off_peak(now)  # noqa: SLF001
                     )
+                    if device.is_on and device.interruptible and (self._min_on_elapsed(device) or bypass_min_on):
+                        await self._async_set_switch(hass, device, False, reason="satisfied", context=_base_ctx)
+                    elif device.is_on and not self._min_on_elapsed(device):
+                        # Satisfait mais min_on non écoulé → maintenir ON, protéger de la Phase 4
+                        remaining -= device.power_w
+                        obligatoire.add(device)
+                    continue
+
+                _urgency = device.urgency_modifier(reader, now=_now_dt)
+
+            if _urgency >= 1.0:
+                # Allumage forcé par urgence
+                if not isinstance(device, BatteryDevice):
+                    if device.device_type == DEVICE_TYPE_APPLIANCE and device.appliance_state == APPLIANCE_STATE_PREPARING:
+                        _fit_p2 = compute_fit(device.power_w, remaining, bat_available_w, grid_allowance_w)
+                        await self._async_start_appliance(hass, device, global_score, _fit_p2, _urgency)
+                    elif not device.is_on:
+                        await self._async_set_switch(hass, device, True, reason="urgency", context=_base_ctx)
+                    device.last_urgency         = round(_urgency, 3)
+                    device.last_effective_score = 1.0
+                else:
+                    device.is_on = True
+                remaining -= device.power_w
+                obligatoire.add(device)
+            elif device.is_on and not self._min_on_elapsed(device):
+                # min_on non écoulé : maintenir allumé
+                remaining -= device.power_w
+                obligatoire.add(device)
+
+        # ---- Phase 3 — Greedy (recalcul dynamique du fit à chaque itération) ----
+        greedy_candidates: list = []
+        for _d in all_candidates:
+            if _d in obligatoire:
+                continue
+            if isinstance(_d, BatteryDevice):
+                greedy_candidates.append(_d)
+            else:
+                if not _d.is_in_allowed_window(now):
+                    continue
+                if _d.is_satisfied(reader, now=_now_dt):
+                    continue
+                greedy_candidates.append(_d)
+        selected: set = set()
+
+        while greedy_candidates:
+            # Recalculer fit et score effectif pour chaque candidat sur le remaining courant
+            for d in greedy_candidates:
+                if isinstance(d, BatteryDevice):
+                    d.fit = 1.0
+                else:
+                    _fit = compute_fit(d.power_w, remaining, bat_available_w, grid_allowance_w)
+                    _urg = d.urgency_modifier(reader, now=_now_dt)
+                    _pri = d.priority / 10.0
+                    if d.device_type not in (
+                        DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_HVAC,
+                        DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE,
+                    ):
+                        _eff = 0.5 * _pri + 0.5 * _fit
+                    else:
+                        _eff = 0.4 * _pri + 0.3 * _fit + 0.3 * _urg
+                    d.last_fit            = round(_fit, 3)
+                    d.last_urgency        = round(_urg, 3)
+                    d.last_priority_score = round(_pri, 3)
+                    d.last_effective_score = round(_eff, 3)
+
+            best = max(
+                greedy_candidates,
+                key=lambda d: d.effective_score if isinstance(d, BatteryDevice) else d.last_effective_score,
+            )
+            best_fit = best.fit if isinstance(best, BatteryDevice) else best.last_fit
+
+            if best_fit <= 0.0:
+                break  # Plus de budget utilisable
+
+            if isinstance(best, BatteryDevice):
+                best.is_on = True
+            elif (
+                best.device_type == DEVICE_TYPE_APPLIANCE
+                and best.appliance_state == APPLIANCE_STATE_PREPARING
+                and not best.is_on
+            ):
+                await self._async_start_appliance(hass, best, global_score, best_fit, best.urgency_modifier(reader))
+            elif best.is_on:
+                pass  # Déjà allumé — retenu sans appel de service
+            else:
+                # Nouvelle activation — vérifier les gardes rouge/SOC
+                if _red_strict and best.power_w > surplus_w:
+                    _LOGGER.debug(
+                        "Dispatch greedy: '%s' bloqué — red strict (power=%dW > surplus=%dW)",
+                        best.name, best.power_w, surplus_w,
+                    )
+                    greedy_candidates.remove(best)
                     continue
                 if _soc_gate:
                     _LOGGER.debug(
-                        "Dispatch: '%s' blocked — SOC gate "
-                        "(SOC=%.0f%% < soc_min=%.0f%%)",
-                        device.name, battery_soc, soc_min,
+                        "Dispatch greedy: '%s' bloqué — SOC gate (SOC=%.0f%% < soc_min=%.0f%%)",
+                        best.name, battery_soc, soc_min,
                     )
+                    greedy_candidates.remove(best)
                     continue
-                remaining -= device.power_w
                 await self._async_set_switch(
-                    hass, device, True,
-                    reason="dispatch",
+                    hass, best, True,
+                    reason="greedy",
                     context={
                         **_base_ctx,
                         "global_score":    round(global_score, 3),
                         "surplus_w":       round(surplus_w),
                         "bat_available_w": round(bat_available_w),
-                        "fit":             round(fit, 3),
+                        "fit":             round(best_fit, 3),
                     },
                 )
-            # else: OFF device doesn't fit in remaining budget → skip
+
+            remaining -= best.power_w
+            selected.add(best)
+            greedy_candidates.remove(best)
 
         self.remaining_w = remaining
 
-        # ---- Global overcommit check ----
-        # Safety net: if the total draw of ON Helios devices still exceeds the virtual
-        # surplus budget (e.g. an urgency-forced appliance start), shed the lowest-priority
-        # interruptible device — one per cycle to avoid chattering.
-        # Uses surplus_w (virtual = PV − base), not real_surplus_w, because
-        # total_on_w counts ALL Helios devices (including those that were already ON
-        # when real_surplus_w was computed and whose draw is therefore excluded from it).
-        budget_w = surplus_w + bat_available_w + grid_allowance_w
-        total_on_w = sum(d.actual_power_w(reader) for d in self.devices if d.is_on)
-        overcommit_w = total_on_w - budget_w
-
-        if overcommit_w > 100:  # 100 W noise margin
-            candidates = sorted(
-                [
-                    d for d in self.devices
-                    if d.is_on
-                    and d.interruptible
-                    and self._min_on_elapsed(d)
-                    and d.urgency_modifier(reader) < 1.0
-                    and _helios_manages(d)
-                ],
-                key=lambda d: d.priority,
-            )
-            if candidates:
-                victim = candidates[0]
-                _LOGGER.info(
-                    "Dispatch: overcommit %.0f W (on=%.0f W > budget=%.0f W) — "
-                    "turning off '%s' (priority=%d, power=%.0f W)",
-                    overcommit_w, total_on_w, budget_w,
-                    victim.name, victim.priority, victim.power_w,
-                )
-                await self._async_set_switch(
-                    hass, victim, False,
-                    reason="overcommit",
-                    context={
-                        **_base_ctx,
-                        "total_on_w":    round(total_on_w),
-                        "budget_w":      round(budget_w),
-                        "overcommit_w":  round(overcommit_w),
-                    },
-                )
+        # ---- Phase 4 — Extinction ----
+        # Éteindre les appareils ON non retenus (ni obligatoires ni sélectionnés).
+        # Exclure : appareils (machine d'état gère leur cycle) et BatteryDevice.
+        for device in self.devices:
+            if not device.is_on:
+                continue
+            if device in obligatoire or device in selected:
+                continue
+            if not _helios_manages(device):
+                continue
+            if device.device_type == DEVICE_TYPE_APPLIANCE:
+                continue  # Machine d'état propriétaire
+            if not device.interruptible:
+                continue
+            await self._async_set_switch(hass, device, False, reason="budget", context=_base_ctx)
 
     # ------------------------------------------------------------------
     # Appliance state machine

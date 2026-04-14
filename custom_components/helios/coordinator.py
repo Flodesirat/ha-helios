@@ -81,7 +81,6 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         ema_alpha = float(cfg.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA))
         self.consumption_learner = ConsumptionLearner(hass, entry.entry_id, alpha=ema_alpha)
         self._optimizer_store  = Store(hass, STORAGE_VERSION, STORAGE_KEY_OPTIMIZER)
-        self.dispatch_threshold: float = float(cfg.get("dispatch_threshold", 0.3))
         self.grid_allowance_w: float = float(
             cfg.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W)
         )
@@ -104,6 +103,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.tempo_color:      str | None  = None
         self.tempo_next_color: str | None  = None
         self.global_score:    float       = 0.0
+        self.f_surplus:       float       = 0.0
+        self.f_tempo:         float       = 0.0
+        self.f_solar:         float       = 0.0
         self.battery_action:  str         = BATTERY_ACTION_AUTOCONSOMMATION
         self.forecast_kwh:       float | None = None
         self.enabled:            bool        = bool(cfg.get(CONF_ENABLED, DEFAULT_ENABLED))
@@ -214,16 +216,6 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         if not data:
             return
 
-        scoring = data.get("scoring")
-        if scoring:
-            self.scoring_engine.update_weights(scoring)
-            _LOGGER.debug("Helios: restored optimizer scoring weights from storage")
-
-        threshold = data.get("dispatch_threshold")
-        if threshold is not None:
-            self.dispatch_threshold = float(threshold)
-            _LOGGER.debug("Helios: restored dispatch_threshold=%.2f from storage", self.dispatch_threshold)
-
         self.optimizer_last_run         = data.get("optimizer_last_run")
         self.optimizer_context          = data.get("optimizer_context") or {}
         self.optimizer_chosen           = data.get("optimizer_chosen") or {}
@@ -234,18 +226,6 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             _LOGGER.info(
                 "Helios: optimizer state restored (last run: %s)", self.optimizer_last_run
             )
-
-    async def async_save_optimizer_state(self) -> None:
-        """Persist current optimizer results so they survive a restart."""
-        await self._optimizer_store.async_save({
-            "optimizer_last_run":        self.optimizer_last_run,
-            "scoring":                   self.scoring_engine.get_weights(),
-            "dispatch_threshold":        self.dispatch_threshold,
-            "optimizer_context":         self.optimizer_context,
-            "optimizer_chosen":          self.optimizer_chosen,
-            "optimizer_top20":           self.optimizer_top20,
-            "optimizer_chosen_schedule": self.optimizer_chosen_schedule,
-        })
 
     # ------------------------------------------------------------------
     # Main update cycle
@@ -270,6 +250,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
 
             score_input = self._build_score_input()
             self.virtual_surplus_w = score_input.get("surplus_w", 0.0)
+            self.f_surplus, self.f_tempo, self.f_solar = self.scoring_engine.compute_components(score_input)
             self.global_score = self.scoring_engine.compute(score_input)
 
             if self._cfg.get(CONF_BATTERY_ENABLED):
@@ -282,7 +263,6 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                     "global_score":       self.global_score,
                     "real_surplus_w":     self.surplus_w,
                     "bat_available_w":    self.bat_available_w,
-                    "dispatch_threshold": self.dispatch_threshold,
                     "grid_allowance_w":   self.grid_allowance_w,
                     "house_power_w":      self.house_power_w,
                     "soc_reserve_rouge":  float(self._cfg.get(

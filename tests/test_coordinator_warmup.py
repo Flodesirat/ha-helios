@@ -48,6 +48,7 @@ def _make_coordinator(enabled: bool = True) -> MagicMock:
     # Scoring & dispatch mocks
     coord.scoring_engine = MagicMock()
     coord.scoring_engine.compute.return_value = 0.8
+    coord.scoring_engine.compute_components.return_value = (0.5, 0.3, 0.2)
     coord.device_manager = MagicMock()
     coord.device_manager.async_dispatch = AsyncMock()
     coord.battery_strategy = MagicMock()

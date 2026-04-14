@@ -679,7 +679,7 @@ class TestPoolQuotaDispatch:
         await _dispatch_at(mgr, hass, "16:00", _low_score())
 
         assert device.is_on is False
-        assert device.last_decision_reason in ("fit_negligible", "overcommit")
+        assert device.last_decision_reason in ("fit_negligible", "overcommit", "budget")
 
     @pytest.mark.asyncio
     async def test_cannot_cut_when_deficit_exceeds_time_left(self):

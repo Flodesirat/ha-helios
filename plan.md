@@ -7,7 +7,7 @@
 | 1   | ✅ Terminé (2026-04-14) | `const.py` nettoyé, `CONF_BATTERY_PRIORITY` / `DEFAULT_BATTERY_PRIORITY` ajoutés. 355 tests passent. |
 | 2   | ✅ Terminé (2026-04-14) | `scoring_engine.py` refactorisé : poids fixes, `compute_components()`, `_score_surplus()` simplifiée. 357 tests passent, 3 skipped. |
 | 3   | ✅ Terminé (2026-04-14) | `managed_device.py` / `device_manager.py` refactorisés. `BatteryDevice` créé. 350 tests passent. |
-| 4   | ⬜ À faire | `coordinator.py` |
+| 4   | ✅ Terminé (2026-04-14) | `coordinator.py` + `device_manager.py` : algorithme dispatch unifié 4 phases, `compute_fit()`, suppression `dispatch_threshold` et `async_save_optimizer_state()`. 350 tests passent, 3 skipped. |
 | 5   | ✅ Terminé (2026-04-14) | `config_flow.py` : `battery_priority` ajouté dans `_battery_schema()`, champs `weight_*`/`dispatch_threshold`/`optimizer_alpha` supprimés des traductions. 350 tests passent. |
 | 6   | ⬜ À faire | `daily_optimizer.py` |
 | 7   | ⬜ À faire | `sensor.py` / `switch.py` |
