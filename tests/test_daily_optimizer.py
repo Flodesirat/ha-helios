@@ -1,13 +1,14 @@
-"""Tests for the daily optimizer — scheduling, weight application, end-to-end."""
+"""Tests for the daily forecast — scheduling, ForecastResult, end-to-end."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.helios.daily_optimizer import async_run_daily_optimization
-from custom_components.helios.scoring_engine import ScoringEngine
-from custom_components.helios.simulation.optimizer import OptResult
+from custom_components.helios.daily_optimizer import (
+    async_run_daily_forecast,
+    ForecastResult,
+)
 from custom_components.helios.const import (
     CONF_PEAK_PV_W, CONF_BATTERY_ENABLED, CONF_DEVICES,
 )
@@ -17,30 +18,42 @@ from custom_components.helios.const import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _fake_result(**overrides) -> OptResult:
-    defaults = dict(
-        w_surplus=0.5, w_tempo=0.2, w_soc=0.2, w_solar=0.1,
-        threshold=0.25,
-        autoconsumption=0.88, savings_rate=0.75, cost_eur=1.2, objective=0.82,
-    )
-    defaults.update(overrides)
-    return OptResult(**defaults)
+def _fake_sim_result(
+    *,
+    e_pv_kwh: float = 15.0,
+    e_load_kwh: float = 12.0,
+    e_self_consumed_kwh: float = 10.0,
+    e_grid_import_kwh: float = 2.0,
+    e_grid_export_kwh: float = 5.0,
+    bat_soc_end: float = 80.0,
+    cost_eur: float = 1.5,
+    cost_no_pv_eur: float = 4.0,
+) -> MagicMock:
+    r = MagicMock()
+    r.e_pv_kwh = e_pv_kwh
+    r.e_load_kwh = e_load_kwh
+    r.e_self_consumed_kwh = e_self_consumed_kwh
+    r.e_grid_import_kwh = e_grid_import_kwh
+    r.e_grid_export_kwh = e_grid_export_kwh
+    r.bat_soc_end = bat_soc_end
+    r.cost_eur = cost_eur
+    r.cost_no_pv_eur = cost_no_pv_eur
+    r.autoconsumption_rate = e_self_consumed_kwh / max(e_pv_kwh, 1e-6)
+    r.self_sufficiency_rate = e_self_consumed_kwh / max(e_load_kwh, 1e-6)
+    r.savings_eur = cost_no_pv_eur - cost_eur
+    return r
 
 
-def _make_coordinator(scoring_engine=None):
+def _make_coordinator():
     from custom_components.helios.consumption_learner import ConsumptionLearner
-    from unittest.mock import AsyncMock as _AsyncMock
 
     coordinator = MagicMock()
     coordinator.entry.data = {
         CONF_PEAK_PV_W:       3000.0,
         CONF_BATTERY_ENABLED: False,
         CONF_DEVICES:         [],
-        "optimizer_alpha":    0.5,
     }
-    coordinator.dispatch_threshold = 0.3
-    coordinator.scoring_engine = scoring_engine or MagicMock()
-    coordinator.async_save_optimizer_state = _AsyncMock()
+    coordinator.entry.options = {}
 
     # Build a real (but storage-less) ConsumptionLearner so as_base_load_fn() works
     learner = ConsumptionLearner.__new__(ConsumptionLearner)
@@ -48,7 +61,7 @@ def _make_coordinator(scoring_engine=None):
     learner._profile = [300.0] * 288
     learner._sample_count = 1
     store = MagicMock()
-    store.async_load = _AsyncMock(return_value=None)
+    store.async_load = AsyncMock(return_value=None)
     store.async_delay_save = MagicMock()
     learner._store = store
     coordinator.consumption_learner = learner
@@ -71,15 +84,25 @@ def _make_hass(forecast_state=None, tempo_state=None):
         return None
 
     hass.states.get.side_effect = _states_get
-    hass.async_add_executor_job = AsyncMock(return_value=([_fake_result()], []))
+    hass.async_add_executor_job = AsyncMock(return_value={})
     return hass
+
+
+def _patch_sim(sim_result=None):
+    """Context manager that patches simulation.engine.async_run."""
+    result = sim_result or _fake_sim_result()
+    return patch(
+        "custom_components.helios.daily_optimizer._sim_async_run",
+        new_callable=AsyncMock,
+        return_value=result,
+    )
 
 
 # ---------------------------------------------------------------------------
 # 5 am scheduling — coordinator registers the time listener
 # ---------------------------------------------------------------------------
 
-class TestDailyOptimizerScheduling:
+class TestDailyForecastScheduling:
 
     def test_coordinator_registers_5am_listener(self):
         """Coordinator must register async_track_time_change at hour=5 on init."""
@@ -110,14 +133,14 @@ class TestDailyOptimizerScheduling:
             assert kwargs.get("second") == 0
 
     @pytest.mark.asyncio
-    async def test_5am_callback_calls_optimizer(self):
-        """The 5am callback must invoke async_run_daily_optimization."""
+    async def test_5am_callback_calls_forecast(self):
+        """The 5am callback must invoke async_run_daily_forecast."""
         with patch(
             "custom_components.helios.coordinator.async_track_time_change"
         ), patch(
-            "custom_components.helios.coordinator.async_run_daily_optimization",
+            "custom_components.helios.coordinator.async_run_daily_forecast",
             new_callable=AsyncMock,
-        ) as mock_opt:
+        ) as mock_forecast:
             from custom_components.helios.coordinator import EnergyOptimizerCoordinator
             from custom_components.helios.const import (
                 CONF_SCAN_INTERVAL_MINUTES, CONF_DEVICES,
@@ -135,161 +158,105 @@ class TestDailyOptimizerScheduling:
             coordinator = EnergyOptimizerCoordinator(hass, entry)
             await coordinator._async_daily_optimize(now=MagicMock())
 
-            mock_opt.assert_called_once_with(hass, coordinator)
+            mock_forecast.assert_called_once_with(hass, coordinator)
 
 
 # ---------------------------------------------------------------------------
-# Weight application — weights actually change in a real ScoringEngine
+# ForecastResult produced correctly
 # ---------------------------------------------------------------------------
 
-class TestWeightApplicationEndToEnd:
-
-    @pytest.mark.skip(reason="update_weights() supprimé en lot 2 — sera nettoyé en lot 6")
-    @pytest.mark.asyncio
-    async def test_weights_applied_to_real_scoring_engine(self):
-        """After optimization, a real ScoringEngine must reflect the new weights."""
-        real_engine = ScoringEngine({
-            "weight_pv_surplus":  0.4,
-            "weight_tempo":       0.3,
-            "weight_battery_soc": 0.2,
-            "weight_solar":       0.1,
-        })
-
-        coordinator = _make_coordinator(scoring_engine=real_engine)
-        hass = _make_hass()
-        hass.async_add_executor_job = AsyncMock(return_value=(
-            [_fake_result(w_surplus=0.7, w_tempo=0.1, w_soc=0.1, w_solar=0.1, threshold=0.15)],
-            [],
-        ))
-
-        await async_run_daily_optimization(hass, coordinator)
-
-        assert real_engine.w_surplus  == pytest.approx(0.7)
-        assert real_engine.w_tempo    == pytest.approx(0.1)
-        assert real_engine.w_soc      == pytest.approx(0.1)
-        assert real_engine.w_solar == pytest.approx(0.1)
+class TestForecastResult:
 
     @pytest.mark.asyncio
-    async def test_dispatch_threshold_applied_to_coordinator(self):
-        """dispatch_threshold on the coordinator must be updated."""
-        coordinator = _make_coordinator()
-        hass = _make_hass()
-        hass.async_add_executor_job = AsyncMock(return_value=(
-            [_fake_result(threshold=0.42)],
-            [],
-        ))
-
-        await async_run_daily_optimization(hass, coordinator)
-
-        assert coordinator.dispatch_threshold == pytest.approx(0.42)
-
-    @pytest.mark.asyncio
-    async def test_optimizer_last_run_timestamp_set(self):
-        """optimizer_last_run must be set to an ISO UTC timestamp after optimization."""
+    async def test_forecast_data_set_on_coordinator(self):
+        """coordinator.forecast_data must be a ForecastResult after successful run."""
         coordinator = _make_coordinator()
         hass = _make_hass()
 
-        await async_run_daily_optimization(hass, coordinator)
+        with _patch_sim():
+            await async_run_daily_forecast(hass, coordinator)
+
+        assert coordinator.forecast_data is not None
+        assert isinstance(coordinator.forecast_data, ForecastResult)
+
+    @pytest.mark.asyncio
+    async def test_forecast_result_fields(self):
+        """ForecastResult fields must match the simulation output."""
+        sim = _fake_sim_result(
+            e_pv_kwh=20.0,
+            e_load_kwh=15.0,
+            e_self_consumed_kwh=12.0,
+            e_grid_import_kwh=3.0,
+            e_grid_export_kwh=8.0,
+            cost_eur=2.0,
+            cost_no_pv_eur=6.0,
+        )
+        coordinator = _make_coordinator()
+        hass = _make_hass()
+
+        with _patch_sim(sim):
+            await async_run_daily_forecast(hass, coordinator)
+
+        f = coordinator.forecast_data
+        assert f.forecast_pv_kwh == pytest.approx(20.0)
+        assert f.forecast_consumption_kwh == pytest.approx(15.0)
+        assert f.forecast_import_kwh == pytest.approx(3.0)
+        assert f.forecast_export_kwh == pytest.approx(8.0)
+        assert f.forecast_self_consumption_pct == pytest.approx(60.0, abs=0.1)  # 12/20
+        assert f.forecast_self_sufficiency_pct == pytest.approx(80.0, abs=0.1)  # 12/15
+        assert f.forecast_cost == pytest.approx(2.0)
+        assert f.forecast_savings == pytest.approx(4.0)
+        assert "T" in f.last_forecast  # ISO format
+
+    @pytest.mark.asyncio
+    async def test_optimizer_last_run_set(self):
+        """optimizer_last_run must be set to an ISO UTC timestamp."""
+        coordinator = _make_coordinator()
+        hass = _make_hass()
+
+        with _patch_sim():
+            await async_run_daily_forecast(hass, coordinator)
 
         assert coordinator.optimizer_last_run is not None
-        assert "T" in coordinator.optimizer_last_run  # ISO format check
+        assert "T" in coordinator.optimizer_last_run
 
-    @pytest.mark.skip(reason="update_weights() supprimé en lot 2 — sera nettoyé en lot 6")
     @pytest.mark.asyncio
-    async def test_new_weights_change_score(self):
-        """Score computed by the engine must differ before and after weight update."""
-        real_engine = ScoringEngine({
-            "weight_pv_surplus":  0.4,
-            "weight_tempo":       0.3,
-            "weight_battery_soc": 0.2,
-            "weight_solar":       0.1,
-        })
-        data = {"surplus_w": 100, "tempo_color": "red", "battery_soc": 50}
-
-        score_before = real_engine.compute(data)
-
-        coordinator = _make_coordinator(scoring_engine=real_engine)
+    async def test_simulation_failure_leaves_forecast_unchanged(self):
+        """If simulation raises, coordinator.forecast_data must not be modified."""
+        coordinator = _make_coordinator()
+        coordinator.forecast_data = None
         hass = _make_hass()
-        hass.async_add_executor_job = AsyncMock(return_value=(
-            [_fake_result(w_surplus=0.1, w_tempo=0.1, w_soc=0.7, w_solar=0.1)],
-            [],
-        ))
 
-        await async_run_daily_optimization(hass, coordinator)
+        with patch(
+            "custom_components.helios.daily_optimizer._sim_async_run",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("sim failed"),
+        ):
+            await async_run_daily_forecast(hass, coordinator)
 
-        score_after = real_engine.compute(data)
-
-        assert score_before != pytest.approx(score_after), (
-            "Score must change after weights are updated"
-        )
-
-    @pytest.mark.skip(reason="w_surplus attr supprimé en lot 2 — sera nettoyé en lot 6")
-    @pytest.mark.asyncio
-    async def test_no_results_keeps_existing_weights(self):
-        """If optimizer returns no results, existing weights must be unchanged."""
-        real_engine = ScoringEngine({
-            "weight_pv_surplus":  0.4,
-            "weight_tempo":       0.3,
-            "weight_battery_soc": 0.2,
-            "weight_solar":       0.1,
-        })
-        coordinator = _make_coordinator(scoring_engine=real_engine)
-        coordinator.dispatch_threshold = 0.3
-
-        hass = _make_hass()
-        hass.async_add_executor_job = AsyncMock(return_value=[])  # empty → no update
-
-        await async_run_daily_optimization(hass, coordinator)
-
-        assert real_engine.w_surplus  == pytest.approx(0.4)
-        assert real_engine.w_tempo    == pytest.approx(0.3)
-        assert coordinator.dispatch_threshold == pytest.approx(0.3)
+        assert coordinator.forecast_data is None
 
 
 # ---------------------------------------------------------------------------
 # Input handling — forecast and tempo entities
 # ---------------------------------------------------------------------------
 
-class TestDailyOptimizerInputs:
-
-    @pytest.mark.asyncio
-    async def test_forecast_entity_read_and_passed_to_executor(self):
-        """When a forecast entity is configured, its value is read and forwarded."""
-        coordinator = _make_coordinator()
-        coordinator.entry.data = {
-            **coordinator.entry.data,
-            "forecast_entity": "sensor.forecast",
-        }
-
-        hass = _make_hass(forecast_state=12.5)
-        captured = {}
-
-        async def _capture_job(fn):
-            result = fn()
-            captured["sim_cfg"] = result
-            return ([_fake_result()], [])
-
-        hass.async_add_executor_job = _capture_job
-
-        await async_run_daily_optimization(hass, coordinator)
-
-        # Optimizer was called (captured result is an OptResult list)
-        assert "sim_cfg" in captured
+class TestDailyForecastInputs:
 
     @pytest.mark.asyncio
     async def test_no_forecast_entity_uses_clear_sky_fallback(self):
-        """Without forecast entity, the optimizer still runs (clear-sky fallback)."""
+        """Without forecast entity, the forecast still runs (clear-sky fallback)."""
         coordinator = _make_coordinator()
         hass = _make_hass()  # no forecast state configured
 
-        await async_run_daily_optimization(hass, coordinator)
+        with _patch_sim() as mock_sim:
+            await async_run_daily_forecast(hass, coordinator)
 
-        # Called twice: once for load_appliance_schedule, once for _run_optimization
-        assert hass.async_add_executor_job.call_count >= 1
+        mock_sim.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_tempo_next_color_used_before_6h(self):
-        """Before 06:00, CONF_TEMPO_NEXT_COLOR_ENTITY must be preferred (HP not yet active)."""
+        """Before 06:00, CONF_TEMPO_NEXT_COLOR_ENTITY must be preferred."""
         from custom_components.helios.const import (
             CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY,
         )
@@ -310,20 +277,19 @@ class TestDailyOptimizerInputs:
 
         hass = MagicMock()
         hass.states.get.side_effect = _states_get
-        hass.async_add_executor_job = AsyncMock(return_value=([_fake_result()], []))
+        hass.async_add_executor_job = AsyncMock(return_value={})
 
-        with patch(
+        with _patch_sim(), patch(
             "custom_components.helios.daily_optimizer.datetime"
         ) as mock_dt:
             mock_dt.now.return_value.hour = 5  # before 6h
-            await async_run_daily_optimization(hass, coordinator)
+            await async_run_daily_forecast(hass, coordinator)
 
-        # next_color="blue" must have been used → threshold from _fake_result applied
         assert coordinator.optimizer_context["tempo"] == "blue"
 
     @pytest.mark.asyncio
     async def test_tempo_color_used_after_6h(self):
-        """From 06:00 onwards, CONF_TEMPO_COLOR_ENTITY must take priority (HP active)."""
+        """From 06:00 onwards, CONF_TEMPO_COLOR_ENTITY must take priority."""
         from custom_components.helios.const import (
             CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY,
         )
@@ -344,13 +310,12 @@ class TestDailyOptimizerInputs:
 
         hass = MagicMock()
         hass.states.get.side_effect = _states_get
-        hass.async_add_executor_job = AsyncMock(return_value=([_fake_result()], []))
+        hass.async_add_executor_job = AsyncMock(return_value={})
 
-        with patch(
+        with _patch_sim(), patch(
             "custom_components.helios.daily_optimizer.datetime"
         ) as mock_dt:
             mock_dt.now.return_value.hour = 10  # after 6h
-            await async_run_daily_optimization(hass, coordinator)
+            await async_run_daily_forecast(hass, coordinator)
 
-        # today's color="red" must have been used
         assert coordinator.optimizer_context["tempo"] == "red"

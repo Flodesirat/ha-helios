@@ -41,7 +41,7 @@ from .battery_strategy import BatteryStrategy
 from .consumption_learner import ConsumptionLearner
 from .device_manager import DeviceManager
 from .managed_device import ManagedDevice
-from .daily_optimizer import async_run_daily_optimization
+from .daily_optimizer import async_run_daily_forecast, ForecastResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -111,9 +111,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.enabled:            bool        = bool(cfg.get(CONF_ENABLED, DEFAULT_ENABLED))
         self.optimizer_last_run: str | None  = None   # ISO timestamp set by daily_optimizer
         self.optimizer_context:          dict              = {}
-        self.optimizer_top20:            list[dict]        = []
-        self.optimizer_chosen:           dict              = {}
-        self.optimizer_chosen_schedule:  list[dict]        = []
+        self.forecast_data:              ForecastResult | None = None  # set by async_run_daily_forecast
 
         # Sampling buffers — rolling window for power signal averaging
         self._rebuild_buffers()
@@ -193,7 +191,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     async def _async_daily_optimize(self, now) -> None:  # noqa: ANN001
         """Triggered at 05:00 every morning to recompute optimal scoring weights."""
         try:
-            await async_run_daily_optimization(self.hass, self)
+            await async_run_daily_forecast(self.hass, self)
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("Helios daily optimizer failed: %s", err)
 

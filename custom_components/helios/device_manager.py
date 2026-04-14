@@ -150,6 +150,13 @@ class DeviceManager:
                         device.name, device.switch_entity,
                     )
 
+        # Restore battery manual_mode
+        if self.battery_device is not None:
+            bat_stored = data.get("__battery__", {})
+            if bat_stored.get("manual_mode", False):
+                self.battery_device.manual_mode = True
+                _LOGGER.debug("BatteryDevice: restored manual_mode=True")
+
         # Register immediate listeners on appliance ready entities.
         # This allows the prepare script to be triggered as soon as the user
         # sets the ready entity to ON, without waiting for the next 5-min cycle.
@@ -232,6 +239,8 @@ class DeviceManager:
                     "pool_inhibit_until": device.pool_inhibit_until,
                 })
             data[device.name] = entry
+        if self.battery_device is not None:
+            data["__battery__"] = {"manual_mode": self.battery_device.manual_mode}
         await self._store.async_save(data)
 
     async def async_persist_device_state(self) -> None:

@@ -9,10 +9,11 @@
 | 3   | ✅ Terminé (2026-04-14) | `managed_device.py` / `device_manager.py` refactorisés. `BatteryDevice` créé. 350 tests passent. |
 | 4   | ✅ Terminé (2026-04-14) | `coordinator.py` + `device_manager.py` : algorithme dispatch unifié 4 phases, `compute_fit()`, suppression `dispatch_threshold` et `async_save_optimizer_state()`. 350 tests passent, 3 skipped. |
 | 5   | ✅ Terminé (2026-04-14) | `config_flow.py` : `battery_priority` ajouté dans `_battery_schema()`, champs `weight_*`/`dispatch_threshold`/`optimizer_alpha` supprimés des traductions. 350 tests passent. |
-| 6   | ⬜ À faire | `daily_optimizer.py` |
-| 7   | ⬜ À faire | `sensor.py` / `switch.py` |
+| 6   | ✅ Terminé (2026-04-14) | `daily_optimizer.py` : `ForecastResult`, `async_run_daily_forecast`, suppression grid search. 351 tests passent. |
+| 7   | ✅ Terminé (2026-04-15) | `sensor.py` : `ForecastSensor`, attributs `f_surplus/f_tempo/f_solar`, `urgency/effective_score` batterie, `reason` device. `switch.py` : `BatteryManualSwitch`. 351 tests passent. |
 | 8   | ⬜ À faire | `simulation/` |
 | 9   | ⬜ À faire | Tests |
+| 10  | ⬜ À faire | `www/helios-card.js` |
 
 ---
 
@@ -32,6 +33,7 @@ Sections clés par lot :
 | 7 | "Entités exposées" (toute la section) |
 | 8 | "Simulation" (toute la section) |
 | 9 | Tout |
+| 10 | "Entités exposées", "Carte Lovelace" |
 
 ## Dépendances entre lots
 
@@ -47,6 +49,7 @@ Lot 1 (const.py)
                                 └── Lot 7 (sensor.py / switch.py)
 Lot 8 (simulation/)  ← parallélisable avec Lot 3 et Lot 4
 Lot 9 (tests)        ← dépend de tous les lots précédents
+Lot 10 (helios-card) ← dépend de Lot 2, Lot 4, Lot 7 (entités et attributs finaux)
 ```
 
 ## Commande de test de référence
@@ -392,48 +395,24 @@ Il existe aussi un options flow (sections `sources | battery | strategy`).
 
 ---
 
-## Lot 7 — `sensor.py` / `switch.py` : entités exposées
-
-### Fichiers à lire
-- `custom_components/helios/sensor.py` — fichier complet
-- `custom_components/helios/switch.py` — fichier complet
-- `custom_components/helios/coordinator.py` — après Lot 4 (attributs disponibles)
-- README.md section "Entités exposées"
-
-### État actuel
-
-**`sensor.py`** :
-- `EnergyOptimizerScoreSensor` (`suggested_object_id = "global_score"`) — existe
-- `EnergyOptimizerBatterySensor` (`suggested_object_id = "battery"`) — existe
-- `DeviceStateSensor` — existe, pas d'attribut `reason`
-- Aucun sensor `helios_forecast` n'existe encore
-- Aucun attribut `f_surplus`, `f_tempo`, `f_solar` sur le sensor score
-
-**`switch.py`** :
-- `DeviceManualSwitch` (`suggested_object_id = "{slug}_manual"`) — existe pour les appareils
-- Pas de switch `helios_battery_manual`
+## Lot 7 — `sensor.py` / `switch.py` : entités exposées ✅
 
 ### Tâches
 
 #### `sensor.py`
-- [ ] `EnergyOptimizerScoreSensor` : ajouter attributs `f_surplus`, `f_tempo`, `f_solar` (lus depuis `coordinator.f_surplus`, etc.)
-- [ ] `EnergyOptimizerBatterySensor` : mettre à jour attributs → `soc` (%), `power_w`, `urgency`, `effective_score`
-- [ ] `DeviceStateSensor` : ajouter attribut `reason` (lu depuis `device.last_reason`)
-- [ ] Créer `ForecastSensor` (`suggested_object_id = "forecast"`) :
-  - État : `coordinator.forecast_data.forecast_self_consumption_pct` (%)
-  - Attributs : les 9 champs de `ForecastResult` (voir Lot 6)
-  - Mis à jour à chaque `coordinator_update` (le forecast reste stable jusqu'à 5h)
-- [ ] Supprimer le sensor `helios_optimizer_weights` s'il existe (il n'existe pas encore — vérifier)
+- [x] `EnergyOptimizerScoreSensor` : attributs `f_surplus`, `f_tempo`, `f_solar` lus depuis `coordinator.f_surplus/f_tempo/f_solar` (suppression de `dispatch_threshold` obsolète)
+- [x] `EnergyOptimizerBatterySensor` : ajout `urgency` et `effective_score` depuis `battery_device`
+- [x] `DeviceStateSensor` : attribut `reason` ajouté (alias de `last_decision_reason`)
+- [x] `ForecastSensor` créé (`suggested_object_id = "forecast"`) — état = `forecast_self_consumption_pct`, 9 attributs `ForecastResult`
+- [x] `helios_optimizer_weights` vérifié : n'existe pas
 
 #### `switch.py`
-- [ ] Créer `BatteryManualSwitch` :
-  - `suggested_object_id = "battery_manual"`
-  - `unique_id = f"{entry.entry_id}_battery_manual"`
-  - Quand activé : `coordinator.battery_device.is_manual = True`
-  - Persisté via le store HA (même pattern que les autres switches manuels)
+- [x] `BatteryManualSwitch` créé (`suggested_object_id = "battery_manual"`, `unique_id = "{entry_id}_battery_manual"`)
+- [x] `BatteryDevice.manual_mode` persisté/restauré via le store HA (`__battery__` key)
+- [x] Instancié uniquement si `battery_enabled=True`
 
-### Définition de terminé
-`pytest tests/test_sensor_setup.py -x -q` passe. Vérifier que les attributs sont bien présents dans l'état HA via les tests ou un assert manuel.
+### Résultat
+`pytest tests/ -x -q` → **351 passed**
 
 ---
 
@@ -589,3 +568,112 @@ Déjà à jour depuis la session précédente. Courbe pivot et tests associés s
 
 ### Définition de terminé
 `pytest tests/ -x -q` — tous les tests passent, zéro régression sur les 307 tests existants.
+
+---
+
+## Lot 10 — `www/helios-card.js` : mise à jour carte Lovelace
+
+### Fichiers à lire
+- `custom_components/helios/www/helios-card.js` — fichier complet à modifier
+- README.md sections : "Entités exposées", "Carte Lovelace"
+
+### Dépendances
+Lot 10 dépend des lots 2, 4, 7 (nouvelles entités et attributs). Il peut être développé en parallèle des autres lots en ciblant la spécification du README.
+
+### État actuel
+
+| Ligne(s) | Problème |
+|----------|---------|
+| 778 | `score: "sensor.helios_global_score"` — ancien nom |
+| 810, 815 | `disc?.["global_score"]` — ancien suffixe unique_id |
+| 636–648 | Chip `h-sf-soc` (SOC factor) — supprimé du score |
+| 935–938 | `factors` array : entrée `soc` avec `f_soc`/`w_soc` |
+| 940–953 | Affichage des poids `×w_*` — attributs supprimés |
+| 966–984 | Logique `dispatch_threshold` sur la barre de score — attribut supprimé |
+| 1055 | Lit `last_decision_reason` → renommé `reason` (Lot 7) |
+| 1103 | `_deviceIsOn` : `state === "running"` → `"on"` |
+| 1183–1194 | `_reasonLabel` : raisons obsolètes (`must_run`, `score_too_low`, `overcommit`, `fit_negligible`) |
+| 1280 | Modal lit `last_decision_reason` → `reason` |
+| 1441–1449 | `getStubConfig` référence `sensor.helios_global_score` |
+
+### Tâches
+
+#### 1 — Renommage entité score
+- [ ] `_discoverFromStates()` ligne 778 : `"sensor.helios_global_score"` → `"sensor.helios_score"`
+- [ ] `_resolveAll()` lignes 810–815 : `disc?.["global_score"]` → `disc?.["score"]` et `disc["global_score"]` → `disc["score"]`
+- [ ] `getStubConfig()` : `score: "sensor.helios_global_score"` → `"sensor.helios_score"`
+
+#### 2 — Décomposition score : 3 facteurs (supprimer SOC)
+- [ ] Supprimer le bloc HTML `h-sf-soc` + son séparateur `+` dans `_build()` (lignes 636–641)
+- [ ] Dans `_doUpdate()`, retirer l'entrée `{ key: "soc", fAttr: "f_soc", wAttr: "w_soc" }` du tableau `factors`
+- [ ] Supprimer l'affichage des poids (`w_*`) : retirer `this._txt(\`h-sf-${key}-w\`, ...)` et les balises `<span class="score-factor-w">` dans le HTML
+
+#### 3 — Supprimer la barre dispatch_threshold
+- [ ] Supprimer le `<div class="bar-threshold" id="h-score-threshold">` dans `_build()`
+- [ ] Supprimer le bloc de logique `threshold` dans `_doUpdate()` (lignes 966–984) : colorer la barre selon le niveau de score (`> 0.6` vert, `> 0.3` orange, sinon rouge)
+- [ ] Supprimer la CSS `.bar-threshold` si elle n'est plus utilisée
+
+#### 4 — États et attributs appareils
+- [ ] `_deviceIsOn()` : `state === "running"` → `state === "on"`
+- [ ] `_renderDevice()` ligne 1055 : `"last_decision_reason"` → `"reason"`
+- [ ] `_buildModalContent()` ligne 1280 : `"last_decision_reason"` → `"reason"`
+- [ ] `_reasonLabel()` : mettre à jour la map des raisons :
+  ```js
+  const map = {
+    urgency:        "Urgence",
+    greedy:         "Surplus",
+    satisfied:      "Satisfait",
+    budget:         "Budget",
+    off_hours:      "Hors plage",
+    manual:         "Manuel",
+    // rétrocompat (anciens logs)
+    must_run:       "Forcé",
+    dispatch:       "Surplus",
+    no_budget:      "Budget",
+    outside_window: "Hors plage",
+  };
+  ```
+
+#### 5 — Batterie cliquable (modale)
+- [ ] Rendre le nœud SVG `h-node-bat` cliquable : `cursor: pointer` + listener `click` → `this._openBatModal()`
+- [ ] Créer `_openBatModal()` / `_closeBatModal()` / `_refreshBatModal()` sur le même patron que `_openModal()`
+- [ ] Créer `_buildBatModalContent()` :
+  - En-tête : icône 🔋, titre "Batterie", dot coloré selon action (`charge`/`discharge`/`idle`/`reserve`)
+  - Section **Contrôle** : toggle `switch.helios_battery_manual` (même rendu que `hm-manual-btn`)
+  - Section **État** :
+    - SOC (%) avec barre de progression colorée (vert > 60 %, orange > 20 %, rouge sinon)
+    - `power_w` (demande calculée, W)
+    - `urgency` [0–1] avec chip coloré
+    - `effective_score` [0–1]
+  - Bouton fermer
+- [ ] Résoudre `switch.helios_battery_manual` : chercher d'abord `disc["battery_manual"]` via l'entry_id, sinon `switch.helios_battery_manual` directement dans `hass.states`
+- [ ] Câbler les actions `toggle-bat-manual` et `close-bat` dans le listener modal existant (ou un listener dédié `#h-bat-modal`)
+
+#### 6 — Section prévision journalière
+- [ ] Ajouter un `<div class="forecast" id="h-forecast">` dans `_build()`, après `h-budget-row`, masqué en mode compact
+- [ ] CSS `.forecast` : titre de section + grille de chips sur le même style que `.budget-row`
+- [ ] Dans `_doUpdate()`, résoudre l'entité forecast :
+  - Auto-découverte : `disc["forecast"]` via l'entry_id, ou `sensor.helios_forecast` en fallback dans `_discoverFromStates()`
+- [ ] Afficher les chips (section masquée si sensor absent/unavailable) :
+
+  | Chip | Attribut | Format |
+  |------|----------|--------|
+  | ☀️ PV prévu | `forecast_pv_kwh` | `X.X kWh` |
+  | 🏠 Conso | `forecast_consumption_kwh` | `X.X kWh` |
+  | ⬇️ Import | `forecast_import_kwh` | `X.X kWh` |
+  | ⬆️ Export | `forecast_export_kwh` | `X.X kWh` |
+  | 🔄 Autoconso | `forecast_self_consumption_pct` | `XX %` |
+  | 🛡️ Autosuffisance | `forecast_self_sufficiency_pct` | `XX %` |
+  | 💶 Coût | `forecast_cost` | `X.XX €` |
+  | 💰 Économie | `forecast_savings` | `X.XX €` |
+
+- [ ] Afficher `last_forecast` comme sous-titre discret (ex. `Prévision du 14/04 05:00`)
+- [ ] Section masquée en mode compact (cohérent avec `h-score-decomp` et `h-budget-row`)
+
+### Définition de terminé
+Vérification manuelle via `python3 -m http.server 8765 --directory custom_components/helios/www/` + `test_card.html` :
+- Les 3 chips de score (Surplus, Tempo, Solaire) s'affichent sans chip SOC
+- La barre de score n'a plus de marqueur de seuil, couleur dynamique
+- Un clic sur le nœud batterie ouvre la modale avec toggle manuel et attributs `urgency`/`effective_score`
+- La section prévision s'affiche en mode full et est absente en mode compact
+- Aucune régression sur les flux SVG et les appareils existants

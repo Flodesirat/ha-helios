@@ -22,6 +22,7 @@ from .const import (
     CONF_BATTERY_ENABLED,
 )
 from .coordinator import EnergyOptimizerCoordinator
+from .daily_optimizer import ForecastResult
 from .managed_device import ManagedDevice
 
 
@@ -38,6 +39,7 @@ async def async_setup_entry(
         EnergyOptimizerGridPowerSensor(coordinator, entry),
         EnergyOptimizerHousePowerSensor(coordinator, entry),
         EnergyOptimizerBaseLoadSensor(coordinator, entry),
+        ForecastSensor(coordinator, entry),
     ]
     for device in coordinator.device_manager.devices:
         entities.append(DeviceStateSensor(coordinator, entry, device))
@@ -99,21 +101,17 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
     def extra_state_attributes(self):
         c = self.coordinator
         eng = c.scoring_engine
-        score_input = c._build_score_input()
         return {
             # Score breakdown — explains *why* the score is what it is
-            "f_surplus":  round(eng._score_surplus(score_input.get("surplus_w", 0.0), score_input.get("battery_soc")), 3),
-            "f_tempo":    round(eng._score_tempo(score_input.get("tempo_color")), 3),
-            "f_soc":      round(eng._score_soc(score_input.get("battery_soc")), 3),
-            "f_solar": round(eng._score_solar(score_input), 3),
-            # Scoring weights (can be tuned by daily optimizer)
-            "w_surplus":  round(eng.w_surplus,  3),
-            "w_tempo":    round(eng.w_tempo,    3),
-            "w_soc":      round(eng.w_soc,      3),
-            "w_solar": round(eng.w_solar, 3),
+            "f_surplus": round(c.f_surplus, 3),
+            "f_tempo":   round(c.f_tempo,   3),
+            "f_solar":   round(c.f_solar,   3),
+            # Scoring weights
+            "w_surplus": round(eng.w_surplus, 3),
+            "w_tempo":   round(eng.w_tempo,   3),
+            "w_solar":   round(eng.w_solar,   3),
             # Dispatch context
-            "dispatch_threshold": round(c.dispatch_threshold, 3),
-            "last_optimized":     c.optimizer_last_run,
+            "last_optimized": c.optimizer_last_run,
             # Raw inputs
             "tempo_color": c.tempo_color,
             "battery_soc": c.battery_soc,
@@ -124,7 +122,7 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
             "bat_available_w":   round(c.bat_available_w),
             "remaining_w":       round(c.device_manager.remaining_w),
             # Installation parameters (used by the Lovelace card)
-            "peak_pv_w":          int(c.config.get(CONF_PEAK_PV_W,          DEFAULT_PEAK_PV_W)),
+            "peak_pv_w":           int(c.config.get(CONF_PEAK_PV_W,           DEFAULT_PEAK_PV_W)),
             "grid_subscription_w": int(c.config.get(CONF_GRID_SUBSCRIPTION_W, DEFAULT_GRID_SUBSCRIPTION_W)),
         }
 
@@ -145,13 +143,18 @@ class EnergyOptimizerBatterySensor(_BaseEOSensor):
     def extra_state_attributes(self) -> dict:
         c = self.coordinator
         soc = c.battery_soc
-        return {
+        bat = c.device_manager.battery_device
+        attrs: dict = {
             "battery_enabled": bool(c.config.get(CONF_BATTERY_ENABLED, False)),
             "soc":             soc,
             "soc_level":       _soc_level_label(soc),
             "power_w":         c.battery_power_w,
             "available_w":     c.bat_available_w,
         }
+        if bat is not None:
+            attrs["urgency"]        = round(bat.urgency, 3)
+            attrs["effective_score"] = round(bat.effective_score, 3)
+        return attrs
 
 
 class EnergyOptimizerTempoNextColorSensor(_BaseEOSensor):
@@ -275,6 +278,45 @@ class EnergyOptimizerBaseLoadSensor(_BaseEOSensor):
         }
 
 
+class ForecastSensor(_BaseEOSensor):
+    """Reports the daily self-consumption forecast [%].
+
+    State  : forecast_self_consumption_pct (%)
+    Attributes: all 9 fields of ForecastResult
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_forecast"
+    suggested_object_id = "forecast"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _unique_suffix = "forecast"
+
+    @property
+    def native_value(self) -> float | None:
+        fd: ForecastResult | None = self.coordinator.forecast_data
+        if fd is None:
+            return None
+        return fd.forecast_self_consumption_pct
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        fd: ForecastResult | None = self.coordinator.forecast_data
+        if fd is None:
+            return {}
+        return {
+            "forecast_pv_kwh":              fd.forecast_pv_kwh,
+            "forecast_consumption_kwh":     fd.forecast_consumption_kwh,
+            "forecast_import_kwh":          fd.forecast_import_kwh,
+            "forecast_export_kwh":          fd.forecast_export_kwh,
+            "forecast_self_consumption_pct": fd.forecast_self_consumption_pct,
+            "forecast_self_sufficiency_pct": fd.forecast_self_sufficiency_pct,
+            "forecast_cost":                fd.forecast_cost,
+            "forecast_savings":             fd.forecast_savings,
+            "last_forecast":                fd.last_forecast,
+        }
+
+
 class DeviceStateSensor(_BaseEOSensor):
     """Primary state entity for a Helios-managed device.
 
@@ -326,6 +368,7 @@ class DeviceStateSensor(_BaseEOSensor):
             "last_fit":             d.last_fit,
             "last_urgency":         d.last_urgency,
             "last_decision_reason": d.last_decision_reason,
+            "reason":               d.last_decision_reason,
             "allowed_start":        d.allowed_start,
             "allowed_end":          d.allowed_end,
             "daily_on_minutes":     round(d.daily_on_minutes, 1),

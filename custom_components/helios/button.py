@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import EnergyOptimizerCoordinator
-from .daily_optimizer import async_run_daily_optimization
+from .daily_optimizer import async_run_daily_forecast
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,5 +43,5 @@ class ForceOptimizationButton(ButtonEntity):
     async def async_press(self) -> None:
         """Run the daily optimization now."""
         _LOGGER.info("Helios: manual optimization triggered via button")
-        await async_run_daily_optimization(self.hass, self._coordinator)
+        await async_run_daily_forecast(self.hass, self._coordinator)
         await self._coordinator.async_request_refresh()

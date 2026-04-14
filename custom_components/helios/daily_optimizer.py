@@ -1,20 +1,13 @@
-"""Daily morning optimizer — runs at 05:00 to find optimal scoring weights for the day.
+"""Daily morning forecast — runs at 05:00 to simulate the day ahead.
 
-Uses the simulation engine to grid-search scoring weights based on:
-- Current season (derived from date)
-- Cloud cover inferred from the forecast entity (or seasonal average as fallback)
-- HA device configuration mapped to SimDevice objects
-- Real battery parameters from config
-
-Results are applied to the ScoringEngine and dispatch threshold for the day.
+Produces a :class:`ForecastResult` stored on ``coordinator.forecast_data``.
+No weight optimisation is performed; the fixed scoring engine is used as-is.
 """
 from __future__ import annotations
 
-import copy
 import logging
-import math
 import pathlib
-from dataclasses import replace as _dc_replace
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -31,8 +24,6 @@ from .const import (
     CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY,
     CONF_FORECAST_ENTITY,
     CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W,
-    CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE,
-    CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA,
     TEMPO_COLORS, normalize_tempo_color,
     CONF_DEVICE_NAME, CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY, CONF_DEVICE_TYPE,
     CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
@@ -50,20 +41,40 @@ from .const import (
     CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
 )
 
+from .simulation.engine import SimConfig, async_run as _sim_async_run
+
 if TYPE_CHECKING:
     from .coordinator import EnergyOptimizerCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-_BASE_LOAD_PATH      = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
+_BASE_LOAD_PATH       = pathlib.Path(__file__).parent / "simulation" / "config" / "base_load.json"
 _APPLIANCE_SCHED_PATH = pathlib.Path(__file__).parent / "simulation" / "config" / "appliance_schedule.json"
+
+
+# ---------------------------------------------------------------------------
+# Result dataclass
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ForecastResult:
+    """Daily forecast produced by the morning simulation."""
+    forecast_pv_kwh: float
+    forecast_consumption_kwh: float
+    forecast_import_kwh: float
+    forecast_export_kwh: float
+    forecast_self_consumption_pct: float
+    forecast_self_sufficiency_pct: float
+    forecast_cost: float
+    forecast_savings: float
+    last_forecast: str          # ISO timestamp
+
 
 # ---------------------------------------------------------------------------
 # Seasonal helpers
 # ---------------------------------------------------------------------------
 
 # Theoretical clear-sky daily production (kWh) per season for a 1 kWp system at ~47°N
-# Used as fallback when no forecast entity is available.
 _SEASONAL_CLEAR_KWH_PER_KWP: dict[str, float] = {
     "winter": 2.0,
     "spring": 4.5,
@@ -71,21 +82,9 @@ _SEASONAL_CLEAR_KWH_PER_KWP: dict[str, float] = {
     "autumn": 3.0,
 }
 
-# Hours at which "remaining forecast" equals roughly total daily production (i.e. pre-sunrise)
-# Used to compute the cloud ratio when forecast is available.
-_SEASON_SUNRISE: dict[str, float] = {
-    "winter": 8.0,
-    "spring": 6.5,
-    "summer": 5.5,
-    "autumn": 7.5,
-}
-
 
 def season_from_date(d: date | None = None) -> str:
-    """Return 'winter' | 'spring' | 'summer' | 'autumn' from a calendar date.
-
-    Uses meteorological seasons (December→winter, March→spring, …).
-    """
+    """Return 'winter' | 'spring' | 'summer' | 'autumn' from a calendar date."""
     if d is None:
         d = date.today()
     month = d.month
@@ -188,7 +187,6 @@ def ha_devices_to_sim(
             allowed_end=_t(d.get(CONF_DEVICE_ALLOWED_END, DEFAULT_ALLOWED_END), DEFAULT_ALLOWED_END),
             priority=int(d.get(CONF_DEVICE_PRIORITY, DEFAULT_DEVICE_PRIORITY)),
             min_on_minutes=float(d.get(CONF_DEVICE_MIN_ON_MINUTES, DEFAULT_DEVICE_MIN_ON_MINUTES)),
-            must_run_daily=bool(d.get("device_must_run_daily", False)),
             w_priority=float(d.get(CONF_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_PRIORITY)),
             w_fit=float(d.get(CONF_DEVICE_WEIGHT_FIT, DEFAULT_DEVICE_WEIGHT_FIT)),
             w_urgency=float(d.get(CONF_DEVICE_WEIGHT_URGENCY, DEFAULT_DEVICE_WEIGHT_URGENCY)),
@@ -238,8 +236,6 @@ def ha_devices_to_sim(
         # ---- Build ManagedDevice (real dispatch logic) ----
         managed_dev = ManagedDevice(d, gcfg)
         # Seed pool state from simulation initial values.
-        # Also set pool_last_date = today so update_pool_run_time doesn't treat
-        # the first simulation step as a "new day" and reset pool_required_minutes_today.
         if dev_type == DEVICE_TYPE_POOL and sim_dev.pool_required_min is not None:
             managed_dev.pool_required_minutes_today = sim_dev.pool_required_min
             managed_dev.pool_last_date = date.today()
@@ -254,19 +250,19 @@ def ha_devices_to_sim(
 
 
 # ---------------------------------------------------------------------------
-# Main optimization routine
+# Main forecast routine
 # ---------------------------------------------------------------------------
 
-async def async_run_daily_optimization(
+async def async_run_daily_forecast(
     hass: HomeAssistant,
     coordinator: "EnergyOptimizerCoordinator",
 ) -> None:
-    """Grid-search optimal scoring weights and apply them to the coordinator.
+    """Simulate the day ahead and store a :class:`ForecastResult` on the coordinator.
 
-    Runs in an executor to avoid blocking the event loop during the grid search.
     Called automatically at 05:00 every day by coordinator.py.
+    No grid search — runs a single simulation with the current configuration.
     """
-    _LOGGER.info("Helios daily optimizer: starting morning optimization")
+    _LOGGER.info("Helios daily forecast: starting morning simulation")
 
     cfg = {**coordinator.entry.data, **coordinator.entry.options}
     peak_pv_w = float(cfg.get(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W))
@@ -285,23 +281,17 @@ async def async_run_daily_optimization(
                 pass
 
     if forecast_kwh is not None:
-        # Compute theoretical daily production for this season + configured peak PV
-        # (clear-sky kWh/kWp × peak_pv_w / 1000)
         theoretical_kwh = _SEASONAL_CLEAR_KWH_PER_KWP[season] * peak_pv_w / 1000.0
         cloud = cloud_from_forecast(forecast_kwh, theoretical_kwh)
         _LOGGER.debug(
-            "Helios optimizer: forecast=%.1f kWh, theoretical=%.1f kWh → cloud=%s",
+            "Helios forecast: forecast=%.1f kWh, theoretical=%.1f kWh → cloud=%s",
             forecast_kwh, theoretical_kwh, cloud,
         )
     else:
-        # No forecast available → use deterministic "clear" profile with seasonal average
         cloud = "clear"
-        _LOGGER.debug("Helios optimizer: no forecast entity, using clear-sky profile for season=%s", season)
+        _LOGGER.debug("Helios forecast: no forecast entity, using clear-sky profile for season=%s", season)
 
     # ---- Tempo color for the coming day ----
-    # Before 06:00 (HC period, HP not yet started): the "next color" entity reflects
-    # today's upcoming HP period — use it in priority.
-    # From 06:00 onwards: HP is active, so "couleur actuelle" is the authoritative source.
     now_hour = datetime.now().hour
     if now_hour < 6:
         entity_priority = (CONF_TEMPO_NEXT_COLOR_ENTITY, CONF_TEMPO_COLOR_ENTITY)
@@ -317,10 +307,10 @@ async def async_run_daily_optimization(
         normalized = normalize_tempo_color(state.state if state else None)
         if normalized:
             tempo_color = normalized
-            _LOGGER.debug("Helios optimizer: tempo=%s (raw=%s, from %s)", tempo_color, state.state, entity_id)
+            _LOGGER.debug("Helios forecast: tempo=%s (raw=%s, from %s)", tempo_color, state.state, entity_id)
             break
     else:
-        _LOGGER.debug("Helios optimizer: no valid tempo entity found, defaulting to 'blue'")
+        _LOGGER.debug("Helios forecast: no valid tempo entity found, defaulting to 'blue'")
 
     # ---- Battery parameters ----
     battery_enabled = cfg.get(CONF_BATTERY_ENABLED, False)
@@ -342,169 +332,85 @@ async def async_run_daily_optimization(
     # ---- Device list from HA config ----
     devices_config = cfg.get(CONF_DEVICES, [])
 
-    # ---- Load appliance schedule outside the event loop ----
+    # ---- Load appliance schedule (blocking I/O — run in executor) ----
     from .simulation.devices import load_appliance_schedule
     _appliance_schedule: dict[str, float] = {}
     try:
         _appliance_schedule = await hass.async_add_executor_job(
             load_appliance_schedule, _APPLIANCE_SCHED_PATH
         )
-        _LOGGER.debug("Helios optimizer: appliance schedule loaded — %s", _appliance_schedule)
+        _LOGGER.debug("Helios forecast: appliance schedule loaded — %s", _appliance_schedule)
     except Exception as exc:  # noqa: BLE001
-        _LOGGER.debug("Helios optimizer: no appliance schedule (%s)", exc)
+        _LOGGER.debug("Helios forecast: no appliance schedule (%s)", exc)
 
-    # ---- Pre-read physical state from HA (async context, before executor) ----
-    # This seeds the simulation with real WH temperature and EV SOC at 05:00.
-    initial_sim_devices, initial_managed_devices = ha_devices_to_sim(
+    # ---- Pre-read physical state from HA (async context) ----
+    sim_devices, managed_devices = ha_devices_to_sim(
         devices_config, global_cfg=cfg, hass=hass, appliance_schedule=_appliance_schedule
     )
-    _LOGGER.debug(
-        "Helios optimizer: %d devices mapped for simulation",
-        len(initial_sim_devices),
+    _LOGGER.debug("Helios forecast: %d devices mapped for simulation", len(sim_devices))
+
+    # ---- Base load profile (EMA or static file) ----
+    ema_enabled = cfg.get(CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED)
+    learner = coordinator.consumption_learner
+    base_load_fn = None
+    if ema_enabled and learner.profile is not None:
+        base_load_fn = learner.as_base_load_fn()
+        _LOGGER.debug(
+            "Helios forecast: using EMA base load profile (samples=%d)",
+            learner.sample_count,
+        )
+    else:
+        from .simulation.profiles import load_base_load_from_json
+        try:
+            base_load_fn = await hass.async_add_executor_job(
+                load_base_load_from_json, str(_BASE_LOAD_PATH)
+            )
+            if not ema_enabled:
+                _LOGGER.debug("Helios forecast: EMA disabled — using static base_load.json")
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("Helios forecast: could not load base_load.json (%s), using default profile", exc)
+
+    # ---- Build SimConfig ----
+    sim_cfg = SimConfig(
+        season=season,
+        cloud=cloud,
+        peak_pv_w=peak_pv_w,
+        tempo=tempo_color,
+        bat_enabled=battery_enabled,
+        bat_soc_start=bat_soc_start,
+        bat_capacity_kwh=bat_capacity_kwh,
+        bat_max_charge_w=bat_max_charge_w,
+        bat_max_discharge_w=bat_max_discharge_w,
+        bat_soc_min=bat_soc_min,
+        bat_soc_max=bat_soc_max,
+        forecast_noise=0.0,
+        base_load_fn=base_load_fn,
     )
 
-    # ---- Run optimization + capture schedule in executor ----
-    def _run_optimization():
-        try:
-            from .simulation.engine import SimConfig, run as sim_run
-            from .simulation.optimizer import optimize
-            from .simulation.profiles import load_base_load_from_json
-        except ImportError as exc:
-            _LOGGER.error("Helios optimizer: simulation module not available: %s", exc)
-            return None
-
-        # Use the EMA-learned profile when available and enabled;
-        # fall back to static base_load.json otherwise.
-        ema_enabled = cfg.get(CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED)
-        learner = coordinator.consumption_learner
-        if ema_enabled and learner.profile is not None:
-            base_load_fn = learner.as_base_load_fn()
-            _LOGGER.debug(
-                "Helios optimizer: using EMA base load profile (samples=%d)",
-                learner.sample_count,
-            )
-        else:
-            try:
-                base_load_fn = load_base_load_from_json(str(_BASE_LOAD_PATH))
-                if not ema_enabled:
-                    _LOGGER.debug("Helios optimizer: EMA disabled — using static base_load.json")
-            except Exception as exc:
-                base_load_fn = None
-                _LOGGER.warning(
-                    "Helios optimizer: could not load base_load.json (%s), using default profile", exc
-                )
-
-        sim_cfg = SimConfig(
-            season=season,
-            cloud=cloud,
-            peak_pv_w=peak_pv_w,
-            tempo=tempo_color,
-            bat_enabled=battery_enabled,
-            bat_soc_start=bat_soc_start,
-            bat_capacity_kwh=bat_capacity_kwh,
-            bat_max_charge_w=bat_max_charge_w,
-            bat_max_discharge_w=bat_max_discharge_w,
-            bat_soc_min=bat_soc_min,
-            bat_soc_max=bat_soc_max,
-            forecast_noise=0.0,
-            base_load_fn=base_load_fn,
-        )
-
-        def _devices_fn():
-            # Return fresh (sim_devices, managed_devices) pairs each run.
-            # SimDevice has mutable runtime state, so we need a fresh copy per run.
-            return (
-                copy.deepcopy(initial_sim_devices),
-                copy.deepcopy(initial_managed_devices),
-            )
-
-        objective_alpha  = float(cfg.get("optimizer_alpha", 0.5))
-        base_load_noise  = float(cfg.get(CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE))
-        optimizer_n_runs = int(cfg.get("optimizer_n_runs", 5))
-        risk_lambda      = float(cfg.get(CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA))
-        results = optimize(
-            sim_cfg,
-            _devices_fn,
-            objective_alpha=objective_alpha,
-            n_runs=optimizer_n_runs,
-            risk_lambda=risk_lambda,
-            base_load_noise=base_load_noise,
-            progress=False,
-        )
-        if not results:
-            return None
-
-        # Re-run simulation with chosen config to capture the hourly schedule
-        best = results[0]
-        best_cfg = _dc_replace(
-            sim_cfg,
-            scoring={
-                "weight_pv_surplus":  best.w_surplus,
-                "weight_tempo":       best.w_tempo,
-                "weight_battery_soc": best.w_soc,
-                "weight_solar":    best.w_solar,
-            },
-            dispatch_threshold=best.threshold,
-        )
-        best_sim_devices, best_managed_devices = _devices_fn()
-        sim_result = sim_run(best_cfg, best_sim_devices, managed_devices=best_managed_devices)
-
-        # Aggregate 5-min steps into 24 hourly entries
-        steps_per_hour = 12
-        hourly: list[dict] = []
-        for h in range(24):
-            s_slice = sim_result.steps[h * steps_per_hour:(h + 1) * steps_per_hour]
-            if not s_slice:
-                continue
-            active: set[str] = set()
-            bat_counts: dict[str, int] = {}
-            for s in s_slice:
-                active.update(s.active_devices)
-                bat_counts[s.bat_action] = bat_counts.get(s.bat_action, 0) + 1
-            dominant_bat = max(bat_counts, key=bat_counts.get)
-            n = len(s_slice)
-            hourly.append({
-                "hour": f"{h:02d}:00",
-                "pv_w":      round(sum(s.pv_w for s in s_slice) / n),
-                "base_w":    round(sum(s.base_w for s in s_slice) / n),
-                "devices_w": round(sum(s.devices_w for s in s_slice) / n),
-                "surplus_w": round(sum(s.surplus_w for s in s_slice) / n),
-                "grid_w":    round(sum(s.grid_w for s in s_slice) / n),
-                "bat_soc":   round(sum(s.bat_soc for s in s_slice) / n, 1),
-                "bat_action": dominant_bat,
-                "score":     round(sum(s.score for s in s_slice) / n, 3),
-                "active_devices": sorted(active),
-            })
-
-        return results, hourly
-
-    payload = await hass.async_add_executor_job(_run_optimization)
-
-    if not payload:
-        _LOGGER.warning("Helios optimizer: no results — keeping previous weights")
+    # ---- Run simulation ----
+    try:
+        sim_result = await _sim_async_run(sim_cfg, sim_devices, managed_devices=managed_devices)
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.error("Helios daily forecast: simulation failed: %s", exc)
         return
 
-    results, hourly_schedule = payload
-    best = results[0]
-    _LOGGER.info(
-        "Helios optimizer: best config — surplus=%.0f%% tempo=%.0f%% soc=%.0f%% "
-        "forecast=%.0f%% threshold=%.0f%% (objective=%.3f)",
-        best.w_surplus * 100, best.w_tempo * 100, best.w_soc * 100,
-        best.w_solar * 100, best.threshold * 100, best.objective,
+    # ---- Build ForecastResult ----
+    now_iso = datetime.now(timezone.utc).isoformat()
+    forecast = ForecastResult(
+        forecast_pv_kwh=round(sim_result.e_pv_kwh, 2),
+        forecast_consumption_kwh=round(sim_result.e_load_kwh, 2),
+        forecast_import_kwh=round(sim_result.e_grid_import_kwh, 2),
+        forecast_export_kwh=round(sim_result.e_grid_export_kwh, 2),
+        forecast_self_consumption_pct=round(sim_result.autoconsumption_rate * 100, 1),
+        forecast_self_sufficiency_pct=round(sim_result.self_sufficiency_rate * 100, 1),
+        forecast_cost=round(sim_result.cost_eur, 2),
+        forecast_savings=round(sim_result.savings_eur, 2),
+        last_forecast=now_iso,
     )
 
-    # ---- Apply results to coordinator ----
-    new_scoring = {
-        "weight_pv_surplus":  best.w_surplus,
-        "weight_tempo":       best.w_tempo,
-        "weight_battery_soc": best.w_soc,
-        "weight_solar":    best.w_solar,
-    }
-    coordinator.scoring_engine.update_weights(new_scoring)
-    coordinator.dispatch_threshold = best.threshold
-    coordinator.optimizer_last_run = datetime.now(timezone.utc).isoformat()
-
-    # ---- Store diagnostics data ----
+    # ---- Store results on coordinator ----
+    coordinator.forecast_data = forecast
+    coordinator.optimizer_last_run = now_iso
     coordinator.optimizer_context = {
         "season": season,
         "cloud": cloud,
@@ -512,39 +418,13 @@ async def async_run_daily_optimization(
         "bat_soc_start": bat_soc_start,
         "forecast_kwh": forecast_kwh,
         "peak_pv_w": peak_pv_w,
-        "objective_alpha": float(cfg.get("optimizer_alpha", 0.5)),
         "ema_sample_count": coordinator.consumption_learner.sample_count,
     }
-    coordinator.optimizer_chosen = {
-        "rank": 1,
-        "w_surplus":      round(best.w_surplus, 3),
-        "w_tempo":        round(best.w_tempo, 3),
-        "w_soc":          round(best.w_soc, 3),
-        "w_solar":     round(best.w_solar, 3),
-        "threshold":      round(best.threshold, 3),
-        "autoconsumption": round(best.autoconsumption, 4),
-        "savings_rate":   round(best.savings_rate, 4),
-        "cost_eur":       round(best.cost_eur, 4),
-        "objective":      round(best.objective, 4),
-        "obj_mean":       round(best.obj_mean, 4),
-        "obj_std":        round(best.obj_std, 4),
-    }
-    coordinator.optimizer_top20 = [
-        {
-            "rank":          i + 1,
-            "w_surplus":     round(r.w_surplus, 3),
-            "w_tempo":       round(r.w_tempo, 3),
-            "w_soc":         round(r.w_soc, 3),
-            "w_solar":    round(r.w_solar, 3),
-            "threshold":     round(r.threshold, 3),
-            "autoconsumption": round(r.autoconsumption, 4),
-            "savings_rate":  round(r.savings_rate, 4),
-            "cost_eur":      round(r.cost_eur, 4),
-            "objective":     round(r.objective, 4),
-            "obj_mean":      round(r.obj_mean, 4),
-            "obj_std":       round(r.obj_std, 4),
-        }
-        for i, r in enumerate(results[:20])
-    ]
-    coordinator.optimizer_chosen_schedule = hourly_schedule
-    _LOGGER.info("Helios optimizer: diagnostics applied for today")
+
+    _LOGGER.info(
+        "Helios daily forecast: PV=%.1f kWh, autoconsumption=%.1f%%, import=%.1f kWh, cost=%.2f €",
+        forecast.forecast_pv_kwh,
+        forecast.forecast_self_consumption_pct,
+        forecast.forecast_import_kwh,
+        forecast.forecast_cost,
+    )

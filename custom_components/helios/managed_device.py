@@ -701,6 +701,7 @@ class BatteryDevice:
         # Interface fields (shared with ManagedDevice)
         self.fit: float             = 1.0
         self.is_on: bool            = False
+        self.manual_mode: bool      = False
         self.last_reason: str       = ""
         self.last_effective_score: float = 0.0
         self.min_on_remaining_s: float   = 0.0
@@ -750,7 +751,9 @@ class BatteryDevice:
         return 0.4 * (self.priority / 10.0) + 0.3 * 1.0 + 0.3 * self.urgency
 
     def is_manual(self, reader: StateReader) -> bool:
-        """True when the helios_battery_manual switch is on."""
+        """True when manual_mode is set or the helios_battery_manual switch is on."""
+        if self.manual_mode:
+            return True
         if not self._manual_entity:
             return False
         raw = reader(self._manual_entity)
