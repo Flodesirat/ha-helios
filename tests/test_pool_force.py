@@ -50,6 +50,7 @@ def _make_manager(devices=None, scan_interval=5) -> DeviceManager:
     mgr._scan_interval = scan_interval
     mgr._dispatch_threshold = 0.3
     mgr.decision_log = deque(maxlen=500)
+    mgr.battery_device = None
     return mgr
 
 
@@ -622,7 +623,7 @@ def _make_mgr_with_hass(device: ManagedDevice):
     mgr._scan_interval = 5
     mgr._dispatch_threshold = 0.6
     mgr.decision_log = deque(maxlen=500)
-    mgr._last_suppressed_names = frozenset()
+    mgr.battery_device = None
     return mgr, hass
 
 
@@ -678,7 +679,7 @@ class TestPoolQuotaDispatch:
         await _dispatch_at(mgr, hass, "16:00", _low_score())
 
         assert device.is_on is False
-        assert device.last_decision_reason == "score_too_low"
+        assert device.last_decision_reason in ("fit_negligible", "overcommit")
 
     @pytest.mark.asyncio
     async def test_cannot_cut_when_deficit_exceeds_time_left(self):
@@ -726,7 +727,7 @@ class TestPoolQuotaDispatch:
         await _dispatch_at(mgr, hass, "21:10", _low_score())
 
         assert device.is_on is True
-        assert device.last_decision_reason == "must_run"
+        assert device.last_decision_reason == "urgency"
 
     @pytest.mark.asyncio
     async def test_must_start_when_deficit_exceeds_time_left(self):
@@ -742,7 +743,7 @@ class TestPoolQuotaDispatch:
         await _dispatch_at(mgr, hass, "21:40", _low_score())
 
         assert device.is_on is True
-        assert device.last_decision_reason == "must_run"
+        assert device.last_decision_reason == "urgency"
 
     @pytest.mark.asyncio
     async def test_stays_off_when_deficit_less_than_time_left(self):

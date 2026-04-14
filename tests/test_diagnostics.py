@@ -227,7 +227,7 @@ class TestDiagnosticsStructure:
         result = await async_get_config_entry_diagnostics(hass, entry)
         weights = result["current_state"]["scoring_weights"]
 
-        assert set(weights.keys()) == {"surplus", "tempo", "soc", "solar"}
+        assert set(weights.keys()) == {"surplus", "tempo", "solar"}
 
     @pytest.mark.asyncio
     async def test_score_breakdown_present(self):
@@ -268,20 +268,18 @@ class TestCurrentStateValues:
 
     @pytest.mark.asyncio
     async def test_scoring_weights_values(self):
+        """Scoring weights are fixed constants — not configurable."""
+        from custom_components.helios.scoring_engine import _W_SURPLUS, _W_TEMPO, _W_SOLAR
         coordinator = _make_coordinator()
-        coordinator.scoring_engine = _make_scoring_engine(
-            w_surplus=0.5, w_tempo=0.2, w_soc=0.2, w_solar=0.1
-        )
         hass, entry = _make_hass(coordinator)
 
         weights = (await async_get_config_entry_diagnostics(hass, entry))[
             "current_state"
         ]["scoring_weights"]
 
-        assert weights["surplus"]  == 0.5
-        assert weights["tempo"]    == 0.2
-        assert weights["soc"]      == 0.2
-        assert weights["solar"]    == 0.1
+        assert weights["surplus"] == _W_SURPLUS
+        assert weights["tempo"]   == _W_TEMPO
+        assert weights["solar"]   == _W_SOLAR
 
     @pytest.mark.asyncio
     async def test_battery_soc_none(self):

@@ -49,6 +49,7 @@ def _make_manager(devices) -> DeviceManager:
     mgr.remaining_w = 0.0
     mgr._coordinator = None
     mgr._unsub_ready_listeners = []
+    mgr.battery_device = None
     return mgr
 
 

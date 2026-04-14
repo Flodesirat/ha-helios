@@ -49,6 +49,8 @@ from .const import (
     CONF_APPLIANCE_START_SCRIPT, CONF_APPLIANCE_POWER_ENTITY,
     CONF_APPLIANCE_POWER_THRESHOLD_W, CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
     CONF_APPLIANCE_DEADLINE_SLOTS,
+    # Battery priority
+    CONF_BATTERY_PRIORITY, DEFAULT_BATTERY_PRIORITY,
     # Strategy
     CONF_SCAN_INTERVAL_MINUTES, CONF_ENABLED, DEFAULT_ENABLED,
     CONF_GRID_ALLOWANCE_W,
@@ -533,6 +535,7 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                     CONF_BATTERY_CAPACITY_KWH, CONF_BATTERY_SOC_MIN,
                     CONF_BATTERY_SOC_MAX, CONF_BATTERY_SOC_RESERVE_ROUGE,
                     CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
+                    CONF_BATTERY_PRIORITY,
                 )
                 if self._current(k) is not None
             }),
@@ -912,6 +915,12 @@ def _battery_schema(defaults: dict | None = None) -> vol.Schema:
             default=d.get(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
+        ),
+        vol.Optional(
+            CONF_BATTERY_PRIORITY,
+            default=d.get(CONF_BATTERY_PRIORITY, DEFAULT_BATTERY_PRIORITY),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=1, max=10, step=1, mode=selector.NumberSelectorMode.BOX)
         ),
     })
 

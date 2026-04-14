@@ -119,10 +119,13 @@ async def async_get_config_entry_diagnostics(
 
     # Score breakdown
     score_input = coordinator._build_score_input()
-    f_surplus  = round(eng._score_surplus(score_input.get("surplus_w", 0.0), score_input.get("battery_soc")), 3)
-    f_tempo    = round(eng._score_tempo(score_input.get("tempo_color")), 3)
-    f_soc      = round(eng._score_soc(score_input.get("battery_soc")), 3)
-    f_solar = round(eng._score_solar(score_input), 3)
+    f_surplus, f_tempo, f_solar = eng.compute_components(score_input)
+    f_surplus = round(f_surplus, 3)
+    f_tempo   = round(f_tempo, 3)
+    f_solar   = round(f_solar, 3)
+    f_soc     = round(eng._score_soc(score_input.get("battery_soc")), 3)
+
+    from .scoring_engine import _W_SURPLUS, _W_TEMPO, _W_SOLAR
 
     current_state = {
         "enabled":            coordinator.enabled,
@@ -144,13 +147,12 @@ async def async_get_config_entry_diagnostics(
             "f_surplus":  f_surplus,
             "f_tempo":    f_tempo,
             "f_soc":      f_soc,
-            "f_solar": f_solar,
+            "f_solar":    f_solar,
         },
         "scoring_weights": {
-            "surplus":  round(eng.w_surplus,  3),
-            "tempo":    round(eng.w_tempo,    3),
-            "soc":      round(eng.w_soc,      3),
-            "solar":    round(eng.w_solar, 3),
+            "surplus":  _W_SURPLUS,
+            "tempo":    _W_TEMPO,
+            "solar":    _W_SOLAR,
         },
     }
 

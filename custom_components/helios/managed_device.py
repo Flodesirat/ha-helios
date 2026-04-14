@@ -21,7 +21,6 @@ from .const import (
     CONF_DEVICE_POWER_W, CONF_DEVICE_POWER_ENTITY, CONF_DEVICE_PRIORITY,
     CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
     CONF_DEVICE_INTERRUPTIBLE, CONF_DEVICE_DEADLINE,
-    CONF_DEVICE_WEIGHT_PRIORITY, CONF_DEVICE_WEIGHT_FIT, CONF_DEVICE_WEIGHT_URGENCY,
     # EV
     CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
     CONF_EV_DEPARTURE_TIME, CONF_EV_MIN_CHARGE_POWER_W, CONF_EV_BATTERY_CAPACITY_WH,
@@ -45,16 +44,21 @@ from .const import (
     # Off-peak slots
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
     CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
+    # Battery
+    CONF_BATTERY_PRIORITY, CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
+    CONF_BATTERY_SOC_RESERVE_ROUGE, CONF_BATTERY_MAX_CHARGE_POWER_W,
     # Defaults
     DEFAULT_DEVICE_PRIORITY, DEFAULT_DEVICE_MIN_ON_MINUTES,
     DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
-    DEFAULT_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_FIT, DEFAULT_DEVICE_WEIGHT_URGENCY,
     DEFAULT_EV_SOC_TARGET, DEFAULT_EV_MIN_CHARGE_POWER_W,
     DEFAULT_WH_TEMP_TARGET, DEFAULT_WH_TEMP_MIN, DEFAULT_WH_OFF_PEAK_HYSTERESIS_K,
     DEFAULT_HVAC_HYSTERESIS_K, DEFAULT_HVAC_MIN_OFF_MINUTES,
     DEFAULT_POOL_SPLIT_SESSIONS,
     DEFAULT_APPLIANCE_POWER_THRESHOLD_W, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES,
     DEFAULT_APPLIANCE_DEADLINE_SLOTS,
+    DEFAULT_BATTERY_PRIORITY, DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
+    DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
+    TEMPO_RED,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -119,17 +123,11 @@ class ManagedDevice:
         # Pre-parsed for efficiency (called every dispatch cycle per device)
         self._allowed_start_t: time | None = _parse_time(self.allowed_start)
         self._allowed_end_t: time | None   = _parse_time(self.allowed_end)
-        self.must_run_daily: bool = bool(config.get("device_must_run_daily", False))
         self.deadline: str | None = config.get(CONF_DEVICE_DEADLINE)
 
         # Interruptible is derived from device type (explicit override allowed)
         _interruptible_default = (self.device_type != DEVICE_TYPE_APPLIANCE)
         self.interruptible: bool = bool(config.get(CONF_DEVICE_INTERRUPTIBLE, _interruptible_default))
-
-        # ---- Per-device dispatch weights ----
-        self.w_priority: float = float(config.get(CONF_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_PRIORITY))
-        self.w_fit: float      = float(config.get(CONF_DEVICE_WEIGHT_FIT,      DEFAULT_DEVICE_WEIGHT_FIT))
-        self.w_urgency: float  = float(config.get(CONF_DEVICE_WEIGHT_URGENCY,  DEFAULT_DEVICE_WEIGHT_URGENCY))
 
         # ---- EV ----
         self.ev_soc_entity: str | None       = config.get(CONF_EV_SOC_ENTITY)
@@ -194,6 +192,7 @@ class ManagedDevice:
         # Diagnostics — updated every dispatch cycle, exposed via switch extra_state_attributes
         self.last_effective_score: float      = 0.0
         self.last_decision_reason: str        = ""
+        self.last_reason: str                 = ""
         self.last_priority_score: float       = 0.0
         self.last_fit: float                  = 0.0
         self.last_urgency: float              = 0.0
@@ -343,55 +342,11 @@ class ManagedDevice:
         return False
 
     # ------------------------------------------------------------------
-    # Must-run override — ignore score, turn on unconditionally
+    # Must-run override — replaced by urgency >= 1.0
+    # Kept as compatibility shim; DeviceManager uses urgency directly.
     # ------------------------------------------------------------------
     def must_run_now(self, reader: StateReader, now: datetime | None = None) -> bool:
-        if self.device_type == DEVICE_TYPE_WATER_HEATER:
-            # If the temperature sensor is unavailable, preserve the current state:
-            # don't start if the device is off (unknown temp → no spurious must_run),
-            # keep running if already on (don't cut heating mid-cycle).
-            raw = reader(self.wh_temp_entity) if self.wh_temp_entity else None
-            if raw is None or raw in ("unavailable", "unknown"):
-                return self.is_on
-            temp = float(raw)
-            # Safety: always force on below the static legionella floor.
-            if temp < self.wh_temp_min:
-                return True
-            off_peak_min = self._wh_off_peak_min(reader)
-            _now_t = (now or datetime.now()).time()
-            if self._is_off_peak(_now_t):
-                # Off-peak: force on when temperature is significantly below the configured
-                # minimum.  A hysteresis band prevents short cycles near the threshold.
-                # Trigger threshold = off_peak_min − hysteresis_k  (default 3 °C).
-                minutes_left = self._minutes_to_off_peak_end(_now_t)
-                # Don't start if there's less than min_on_minutes remaining in the
-                # off-peak slot: the heater would spill into peak hours.
-                if minutes_left is not None and minutes_left < self.min_on_minutes:
-                    return False
-                return temp < off_peak_min - self.wh_off_peak_hysteresis_k
-            # Peak hours: force on only when temperature is below the legionella safety
-            # floor (wh_temp_min).  off_peak_min is the off-peak target — it must
-            # NOT be used here or the heater fires during peak hours whenever the
-            # tank is below the HC set-point (e.g. 40 °C < 50 °C).
-            return temp < self.wh_temp_min
-
-        if self.device_type == DEVICE_TYPE_POOL:
-            # Only considered in the last _POOL_MUST_RUN_WINDOW_H hours before the
-            # pool's allowed_end (or midnight if no window is set).
-            # Using allowed_end rather than midnight ensures must_run fires in time
-            # even when the pool cannot run after e.g. 22:00.
-            _now      = now or datetime.now()
-            deadline  = self._pool_deadline_dt(_now)
-            minutes_left = (deadline - _now).total_seconds() / 60
-            if minutes_left > _POOL_MUST_RUN_WINDOW_H * 60:
-                return False
-            required_m = self._pool_required_minutes(reader)
-            deficit_m  = max(0.0, required_m - self.pool_daily_run_minutes)
-            if deficit_m <= 0:
-                return False
-            return deficit_m >= minutes_left
-
-        return False
+        return self.urgency_modifier(reader, now=now) >= 1.0
 
     # ------------------------------------------------------------------
     # Urgency modifier [0..1] — how urgent is it to run this device now?
@@ -408,7 +363,15 @@ class ManagedDevice:
             return min(1.0, 0.6 * soc_deficit + 0.4 * departure_urgency)
 
         if self.device_type == DEVICE_TYPE_WATER_HEATER:
-            temp = self._state_float(reader, self.wh_temp_entity)
+            raw = reader(self.wh_temp_entity) if self.wh_temp_entity else None
+            if raw is None or raw in ("unavailable", "unknown"):
+                # Sensor unavailable: preserve current state — don't start if off,
+                # keep running if on (avoids cutting a mid-cycle heating sequence).
+                return 1.0 if self.is_on else 0.0
+            temp = float(raw)
+            # Safety floor: below legionella minimum → always urgent regardless of time
+            if temp < self.wh_temp_min:
+                return 1.0
             _now_t = (now or datetime.now()).time()
             if self._is_off_peak(_now_t):
                 # Off-peak: urgency is based on distance to the off-peak minimum.
@@ -498,6 +461,9 @@ class ManagedDevice:
 
     # ------------------------------------------------------------------
     # Composite effective score [0..1]
+    # Fixed formula — no configurable weights.
+    # With urgency (all types except generic): 0.4×priority/10 + 0.3×fit + 0.3×urgency
+    # Without urgency (generic):               0.5×priority/10 + 0.5×fit
     # ------------------------------------------------------------------
     def effective_score(
         self,
@@ -516,15 +482,14 @@ class ManagedDevice:
         self.last_fit            = round(fit, 3)
         self.last_urgency        = round(urgency, 3)
 
-        total_w = self.w_priority + self.w_fit + self.w_urgency
-        if total_w <= 0:
-            return 0.0
+        # Generic devices have no intrinsic urgency — redistribute weight to priority/fit
+        if self.device_type not in (
+            DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_HVAC,
+            DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE,
+        ):
+            return 0.5 * priority_score + 0.5 * fit
 
-        return (
-            self.w_priority * priority_score
-            + self.w_fit     * fit
-            + self.w_urgency * urgency
-        ) / total_w
+        return 0.4 * priority_score + 0.3 * fit + 0.3 * urgency
 
     # ------------------------------------------------------------------
     # Generic daily on-time
@@ -704,3 +669,91 @@ class ManagedDevice:
         if raw is None or raw in ("unavailable", "unknown"):
             return fallback
         return raw in ("on", "true", "home", "connected", "plugged_in", "1")
+
+
+# ---------------------------------------------------------------------------
+# BatteryDevice — represents the home battery in the dispatch loop
+# ---------------------------------------------------------------------------
+
+class BatteryDevice:
+    """Represents the home battery as a dispatch candidate.
+
+    Unlike ManagedDevice, BatteryDevice does not flip a physical switch.
+    Its role is to reserve budget in the dispatch loop so that the BMS
+    (which charges the battery autonomously) is accounted for correctly.
+    The fit is always 1.0; urgency and power_w drive its position in the
+    sorted candidate list.
+    """
+
+    def __init__(self, config: dict[str, Any], manual_entity: str | None = None) -> None:
+        self.name: str              = "battery"
+        self.priority: int          = int(config.get(CONF_BATTERY_PRIORITY, DEFAULT_BATTERY_PRIORITY))
+        self._soc_min: float        = float(config.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
+        self._soc_max: float        = float(config.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX))
+        self._soc_min_rouge: float  = float(config.get(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE))
+        self._charge_max_w: float   = float(config.get(CONF_BATTERY_MAX_CHARGE_POWER_W, 0.0))
+        self._manual_entity: str | None = manual_entity
+
+        # Runtime state — updated each dispatch cycle via update()
+        self._soc: float            = 0.0
+        self._tempo_red: bool       = False
+
+        # Interface fields (shared with ManagedDevice)
+        self.fit: float             = 1.0
+        self.is_on: bool            = False
+        self.last_reason: str       = ""
+        self.last_effective_score: float = 0.0
+        self.min_on_remaining_s: float   = 0.0
+
+    def update(self, soc: float | None, tempo_red: bool) -> None:
+        """Update runtime state before each dispatch cycle."""
+        self._soc        = soc if soc is not None else 0.0
+        self._tempo_red  = tempo_red
+
+    @property
+    def soc_min_jour(self) -> float:
+        """Effective minimum SOC for today: higher on red Tempo days."""
+        return self._soc_min_rouge if self._tempo_red else self._soc_min
+
+    @property
+    def urgency(self) -> float:
+        """[0..1] — 1.0 when SOC < soc_min_jour, 0.0 when SOC ≥ soc_max."""
+        soc_min = self.soc_min_jour
+        soc_max = self._soc_max
+        if self._soc < soc_min:
+            return 1.0
+        if self._soc >= soc_max:
+            return 0.0
+        denom = max(soc_max - soc_min, 1.0)
+        return (soc_max - self._soc) / denom
+
+    @property
+    def power_w(self) -> float:
+        """Charge power demand (W) — proportional to urgency."""
+        soc_min = self.soc_min_jour
+        soc_max = self._soc_max
+        if self._soc <= soc_min:
+            return self._charge_max_w
+        if self._soc >= soc_max:
+            return 0.0
+        denom = max(soc_max - soc_min, 1.0)
+        return self._charge_max_w * (soc_max - self._soc) / denom
+
+    @property
+    def satisfied(self) -> bool:
+        """True when SOC has reached soc_max."""
+        return self._soc >= self._soc_max
+
+    @property
+    def effective_score(self) -> float:
+        """0.4×priority/10 + 0.3×fit(=1.0) + 0.3×urgency."""
+        return 0.4 * (self.priority / 10.0) + 0.3 * 1.0 + 0.3 * self.urgency
+
+    def is_manual(self, reader: StateReader) -> bool:
+        """True when the helios_battery_manual switch is on."""
+        if not self._manual_entity:
+            return False
+        raw = reader(self._manual_entity)
+        if raw is None or raw in ("unavailable", "unknown"):
+            return False
+        return raw in ("on", "true", "1")

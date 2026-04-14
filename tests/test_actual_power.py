@@ -94,6 +94,7 @@ def _make_manager(devices) -> DeviceManager:
     mgr._scan_interval = 5
     mgr._dispatch_threshold = 0.3
     mgr.decision_log = deque(maxlen=500)
+    mgr.battery_device = None
     return mgr
 
 

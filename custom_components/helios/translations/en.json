@@ -36,10 +36,7 @@
           "battery_soc_reserve_rouge": "Reserve SOC on red Tempo days (%)",
           "battery_max_charge_power_w": "Max charge power (W)",
           "battery_max_discharge_power_w": "Max discharge power (W)",
-          "weight_pv_surplus": "PV surplus weight",
-          "weight_tempo": "Tempo weight",
-          "weight_battery_soc": "Battery SOC weight",
-          "weight_forecast": "Forecast weight"
+          "battery_priority": "Battery priority (1–10)"
         }
       },
       "devices": {
@@ -137,17 +134,10 @@
       },
       "strategy": {
         "title": "Strategy",
-        "description": "The four weights must sum to 1.0.",
         "data": {
-          "weight_pv_surplus": "PV surplus weight",
-          "weight_tempo": "Tempo weight",
-          "weight_battery_soc": "Battery SOC weight",
-          "weight_forecast": "Forecast weight",
           "scan_interval_minutes": "Update interval (min)",
           "sample_interval_seconds": "Sampling interval (s)",
           "enabled": "Helios active",
-          "dispatch_threshold": "Dispatch threshold",
-          "optimizer_alpha": "Alpha (0 = savings, 1 = self-consumption)",
           "off_peak_1_start": "Off-peak slot 1 — start (HH:MM)",
           "off_peak_1_end": "Off-peak slot 1 — end (HH:MM)",
           "off_peak_2_start": "Off-peak slot 2 — start (HH:MM)",
@@ -155,9 +145,7 @@
           "ema_enabled": "Base load learning (EMA)"
         },
         "data_description": {
-          "dispatch_threshold": "Minimum global score to dispatch devices (0–1).",
           "sample_interval_seconds": "How often PV, grid, house and device power sensors are sampled. Must be ≥ 10 s and ≤ update interval.",
-          "optimizer_alpha": "Balance between minimizing bill and maximizing self-consumption.",
           "off_peak_1_start": "E.g. 22:00 for a 22h–6h off-peak contract. Leave empty if unused.",
           "off_peak_2_start": "Second off-peak slot (e.g. 12:00–14:00). Leave empty if unused.",
           "ema_enabled": "If disabled, the base load profile is frozen and no longer adapts to new measurements."
@@ -165,7 +153,6 @@
       }
     },
     "error": {
-      "weights_must_sum_to_one": "The weights must sum to 1.0.",
       "device_weights_must_sum_to_one": "The per-device weights must sum to 1.0.",
       "sample_interval_out_of_range": "Sampling interval must be between 10 s and the update interval."
     },
@@ -207,7 +194,8 @@
           "battery_soc_max": "Maximum SOC (%)",
           "battery_soc_reserve_rouge": "Reserve SOC on red Tempo days (%)",
           "battery_max_charge_power_w": "Max charge power (W)",
-          "battery_max_discharge_power_w": "Max discharge power (W)"
+          "battery_max_discharge_power_w": "Max discharge power (W)",
+          "battery_priority": "Battery priority (1–10)"
         },
         "data_description": {
           "battery_soc_entity": "Sensor returning the battery state of charge as a percentage (0–100).",
@@ -219,21 +207,16 @@
           "battery_soc_max": "Charge ceiling. Used by the daily optimizer for simulations. Should match the value configured in your inverter.",
           "battery_soc_reserve_rouge": "Protection threshold on red Tempo days. If SOC drops below this level, Helios reserves the battery: only appliances whose consumption fits within the PV surplus alone can be started. The forced charge the previous evening fills the battery to its maximum regardless of this threshold.",
           "battery_max_charge_power_w": "Maximum charge power of your inverter/battery (W). Required for the daily optimizer to simulate recharging accurately. Should match the limit configured in your inverter.",
-          "battery_max_discharge_power_w": "Maximum discharge power (W). Used by the daily optimizer and to calculate the battery energy available for appliances. Should match the limit configured in your inverter."
+          "battery_max_discharge_power_w": "Maximum discharge power (W). Used by the daily optimizer and to calculate the battery energy available for appliances. Should match the limit configured in your inverter.",
+          "battery_priority": "Relative priority of the battery vs. devices in greedy dispatch (1 = low, 10 = high). Recommended: 7."
         }
       },
       "strategy": {
         "title": "Strategy",
         "data": {
-          "weight_pv_surplus": "PV surplus weight",
-          "weight_tempo": "Tempo weight",
-          "weight_battery_soc": "Battery SOC weight",
-          "weight_forecast": "Forecast weight",
           "scan_interval_minutes": "Update interval (min)",
           "sample_interval_seconds": "Sampling interval (s)",
           "enabled": "Helios active",
-          "dispatch_threshold": "Dispatch threshold",
-          "optimizer_alpha": "Alpha (0 = savings, 1 = self-consumption)",
           "off_peak_1_start": "Off-peak slot 1 — start (HH:MM)",
           "off_peak_1_end": "Off-peak slot 1 — end (HH:MM)",
           "off_peak_2_start": "Off-peak slot 2 — start (HH:MM)",
@@ -341,7 +324,6 @@
       }
     },
     "error": {
-      "weights_must_sum_to_one": "The weights must sum to 1.0.",
       "device_weights_must_sum_to_one": "The per-device weights must sum to 1.0.",
       "sample_interval_out_of_range": "Sampling interval must be between 10 s and the update interval."
     }

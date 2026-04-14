@@ -13,11 +13,16 @@ from .const import (
     normalize_tempo_color,
 )
 
+# Fixed weights — score global is a user indicator only, not configurable
+_W_SURPLUS = 0.5
+_W_TEMPO   = 0.3
+_W_SOLAR   = 0.2
+
 
 class ScoringEngine:
-    """Weighted scoring with fuzzy-style normalization per dimension.
+    """Fixed-weight scoring with fuzzy-style normalization per dimension.
 
-    Score = w1·f_surplus(surplus_w) + w2·f_tempo(color) + w3·f_soc(soc) + w4·f_solar(…)
+    Score = 0.5·f_surplus(surplus_w) + 0.3·f_tempo(color) + 0.2·f_solar(…)
 
     Each f_* returns a value in [0..1]:
       - 1.0 = strongly favors turning devices ON / using energy now
@@ -25,10 +30,6 @@ class ScoringEngine:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.w_surplus       = float(config.get("weight_pv_surplus",  0.4))
-        self.w_tempo         = float(config.get("weight_tempo",        0.3))
-        self.w_soc           = float(config.get("weight_battery_soc",  0.2))
-        self.w_solar         = float(config.get("weight_solar",        0.1))
         self.soc_min         = float(config.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
         self.soc_max         = float(config.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX))
         self.peak_pv_kw      = float(config.get(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W)) / 1000.0
@@ -38,71 +39,31 @@ class ScoringEngine:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def update_weights(self, scoring: dict[str, Any]) -> None:
-        """Apply new scoring weights (from daily optimizer)."""
-        self.w_surplus  = scoring.get("weight_pv_surplus",  self.w_surplus)
-        self.w_tempo    = scoring.get("weight_tempo",        self.w_tempo)
-        self.w_soc      = scoring.get("weight_battery_soc",  self.w_soc)
-        self.w_solar    = scoring.get("weight_solar",        self.w_solar)
-
-    def get_weights(self) -> dict[str, float]:
-        """Return current scoring weights (for persistence)."""
-        return {
-            "weight_pv_surplus":  self.w_surplus,
-            "weight_tempo":       self.w_tempo,
-            "weight_battery_soc": self.w_soc,
-            "weight_solar":       self.w_solar,
-        }
-
     def compute(self, data: dict[str, Any]) -> float:
         """Return global score in [0..1]."""
-        s_surplus = self._score_surplus(data.get("surplus_w", 0.0), data.get("battery_soc"))
-        s_tempo   = self._score_tempo(data.get("tempo_color"))
-        s_soc     = self._score_soc(data.get("battery_soc"))
-        s_solar   = self._score_solar(data)
-
-        score = (
-            self.w_surplus * s_surplus
-            + self.w_tempo   * s_tempo
-            + self.w_soc     * s_soc
-            + self.w_solar   * s_solar
-        )
+        f_surplus, f_tempo, f_solar = self.compute_components(data)
+        score = _W_SURPLUS * f_surplus + _W_TEMPO * f_tempo + _W_SOLAR * f_solar
         return round(min(max(score, 0.0), 1.0), 3)
+
+    def compute_components(self, data: dict[str, Any]) -> tuple[float, float, float]:
+        """Return (f_surplus, f_tempo, f_solar) — each in [0..1]."""
+        f_surplus = self._score_surplus(data.get("surplus_w", 0.0))
+        f_tempo   = self._score_tempo(data.get("tempo_color"))
+        f_solar   = self._score_solar(data)
+        return f_surplus, f_tempo, f_solar
 
     # ------------------------------------------------------------------
     # Per-dimension scoring functions (fuzzy membership)
     # ------------------------------------------------------------------
-    def _score_surplus(self, surplus_w: float, battery_soc: float | None) -> float:
+    def _score_surplus(self, surplus_w: float) -> float:
         """Map PV surplus to [0..1].
 
-        Cas A — pas de batterie OU SoC > soc_max :
-            Rampe linéaire unique : 0 W → 0.0, 500 W → 1.0.
-
-        Cas B — batterie active ET SoC ≤ soc_max :
-            Double pente avec charge_max_w comme seuil de rupture.
-            - [0, charge_max_w]          → rampe douce  0.0 → 0.3
-            - [charge_max_w, +500 W]     → rampe rapide 0.3 → 1.0
-            La batterie peut absorber jusqu'à charge_max_w sans urgence ;
-            au-delà, l'énergie risque de partir sur le réseau.
+        Rampe unique de 0 W à (charge_max_w + 500 W) → 0.0 à 1.0.
+        Sans batterie : charge_max_w = 0 → rampe 0 → 500 W.
         """
         if surplus_w <= 0:
             return 0.0
-
-        battery_full = (
-            not self.battery_enabled
-            or battery_soc is None
-            or battery_soc >= self.soc_max
-        )
-
-        if battery_full or self.charge_max_w <= 0:
-            # Cas A : rampe unique
-            return min(1.0, surplus_w / 500.0)
-
-        # Cas B : double pente
-        if surplus_w <= self.charge_max_w:
-            return 0.3 * (surplus_w / self.charge_max_w)
-        excess = surplus_w - self.charge_max_w
-        return min(1.0, 0.3 + 0.7 * (excess / 500.0))
+        return min(1.0, surplus_w / max(1.0, self.charge_max_w + 500.0))
 
     def _score_tempo(self, color: str | None) -> float:
         """Map Tempo color to [0..1].

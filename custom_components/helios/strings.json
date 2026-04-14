@@ -36,10 +36,7 @@
           "battery_soc_reserve_rouge": "SOC de réserve jours rouges (%)",
           "battery_max_charge_power_w": "Puissance max de charge (W)",
           "battery_max_discharge_power_w": "Puissance max de décharge (W)",
-          "weight_pv_surplus": "Poids surplus PV",
-          "weight_tempo": "Poids Tempo",
-          "weight_battery_soc": "Poids SOC batterie",
-          "weight_forecast": "Poids prévision"
+          "battery_priority": "Priorité de la batterie (1–10)"
         },
         "data_description": {
           "battery_soc_entity": "Capteur retournant l'état de charge de la batterie en pourcentage (0–100).",
@@ -50,7 +47,8 @@
           "battery_soc_max": "Plafond de charge. Utilisé par l'optimiseur journalier pour les simulations. Doit correspondre à la valeur configurée dans votre onduleur.",
           "battery_soc_reserve_rouge": "Seuil de protection en jour rouge. Si le SOC descend en dessous, Helios réserve la batterie : seuls les appareils dont la consommation tient dans le surplus PV seul peuvent être démarrés. La charge forcée la veille remplit la batterie à son maximum indépendamment de ce seuil.",
           "battery_max_charge_power_w": "Puissance maximale de charge de votre onduleur/batterie (W). Nécessaire pour que l'optimiseur journalier simule correctement la recharge. Correspond à la limite configurée dans votre onduleur.",
-          "battery_max_discharge_power_w": "Puissance maximale de décharge (W). Utilisée par l'optimiseur journalier et pour calculer l'énergie batterie disponible pour les appareils. Correspond à la limite configurée dans votre onduleur."
+          "battery_max_discharge_power_w": "Puissance maximale de décharge (W). Utilisée par l'optimiseur journalier et pour calculer l'énergie batterie disponible pour les appareils. Correspond à la limite configurée dans votre onduleur.",
+          "battery_priority": "Priorité relative de la batterie face aux appareils dans le dispatch greedy (1 = faible, 10 = haute). Recommandé : 7."
         }
       },
       "devices": {
@@ -150,16 +148,9 @@
       },
       "strategy": {
         "title": "Stratégie",
-        "description": "Les quatre poids doivent sommer à 1,0.",
         "data": {
-          "weight_pv_surplus": "Poids surplus PV",
-          "weight_tempo": "Poids Tempo",
-          "weight_battery_soc": "Poids SOC batterie",
-          "weight_forecast": "Poids prévision",
           "scan_interval_minutes": "Intervalle de mise à jour (min)",
           "enabled": "Helios actif",
-          "dispatch_threshold": "Seuil de déclenchement",
-          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)",
           "off_peak_1_start": "Heures creuses plage 1 — début (HH:MM)",
           "off_peak_1_end": "Heures creuses plage 1 — fin (HH:MM)",
           "off_peak_2_start": "Heures creuses plage 2 — début (HH:MM)",
@@ -167,8 +158,6 @@
           "ema_enabled": "Apprentissage de la charge de fond (EMA)"
         },
         "data_description": {
-          "dispatch_threshold": "Score global minimum pour piloter les appareils (0–1).",
-          "optimizer_alpha": "Équilibre entre minimiser la facture et maximiser l'autoconsommation.",
           "off_peak_1_start": "Ex : 22:00 pour un contrat HC 22h–6h. Laisser vide si inutilisé.",
           "off_peak_2_start": "Deuxième plage HC (ex : 12:00–14:00). Laisser vide si inutilisée.",
           "ema_enabled": "Si désactivé, le profil de consommation de fond est figé et ne s'adapte plus aux nouvelles mesures."
@@ -176,7 +165,6 @@
       }
     },
     "error": {
-      "weights_must_sum_to_one": "Les poids doivent sommer à 1,0.",
       "device_weights_must_sum_to_one": "Les poids par appareil doivent sommer à 1,0."
     },
     "abort": {
@@ -217,7 +205,8 @@
           "battery_soc_max": "SOC maximum (%)",
           "battery_soc_reserve_rouge": "SOC de réserve jours rouges (%)",
           "battery_max_charge_power_w": "Puissance max de charge (W)",
-          "battery_max_discharge_power_w": "Puissance max de décharge (W)"
+          "battery_max_discharge_power_w": "Puissance max de décharge (W)",
+          "battery_priority": "Priorité de la batterie (1–10)"
         },
         "data_description": {
           "battery_soc_entity": "Capteur retournant l'état de charge de la batterie en pourcentage (0–100).",
@@ -229,20 +218,15 @@
           "battery_soc_max": "Plafond de charge. Utilisé par l'optimiseur journalier pour les simulations. Doit correspondre à la valeur configurée dans votre onduleur.",
           "battery_soc_reserve_rouge": "Seuil de protection en jour rouge. Si le SOC descend en dessous, Helios réserve la batterie : seuls les appareils dont la consommation tient dans le surplus PV seul peuvent être démarrés. La charge forcée la veille remplit la batterie à son maximum indépendamment de ce seuil.",
           "battery_max_charge_power_w": "Puissance maximale de charge de votre onduleur/batterie (W). Nécessaire pour que l'optimiseur journalier simule correctement la recharge. Correspond à la limite configurée dans votre onduleur.",
-          "battery_max_discharge_power_w": "Puissance maximale de décharge (W). Utilisée par l'optimiseur journalier et pour calculer l'énergie batterie disponible pour les appareils. Correspond à la limite configurée dans votre onduleur."
+          "battery_max_discharge_power_w": "Puissance maximale de décharge (W). Utilisée par l'optimiseur journalier et pour calculer l'énergie batterie disponible pour les appareils. Correspond à la limite configurée dans votre onduleur.",
+          "battery_priority": "Priorité relative de la batterie face aux appareils dans le dispatch greedy (1 = faible, 10 = haute). Recommandé : 7."
         }
       },
       "strategy": {
         "title": "Stratégie",
         "data": {
-          "weight_pv_surplus": "Poids surplus PV",
-          "weight_tempo": "Poids Tempo",
-          "weight_battery_soc": "Poids SOC batterie",
-          "weight_forecast": "Poids prévision",
           "scan_interval_minutes": "Intervalle de mise à jour (min)",
           "enabled": "Helios actif",
-          "dispatch_threshold": "Seuil de déclenchement",
-          "optimizer_alpha": "Alpha (0 = économies, 1 = autoconsommation)",
           "off_peak_1_start": "Heures creuses plage 1 — début (HH:MM)",
           "off_peak_1_end": "Heures creuses plage 1 — fin (HH:MM)",
           "off_peak_2_start": "Heures creuses plage 2 — début (HH:MM)",
@@ -352,7 +336,6 @@
       }
     },
     "error": {
-      "weights_must_sum_to_one": "Les poids doivent sommer à 1,0.",
       "device_weights_must_sum_to_one": "Les poids par appareil doivent sommer à 1,0."
     }
   },

@@ -52,6 +52,7 @@ def _make_dm(device: ManagedDevice) -> DeviceManager:
     dm.devices = [device]
     dm.decision_log = MagicMock()
     dm.decision_log.__iter__ = MagicMock(return_value=iter([]))
+    dm.battery_device = None
     return dm
 
 
@@ -302,6 +303,7 @@ def _make_dm_two(dev_a: ManagedDevice, dev_b: ManagedDevice) -> DeviceManager:
     store = MagicMock()
     store.async_save = AsyncMock()
     dm._store = store
+    dm.battery_device = None
     return dm
 
 

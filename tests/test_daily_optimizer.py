@@ -144,6 +144,7 @@ class TestDailyOptimizerScheduling:
 
 class TestWeightApplicationEndToEnd:
 
+    @pytest.mark.skip(reason="update_weights() supprimé en lot 2 — sera nettoyé en lot 6")
     @pytest.mark.asyncio
     async def test_weights_applied_to_real_scoring_engine(self):
         """After optimization, a real ScoringEngine must reflect the new weights."""
@@ -193,6 +194,7 @@ class TestWeightApplicationEndToEnd:
         assert coordinator.optimizer_last_run is not None
         assert "T" in coordinator.optimizer_last_run  # ISO format check
 
+    @pytest.mark.skip(reason="update_weights() supprimé en lot 2 — sera nettoyé en lot 6")
     @pytest.mark.asyncio
     async def test_new_weights_change_score(self):
         """Score computed by the engine must differ before and after weight update."""
@@ -221,6 +223,7 @@ class TestWeightApplicationEndToEnd:
             "Score must change after weights are updated"
         )
 
+    @pytest.mark.skip(reason="w_surplus attr supprimé en lot 2 — sera nettoyé en lot 6")
     @pytest.mark.asyncio
     async def test_no_results_keeps_existing_weights(self):
         """If optimizer returns no results, existing weights must be unchanged."""

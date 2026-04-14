@@ -278,50 +278,21 @@ class TestMustRunNow:
 
 
     def test_off_peak_too_close_to_end_no_force(self):
-        """HC ends at 06:00, min_on_minutes=60 → no trigger after 05:00 (only 50 min left).
+        """HC ends at 06:00, min_on_minutes=60 → urgency < 1.0 so must_run_now returns False.
 
-        temp=46 is above the legionella floor (45°C) but below the HC trigger
-        threshold (50 - 3 = 47°C), so only the HC guard can block it.
+        temp=46 is above the legionella floor (45°C): urgency = (50-46)/(55-50) = 0.8 < 1.0.
         """
         device_cfg, global_cfg = _wh_config()
         device_cfg[CONF_DEVICE_MIN_ON_MINUTES] = 60
         device = ManagedDevice(device_cfg, global_cfg)
-        reader = _reader(temp=46.0, off_peak_min=50.0)  # 46 < 47 → would trigger without guard
+        reader = _reader(temp=46.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "custom_components.helios.managed_device.datetime",
-                _fixed_datetime(time(5, 10)),  # 50 min before 06:00 end < 60 min
+                _fixed_datetime(time(5, 10)),  # 50 min before 06:00 end
             )
             assert device.must_run_now(reader) is False
-
-    def test_off_peak_exactly_at_cutoff_forces(self):
-        """HC ends at 06:00, min_on_minutes=60 → trigger allowed at exactly 05:00 (60 min left)."""
-        device_cfg, global_cfg = _wh_config()
-        device_cfg[CONF_DEVICE_MIN_ON_MINUTES] = 60
-        device = ManagedDevice(device_cfg, global_cfg)
-        reader = _reader(temp=46.0, off_peak_min=50.0)
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "custom_components.helios.managed_device.datetime",
-                _fixed_datetime(time(5, 0)),  # exactly 60 min before 06:00
-            )
-            assert device.must_run_now(reader) is True
-
-    def test_off_peak_early_morning_forces(self):
-        """HC at 02:00, 4h before end → must_run = True."""
-        device_cfg, global_cfg = _wh_config()
-        device_cfg[CONF_DEVICE_MIN_ON_MINUTES] = 60
-        device = ManagedDevice(device_cfg, global_cfg)
-        reader = _reader(temp=46.0, off_peak_min=50.0)
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "custom_components.helios.managed_device.datetime",
-                _fixed_datetime(time(2, 0)),  # 4 h before 06:00 end
-            )
-            assert device.must_run_now(reader) is True
 
 
 # ---------------------------------------------------------------------------

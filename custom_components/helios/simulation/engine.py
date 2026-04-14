@@ -152,6 +152,7 @@ def _build_sim_device_manager(
     dm._hass = None
     dm._unsub_ready_listeners = []
     dm._last_suppressed_names = frozenset()
+    dm.battery_device = None  # BatteryDevice not used in simulation (Lot 8)
     return dm
 
 

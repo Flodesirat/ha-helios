@@ -11,11 +11,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
 
-from .managed_device import ManagedDevice
+from .managed_device import ManagedDevice, BatteryDevice
 
 from .const import (
     DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE,
     CONF_SCAN_INTERVAL_MINUTES,
+    CONF_BATTERY_ENABLED, CONF_BATTERY_MAX_CHARGE_POWER_W,
     DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
     TEMPO_RED,
     APPLIANCE_STATE_IDLE, APPLIANCE_STATE_PREPARING, APPLIANCE_STATE_RUNNING,
@@ -44,13 +45,16 @@ class DeviceManager:
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._coordinator = None  # Set by EnergyOptimizerCoordinator after construction
         self._scan_interval: float = float(config.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL))
+        # Kept for backward compatibility with simulation engine (simulation/ sets this attribute)
         self._dispatch_threshold: float = float(config.get("dispatch_threshold", 0.3))
         # Decision log — rolling buffer, max 100 entries
         self.decision_log: deque[dict] = deque(maxlen=100)
         # Remaining dispatch budget after last greedy allocation
         self.remaining_w: float = 0.0
-        # Track last suppressed must_run set to avoid log spam
-        self._last_suppressed_names: frozenset[str] = frozenset()
+        # BatteryDevice — instantiated if battery is enabled in config
+        self.battery_device: BatteryDevice | None = (
+            BatteryDevice(config) if config.get(CONF_BATTERY_ENABLED) else None
+        )
         # Unsubscribe callbacks for appliance ready-entity listeners
         self._unsub_ready_listeners: list = []
 
@@ -319,52 +323,9 @@ class DeviceManager:
                     return False
             return True
 
-        # ---- Collect must-run overrides (skip devices Helios doesn't manage) ----
-        must_run = {d for d in self.devices if d.must_run_now(reader) and _helios_manages(d)}
-
-        # ---- Réserve zone (SOC ≤ 20 %): suppress non-safety overrides ----
-        # In this zone the battery is critically low.  The water heater legionella
-        # protection is a genuine safety override (health risk); pool filtration is
-        # not — its urgency is already reflected in urgency_modifier().
-        if battery_soc is not None and battery_soc <= 20.0 and must_run:
-            suppressed = {d for d in must_run if d.device_type != DEVICE_TYPE_WATER_HEATER}
-            if suppressed:
-                suppressed_names = frozenset(d.name for d in suppressed)
-                if suppressed_names != self._last_suppressed_names:
-                    _LOGGER.debug(
-                        "Dispatch: SOC=%.0f%% (Réserve) — must_run supprimé pour: %s",
-                        battery_soc,
-                        ", ".join(d.name for d in suppressed),
-                    )
-                    self._last_suppressed_names = suppressed_names
-            else:
-                self._last_suppressed_names = frozenset()
-            must_run -= suppressed
-        else:
-            self._last_suppressed_names = frozenset()
-
-        # ---- Gate: skip normal dispatch if global score too low ----
-        if global_score < dispatch_threshold and not must_run:
-            for device in self.devices:
-                if device.device_type == DEVICE_TYPE_APPLIANCE:
-                    # State machine always runs so IDLE→READY→RUNNING transitions
-                    # are not blocked by a low global score.
-                    await self._async_handle_appliance(hass, device)
-                    continue
-                if not _helios_manages(device):
-                    continue  # manual / force / inhibit — hands off
-                _now_dt = datetime.combine(date.today(), now)
-                satisfied_now = device.is_satisfied(reader, now=_now_dt)
-                bypass_min_on = (
-                    device.device_type == DEVICE_TYPE_WATER_HEATER
-                    and device._is_off_peak(now)  # noqa: SLF001
-                    and satisfied_now
-                )
-                if device.is_on and device.interruptible and (self._min_on_elapsed(device) or bypass_min_on):
-                    reason = "satisfied" if satisfied_now else "score_too_low"
-                    await self._async_set_switch(hass, device, False, reason=reason, context=_base_ctx)
-            self.remaining_w = float(score_input.get("real_surplus_w", surplus_w)) + bat_available_w + grid_allowance_w
-            return
+        # ---- Update BatteryDevice runtime state ----
+        if self.battery_device is not None:
+            self.battery_device.update(battery_soc, tempo_color == TEMPO_RED)
 
         # ---- Priority preemption for PREPARING appliances ----
         # If a high-priority appliance is ready to start (score+fit or urgency)
@@ -465,13 +426,15 @@ class DeviceManager:
             if device in preempted_this_cycle:
                 continue
 
-            # Must-run override → bypass allowed window and force on immediately.
-            # Safety overrides (legionella, off-peak HC heating) must not be blocked
-            # by a misconfigured or too-narrow allowed window.
-            if device in must_run:
+            # Urgency override (urgency == 1.0) → bypass allowed window and force on.
+            # Replaces must_run: legionella safety, pool deadline, EV departure, etc.
+            _now_dt = datetime.combine(date.today(), now)
+            _urgency = device.urgency_modifier(reader, now=_now_dt)
+            if _urgency >= 1.0:
                 device.last_effective_score = 1.0
+                device.last_urgency = 1.0
                 if not device.is_on:
-                    await self._async_set_switch(hass, device, True, reason="must_run", context=_base_ctx)
+                    await self._async_set_switch(hass, device, True, reason="urgency", context=_base_ctx)
                 continue
 
             # Outside allowed window → turn off
@@ -601,7 +564,7 @@ class DeviceManager:
                     if d.is_on
                     and d.interruptible
                     and self._min_on_elapsed(d)
-                    and d not in must_run
+                    and d.urgency_modifier(reader) < 1.0
                     and _helios_manages(d)
                 ],
                 key=lambda d: d.priority,
@@ -762,6 +725,7 @@ class DeviceManager:
         if context:
             entry.update(context)
         device.last_decision_reason = reason or "unknown"
+        device.last_reason          = reason or "unknown"
         self.decision_log.append(entry)
         if device.device_type == DEVICE_TYPE_EV:
             script = device.ev_charge_start_script if on else device.ev_charge_stop_script

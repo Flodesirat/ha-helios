@@ -62,6 +62,7 @@ def _make_manager(devices, init_threshold=0.3, scan_interval=5):
     mgr.decision_log = deque(maxlen=500)
     mgr._coordinator = None
     mgr._unsub_ready_listeners = []
+    mgr.battery_device = None
     return mgr
 
 
@@ -185,135 +186,6 @@ class TestForceSwitch_RefreshOnToggle:
         assert 239.0 <= remaining <= 240.0
 
 
-# ---------------------------------------------------------------------------
-# Bug 2 — dispatch_threshold from score_input overrides frozen self._dispatch_threshold
-# ---------------------------------------------------------------------------
-
-class TestDispatchThreshold_FromScoreInput:
-    """DeviceManager must use dispatch_threshold from score_input, not self._dispatch_threshold."""
-
-    @pytest.mark.asyncio
-    async def test_score_input_threshold_used_over_init_threshold(self):
-        """When score_input contains dispatch_threshold, it overrides the init value."""
-        device = _make_device()
-        device.is_on = True
-        device.pool_last_date = date.today()
-        device.pool_daily_run_minutes = 300.0  # quota already met → must_run_now=False
-
-        # Manager initialised with a LOW threshold (0.1)
-        # score_input provides a HIGH threshold (0.9) → gate should fire and turn device off
-        mgr = _make_manager([device], init_threshold=0.1)
-        hass = _make_hass()
-        mock_state = MagicMock()
-        mock_state.state = "4"
-        hass.states.get.return_value = mock_state
-
-        await mgr.async_dispatch(
-            hass,
-            _score(global_score=0.5, surplus_w=400.0, dispatch_threshold=0.9),
-        )
-
-        assert device.is_on is False, (
-            "Gate should fire using score_input threshold (0.9 > 0.5), not init threshold (0.1)"
-        )
-
-    @pytest.mark.asyncio
-    async def test_score_input_threshold_prevents_gate_from_firing(self):
-        """When score_input threshold is LOW, the gate must not fire even if init threshold was HIGH."""
-        device = _make_device()
-        device.is_on = True
-        device.pool_last_date = date.today()
-        device.pool_daily_run_minutes = 0.0
-
-        # Manager initialised with a HIGH threshold (0.9)
-        # score_input provides a LOW threshold (0.1) → gate should NOT fire
-        mgr = _make_manager([device], init_threshold=0.9)
-        hass = _make_hass()
-        mock_state = MagicMock()
-        mock_state.state = "4"
-        hass.states.get.return_value = mock_state
-
-        await mgr.async_dispatch(
-            hass,
-            _score(global_score=0.5, surplus_w=400.0, dispatch_threshold=0.1),
-        )
-
-        assert device.is_on is True, (
-            "Gate must not fire: score_input threshold (0.1) < global_score (0.5)"
-        )
-
-    @pytest.mark.asyncio
-    async def test_fallback_to_init_threshold_when_not_in_score_input(self):
-        """When score_input has no dispatch_threshold key, self._dispatch_threshold is used."""
-        device = _make_device()
-        device.is_on = True
-        device.pool_last_date = date.today()
-        device.pool_daily_run_minutes = 300.0  # quota already met → must_run_now=False
-
-        # init threshold 0.9, score 0.5 → gate fires → device off
-        mgr = _make_manager([device], init_threshold=0.9)
-        hass = _make_hass()
-        mock_state = MagicMock()
-        mock_state.state = "4"
-        hass.states.get.return_value = mock_state
-
-        # No dispatch_threshold key in score_input → fallback to init (0.9)
-        await mgr.async_dispatch(
-            hass,
-            _score(global_score=0.5, surplus_w=400.0),  # no dispatch_threshold
-        )
-
-        assert device.is_on is False, (
-            "Without dispatch_threshold in score_input, init threshold (0.9) must be used"
-        )
-
-    @pytest.mark.asyncio
-    async def test_force_mode_still_protected_with_updated_threshold(self):
-        """Force mode protects device even when score_input carries a high threshold."""
-        device = _make_device()
-        device.is_on = True
-        device.pool_force_until = time.time() + 3600
-
-        mgr = _make_manager([device], init_threshold=0.1)
-        hass = _make_hass()
-
-        # High threshold via score_input — gate would fire for non-forced devices
-        await mgr.async_dispatch(
-            hass,
-            _score(global_score=0.2, surplus_w=0.0, dispatch_threshold=0.9),
-        )
-
-        assert device.is_on is True, (
-            "Force mode must protect the device regardless of dispatch_threshold origin"
-        )
-
-    @pytest.mark.asyncio
-    async def test_optimizer_updated_threshold_is_honoured(self):
-        """Simulates the daily optimizer raising coordinator.dispatch_threshold
-        and verifies DeviceManager respects it via score_input."""
-        device = _make_device()
-        device.is_on = True
-        device.pool_last_date = date.today()
-        device.pool_daily_run_minutes = 300.0  # quota already met → must_run_now=False
-
-        # Optimizer raised the threshold to 0.7 (stored on coordinator)
-        optimizer_threshold = 0.7
-
-        mgr = _make_manager([device], init_threshold=0.3)
-        hass = _make_hass()
-        mock_state = MagicMock()
-        mock_state.state = "4"
-        hass.states.get.return_value = mock_state
-
-        # Coordinator passes its (updated) threshold to score_input
-        await mgr.async_dispatch(
-            hass,
-            _score(global_score=0.5, surplus_w=400.0, dispatch_threshold=optimizer_threshold),
-        )
-
-        assert device.is_on is False, (
-            "After optimizer raises threshold to 0.7, score 0.5 must trigger the gate"
-        )
 
 
 # ---------------------------------------------------------------------------
