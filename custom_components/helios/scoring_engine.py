@@ -4,13 +4,9 @@ from __future__ import annotations
 from typing import Any
 
 from .const import (
-    CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
-    CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_SOLAR,
     CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
     CONF_BATTERY_ENABLED, CONF_BATTERY_MAX_CHARGE_POWER_W,
     CONF_PEAK_PV_W,
-    DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
-    DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_SOLAR,
     DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
     DEFAULT_PEAK_PV_W,
     TEMPO_BLUE, TEMPO_WHITE, TEMPO_RED,
@@ -29,10 +25,10 @@ class ScoringEngine:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.w_surplus       = config.get(CONF_WEIGHT_PV_SURPLUS,  DEFAULT_WEIGHT_PV_SURPLUS)
-        self.w_tempo         = config.get(CONF_WEIGHT_TEMPO,        DEFAULT_WEIGHT_TEMPO)
-        self.w_soc           = config.get(CONF_WEIGHT_BATTERY_SOC,  DEFAULT_WEIGHT_BATTERY_SOC)
-        self.w_solar         = config.get(CONF_WEIGHT_SOLAR,        DEFAULT_WEIGHT_SOLAR)
+        self.w_surplus       = float(config.get("weight_pv_surplus",  0.4))
+        self.w_tempo         = float(config.get("weight_tempo",        0.3))
+        self.w_soc           = float(config.get("weight_battery_soc",  0.2))
+        self.w_solar         = float(config.get("weight_solar",        0.1))
         self.soc_min         = float(config.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
         self.soc_max         = float(config.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX))
         self.peak_pv_kw      = float(config.get(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W)) / 1000.0

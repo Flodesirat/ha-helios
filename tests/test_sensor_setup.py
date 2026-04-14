@@ -20,7 +20,6 @@ from custom_components.helios.const import (
     CONF_DEVICE_ALLOWED_START,
     CONF_DEVICE_ALLOWED_END,
     CONF_DEVICE_INTERRUPTIBLE,
-    CONF_DEVICE_MUST_RUN_DAILY,
     DEVICE_TYPE_APPLIANCE,
     DEVICE_TYPE_POOL,
     DEVICE_TYPE_WATER_HEATER,
@@ -43,7 +42,6 @@ def _minimal_device(name: str, device_type: str = DEVICE_TYPE_APPLIANCE) -> dict
         CONF_DEVICE_ALLOWED_START:  "06:00",
         CONF_DEVICE_ALLOWED_END:    "22:00",
         CONF_DEVICE_INTERRUPTIBLE:  True,
-        CONF_DEVICE_MUST_RUN_DAILY: False,
     }
 
 

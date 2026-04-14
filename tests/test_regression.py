@@ -28,7 +28,6 @@ from custom_components.helios.const import (
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
     CONF_DEVICE_MIN_ON_MINUTES,
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
-    DEFAULT_DISPATCH_THRESHOLD,
 )
 
 
@@ -50,7 +49,7 @@ def _make_device(cfg=None) -> ManagedDevice:
     return ManagedDevice(cfg or _pool_cfg())
 
 
-def _make_manager(devices, init_threshold=DEFAULT_DISPATCH_THRESHOLD, scan_interval=5):
+def _make_manager(devices, init_threshold=0.3, scan_interval=5):
     store = AsyncMock()
     store.async_load = AsyncMock(return_value={})
     store.async_save = AsyncMock()
@@ -300,7 +299,7 @@ class TestDispatchThreshold_FromScoreInput:
         # Optimizer raised the threshold to 0.7 (stored on coordinator)
         optimizer_threshold = 0.7
 
-        mgr = _make_manager([device], init_threshold=DEFAULT_DISPATCH_THRESHOLD)
+        mgr = _make_manager([device], init_threshold=0.3)
         hass = _make_hass()
         mock_state = MagicMock()
         mock_state.state = "4"

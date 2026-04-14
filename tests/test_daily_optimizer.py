@@ -9,10 +9,7 @@ from custom_components.helios.daily_optimizer import async_run_daily_optimizatio
 from custom_components.helios.scoring_engine import ScoringEngine
 from custom_components.helios.simulation.optimizer import OptResult
 from custom_components.helios.const import (
-    CONF_PEAK_PV_W, CONF_BATTERY_ENABLED, CONF_DEVICES, CONF_OPTIMIZER_ALPHA,
-    DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
-    DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_SOLAR,
-    DEFAULT_DISPATCH_THRESHOLD,
+    CONF_PEAK_PV_W, CONF_BATTERY_ENABLED, CONF_DEVICES,
 )
 
 
@@ -39,9 +36,9 @@ def _make_coordinator(scoring_engine=None):
         CONF_PEAK_PV_W:       3000.0,
         CONF_BATTERY_ENABLED: False,
         CONF_DEVICES:         [],
-        CONF_OPTIMIZER_ALPHA: 0.5,
+        "optimizer_alpha":    0.5,
     }
-    coordinator.dispatch_threshold = DEFAULT_DISPATCH_THRESHOLD
+    coordinator.dispatch_threshold = 0.3
     coordinator.scoring_engine = scoring_engine or MagicMock()
     coordinator.async_save_optimizer_state = _AsyncMock()
 
@@ -151,10 +148,10 @@ class TestWeightApplicationEndToEnd:
     async def test_weights_applied_to_real_scoring_engine(self):
         """After optimization, a real ScoringEngine must reflect the new weights."""
         real_engine = ScoringEngine({
-            "weight_pv_surplus":  DEFAULT_WEIGHT_PV_SURPLUS,
-            "weight_tempo":       DEFAULT_WEIGHT_TEMPO,
-            "weight_battery_soc": DEFAULT_WEIGHT_BATTERY_SOC,
-            "weight_solar":    DEFAULT_WEIGHT_SOLAR,
+            "weight_pv_surplus":  0.4,
+            "weight_tempo":       0.3,
+            "weight_battery_soc": 0.2,
+            "weight_solar":       0.1,
         })
 
         coordinator = _make_coordinator(scoring_engine=real_engine)
@@ -200,10 +197,10 @@ class TestWeightApplicationEndToEnd:
     async def test_new_weights_change_score(self):
         """Score computed by the engine must differ before and after weight update."""
         real_engine = ScoringEngine({
-            "weight_pv_surplus":  DEFAULT_WEIGHT_PV_SURPLUS,  # 0.4
-            "weight_tempo":       DEFAULT_WEIGHT_TEMPO,        # 0.3
-            "weight_battery_soc": DEFAULT_WEIGHT_BATTERY_SOC, # 0.2
-            "weight_solar":    DEFAULT_WEIGHT_SOLAR,     # 0.1
+            "weight_pv_surplus":  0.4,
+            "weight_tempo":       0.3,
+            "weight_battery_soc": 0.2,
+            "weight_solar":       0.1,
         })
         data = {"surplus_w": 100, "tempo_color": "red", "battery_soc": 50}
 
@@ -228,22 +225,22 @@ class TestWeightApplicationEndToEnd:
     async def test_no_results_keeps_existing_weights(self):
         """If optimizer returns no results, existing weights must be unchanged."""
         real_engine = ScoringEngine({
-            "weight_pv_surplus":  DEFAULT_WEIGHT_PV_SURPLUS,
-            "weight_tempo":       DEFAULT_WEIGHT_TEMPO,
-            "weight_battery_soc": DEFAULT_WEIGHT_BATTERY_SOC,
-            "weight_solar":    DEFAULT_WEIGHT_SOLAR,
+            "weight_pv_surplus":  0.4,
+            "weight_tempo":       0.3,
+            "weight_battery_soc": 0.2,
+            "weight_solar":       0.1,
         })
         coordinator = _make_coordinator(scoring_engine=real_engine)
-        coordinator.dispatch_threshold = DEFAULT_DISPATCH_THRESHOLD
+        coordinator.dispatch_threshold = 0.3
 
         hass = _make_hass()
         hass.async_add_executor_job = AsyncMock(return_value=[])  # empty → no update
 
         await async_run_daily_optimization(hass, coordinator)
 
-        assert real_engine.w_surplus  == DEFAULT_WEIGHT_PV_SURPLUS
-        assert real_engine.w_tempo    == DEFAULT_WEIGHT_TEMPO
-        assert coordinator.dispatch_threshold == DEFAULT_DISPATCH_THRESHOLD
+        assert real_engine.w_surplus  == pytest.approx(0.4)
+        assert real_engine.w_tempo    == pytest.approx(0.3)
+        assert coordinator.dispatch_threshold == pytest.approx(0.3)
 
 
 # ---------------------------------------------------------------------------

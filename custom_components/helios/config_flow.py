@@ -29,7 +29,7 @@ from .const import (
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
     CONF_DEVICE_POWER_W, CONF_DEVICE_POWER_ENTITY, CONF_DEVICE_PRIORITY,
     CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
-    CONF_DEVICE_MUST_RUN_DAILY, CONF_DEVICE_DEADLINE,
+    CONF_DEVICE_DEADLINE,
     CONF_DEVICE_WEIGHT_PRIORITY, CONF_DEVICE_WEIGHT_FIT, CONF_DEVICE_WEIGHT_URGENCY,
     # EV
     CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
@@ -49,13 +49,10 @@ from .const import (
     CONF_APPLIANCE_START_SCRIPT, CONF_APPLIANCE_POWER_ENTITY,
     CONF_APPLIANCE_POWER_THRESHOLD_W, CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
     CONF_APPLIANCE_DEADLINE_SLOTS,
-    # Scoring weights
-    CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
-    CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_SOLAR,
     # Strategy
-    CONF_SCAN_INTERVAL_MINUTES, CONF_ENABLED, DEFAULT_ENABLED, CONF_DISPATCH_THRESHOLD,
-    CONF_GRID_ALLOWANCE_W, CONF_OPTIMIZER_ALPHA,
-    CONF_BASE_LOAD_NOISE, CONF_OPTIMIZER_N_RUNS, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
+    CONF_SCAN_INTERVAL_MINUTES, CONF_ENABLED, DEFAULT_ENABLED,
+    CONF_GRID_ALLOWANCE_W,
+    CONF_BASE_LOAD_NOISE, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
     CONF_SAMPLE_INTERVAL_SECONDS,
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END, CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
     # Device / general types and defaults
@@ -63,10 +60,8 @@ from .const import (
     DEVICE_TYPE_HVAC, DEVICE_TYPE_APPLIANCE, DEVICE_TYPE_POOL,
     DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
     DEFAULT_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_CAPACITY_KWH,
-    DEFAULT_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_TEMPO,
-    DEFAULT_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_SOLAR,
-    DEFAULT_SCAN_INTERVAL, DEFAULT_DISPATCH_THRESHOLD, DEFAULT_GRID_ALLOWANCE_W, DEFAULT_OPTIMIZER_ALPHA,
-    DEFAULT_BASE_LOAD_NOISE, DEFAULT_OPTIMIZER_N_RUNS, DEFAULT_RISK_LAMBDA, DEFAULT_EMA_ALPHA, DEFAULT_EMA_ENABLED,
+    DEFAULT_SCAN_INTERVAL, DEFAULT_GRID_ALLOWANCE_W,
+    DEFAULT_BASE_LOAD_NOISE, DEFAULT_RISK_LAMBDA, DEFAULT_EMA_ALPHA, DEFAULT_EMA_ENABLED,
     DEFAULT_SAMPLE_INTERVAL_SECONDS,
     DEFAULT_DEVICE_PRIORITY, DEFAULT_DEVICE_MIN_ON_MINUTES,
     DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
@@ -368,7 +363,6 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(CONF_DEVICE_ALLOWED_START, default=DEFAULT_ALLOWED_START): selector.TimeSelector(),
                 vol.Optional(CONF_DEVICE_ALLOWED_END,   default=DEFAULT_ALLOWED_END):   selector.TimeSelector(),
-                vol.Optional(CONF_DEVICE_MUST_RUN_DAILY, default=False): selector.BooleanSelector(),
                 # Dispatch weights (sum must equal 1.0)
                 vol.Optional(CONF_DEVICE_WEIGHT_PRIORITY, default=DEFAULT_DEVICE_WEIGHT_PRIORITY): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
@@ -387,19 +381,10 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_strategy(self, user_input: dict | None = None):
         errors: dict[str, str] = {}
         if user_input is not None:
-            total = (
-                user_input[CONF_WEIGHT_PV_SURPLUS]
-                + user_input[CONF_WEIGHT_TEMPO]
-                + user_input[CONF_WEIGHT_BATTERY_SOC]
-                + user_input[CONF_WEIGHT_SOLAR]
-            )
-            if abs(total - 1.0) > 0.01:
-                errors["base"] = "weights_must_sum_to_one"
-            else:
-                scan_s = int(user_input[CONF_SCAN_INTERVAL_MINUTES]) * 60
-                sample_s = int(user_input[CONF_SAMPLE_INTERVAL_SECONDS])
-                if not (10 <= sample_s <= scan_s):
-                    errors[CONF_SAMPLE_INTERVAL_SECONDS] = "sample_interval_out_of_range"
+            scan_s = int(user_input[CONF_SCAN_INTERVAL_MINUTES]) * 60
+            sample_s = int(user_input[CONF_SAMPLE_INTERVAL_SECONDS])
+            if not (10 <= sample_s <= scan_s):
+                errors[CONF_SAMPLE_INTERVAL_SECONDS] = "sample_interval_out_of_range"
             if not errors:
                 self._data.update(user_input)
                 return self.async_create_entry(title="Helios", data=self._data)
@@ -556,19 +541,10 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
     async def async_step_strategy(self, user_input: dict | None = None):
         errors: dict[str, str] = {}
         if user_input is not None:
-            total = (
-                user_input[CONF_WEIGHT_PV_SURPLUS]
-                + user_input[CONF_WEIGHT_TEMPO]
-                + user_input[CONF_WEIGHT_BATTERY_SOC]
-                + user_input[CONF_WEIGHT_SOLAR]
-            )
-            if abs(total - 1.0) > 0.01:
-                errors["base"] = "weights_must_sum_to_one"
-            else:
-                scan_s = int(user_input[CONF_SCAN_INTERVAL_MINUTES]) * 60
-                sample_s = int(user_input[CONF_SAMPLE_INTERVAL_SECONDS])
-                if not (10 <= sample_s <= scan_s):
-                    errors[CONF_SAMPLE_INTERVAL_SECONDS] = "sample_interval_out_of_range"
+            scan_s = int(user_input[CONF_SCAN_INTERVAL_MINUTES]) * 60
+            sample_s = int(user_input[CONF_SAMPLE_INTERVAL_SECONDS])
+            if not (10 <= sample_s <= scan_s):
+                errors[CONF_SAMPLE_INTERVAL_SECONDS] = "sample_interval_out_of_range"
             if not errors:
                 return self.async_create_entry(data={**self._entry.options, **user_input})
 
@@ -577,11 +553,9 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
             data_schema=_strategy_schema(defaults={
                 k: self._current(k)
                 for k in (
-                    CONF_WEIGHT_PV_SURPLUS, CONF_WEIGHT_TEMPO,
-                    CONF_WEIGHT_BATTERY_SOC, CONF_WEIGHT_SOLAR,
-                    CONF_SCAN_INTERVAL_MINUTES, CONF_ENABLED, CONF_DISPATCH_THRESHOLD,
-                    CONF_GRID_ALLOWANCE_W, CONF_OPTIMIZER_ALPHA,
-                    CONF_BASE_LOAD_NOISE, CONF_OPTIMIZER_N_RUNS, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
+                    CONF_SCAN_INTERVAL_MINUTES, CONF_ENABLED,
+                    CONF_GRID_ALLOWANCE_W,
+                    CONF_BASE_LOAD_NOISE, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
                     CONF_SAMPLE_INTERVAL_SECONDS,
                     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
                     CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
@@ -869,7 +843,6 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 ),
                 vol.Optional(CONF_DEVICE_ALLOWED_START, default=cd.get(CONF_DEVICE_ALLOWED_START, DEFAULT_ALLOWED_START)): selector.TimeSelector(),
                 vol.Optional(CONF_DEVICE_ALLOWED_END,   default=cd.get(CONF_DEVICE_ALLOWED_END,   DEFAULT_ALLOWED_END)):   selector.TimeSelector(),
-                vol.Optional(CONF_DEVICE_MUST_RUN_DAILY, default=cd.get(CONF_DEVICE_MUST_RUN_DAILY, False)): selector.BooleanSelector(),
                 vol.Optional(CONF_DEVICE_WEIGHT_PRIORITY, default=cd.get(CONF_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_PRIORITY)): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
                 ),
@@ -947,22 +920,6 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
     d = defaults or {}
     return vol.Schema({
         vol.Optional(
-            CONF_WEIGHT_PV_SURPLUS,
-            default=d.get(CONF_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_PV_SURPLUS),
-        ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
-        vol.Optional(
-            CONF_WEIGHT_TEMPO,
-            default=d.get(CONF_WEIGHT_TEMPO, DEFAULT_WEIGHT_TEMPO),
-        ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
-        vol.Optional(
-            CONF_WEIGHT_BATTERY_SOC,
-            default=d.get(CONF_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_BATTERY_SOC),
-        ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
-        vol.Optional(
-            CONF_WEIGHT_SOLAR,
-            default=d.get(CONF_WEIGHT_SOLAR, DEFAULT_WEIGHT_SOLAR),
-        ): selector.NumberSelector(selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)),
-        vol.Optional(
             CONF_SCAN_INTERVAL_MINUTES,
             default=d.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL),
         ): selector.NumberSelector(
@@ -975,12 +932,6 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
             selector.NumberSelectorConfig(min=10, max=3600, step=10, unit_of_measurement="s")
         ),
         vol.Optional(
-            CONF_DISPATCH_THRESHOLD,
-            default=d.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD),
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
-        ),
-        vol.Optional(
             CONF_GRID_ALLOWANCE_W,
             default=d.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W),
         ): selector.NumberSelector(
@@ -991,22 +942,10 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
             default=d.get(CONF_ENABLED, DEFAULT_ENABLED),
         ): selector.BooleanSelector(),
         vol.Optional(
-            CONF_OPTIMIZER_ALPHA,
-            default=d.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA),
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
-        ),
-        vol.Optional(
             CONF_BASE_LOAD_NOISE,
             default=d.get(CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0.0, max=1.0, step=0.05)
-        ),
-        vol.Optional(
-            CONF_OPTIMIZER_N_RUNS,
-            default=d.get(CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS),
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(min=1, max=30, step=1, mode=selector.NumberSelectorMode.BOX)
         ),
         vol.Optional(
             CONF_RISK_LAMBDA,

@@ -10,14 +10,10 @@ from custom_components.helios.daily_optimizer import (
     season_from_date,
     cloud_from_forecast,
 )
-from custom_components.helios.const import (
-    DEFAULT_WEIGHT_PV_SURPLUS,
-    DEFAULT_WEIGHT_TEMPO,
-    DEFAULT_WEIGHT_BATTERY_SOC,
-    DEFAULT_WEIGHT_SOLAR,
-    DEFAULT_OPTIMIZER_ALPHA,
-    DEFAULT_DISPATCH_THRESHOLD,
-)
+_DEFAULT_W_SURPLUS = 0.4
+_DEFAULT_W_TEMPO   = 0.3
+_DEFAULT_W_SOC     = 0.2
+_DEFAULT_W_SOLAR   = 0.1
 
 
 # ---------------------------------------------------------------------------
@@ -29,20 +25,20 @@ class TestScoringEngineWeights:
 
     def _engine(self, **overrides) -> ScoringEngine:
         cfg = {
-            "weight_pv_surplus":  DEFAULT_WEIGHT_PV_SURPLUS,
-            "weight_tempo":       DEFAULT_WEIGHT_TEMPO,
-            "weight_battery_soc": DEFAULT_WEIGHT_BATTERY_SOC,
-            "weight_solar":    DEFAULT_WEIGHT_SOLAR,
+            "weight_pv_surplus":  _DEFAULT_W_SURPLUS,
+            "weight_tempo":       _DEFAULT_W_TEMPO,
+            "weight_battery_soc": _DEFAULT_W_SOC,
+            "weight_solar":       _DEFAULT_W_SOLAR,
         }
         cfg.update(overrides)
         return ScoringEngine(cfg)
 
     def test_default_weights_loaded(self):
         eng = self._engine()
-        assert eng.w_surplus  == DEFAULT_WEIGHT_PV_SURPLUS
-        assert eng.w_tempo    == DEFAULT_WEIGHT_TEMPO
-        assert eng.w_soc      == DEFAULT_WEIGHT_BATTERY_SOC
-        assert eng.w_solar == DEFAULT_WEIGHT_SOLAR
+        assert eng.w_surplus  == _DEFAULT_W_SURPLUS
+        assert eng.w_tempo    == _DEFAULT_W_TEMPO
+        assert eng.w_soc      == _DEFAULT_W_SOC
+        assert eng.w_solar    == _DEFAULT_W_SOLAR
 
     def test_update_weights_replaces_all(self):
         eng = self._engine()
@@ -62,9 +58,9 @@ class TestScoringEngineWeights:
         eng = self._engine()
         eng.update_weights({"weight_pv_surplus": 0.6})
         assert eng.w_surplus  == 0.6
-        assert eng.w_tempo    == DEFAULT_WEIGHT_TEMPO      # unchanged
-        assert eng.w_soc      == DEFAULT_WEIGHT_BATTERY_SOC
-        assert eng.w_solar == DEFAULT_WEIGHT_SOLAR
+        assert eng.w_tempo    == _DEFAULT_W_TEMPO      # unchanged
+        assert eng.w_soc      == _DEFAULT_W_SOC
+        assert eng.w_solar    == _DEFAULT_W_SOLAR
 
     def test_score_range_always_01(self):
         """Computed score must always stay in [0, 1]."""
@@ -329,7 +325,6 @@ class TestDispatchThresholdApplication:
         from custom_components.helios.daily_optimizer import async_run_daily_optimization
         from custom_components.helios.const import (
             CONF_PEAK_PV_W, CONF_BATTERY_ENABLED, CONF_DEVICES,
-            CONF_OPTIMIZER_ALPHA,
         )
         from custom_components.helios.simulation.optimizer import OptResult
 
@@ -345,9 +340,9 @@ class TestDispatchThresholdApplication:
             CONF_PEAK_PV_W:        3000.0,
             CONF_BATTERY_ENABLED:  False,
             CONF_DEVICES:          [],
-            CONF_OPTIMIZER_ALPHA:  0.5,
+            "optimizer_alpha":     0.5,
         }
-        coordinator.dispatch_threshold = DEFAULT_DISPATCH_THRESHOLD
+        coordinator.dispatch_threshold = 0.3
         coordinator.async_save_optimizer_state = AsyncMock()
 
         # Fake hass — async_add_executor_job returns fake results directly

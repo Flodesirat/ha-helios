@@ -26,7 +26,7 @@ from .const import (
     CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX,
     CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
-    CONF_DEVICES, CONF_ENABLED, DEFAULT_ENABLED, CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD,
+    CONF_DEVICES, CONF_ENABLED, DEFAULT_ENABLED,
     CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W,
     CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA,
     CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS,
@@ -81,9 +81,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         ema_alpha = float(cfg.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA))
         self.consumption_learner = ConsumptionLearner(hass, entry.entry_id, alpha=ema_alpha)
         self._optimizer_store  = Store(hass, STORAGE_VERSION, STORAGE_KEY_OPTIMIZER)
-        self.dispatch_threshold: float = float(
-            cfg.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD)
-        )
+        self.dispatch_threshold: float = float(cfg.get("dispatch_threshold", 0.3))
         self.grid_allowance_w: float = float(
             cfg.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W)
         )

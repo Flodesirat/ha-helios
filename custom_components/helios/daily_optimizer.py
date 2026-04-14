@@ -31,14 +31,11 @@ from .const import (
     CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY,
     CONF_FORECAST_ENTITY,
     CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W,
-    CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA,
     CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE,
-    CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS,
     CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA,
     TEMPO_COLORS, normalize_tempo_color,
     CONF_DEVICE_NAME, CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY, CONF_DEVICE_TYPE,
     CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
-    CONF_DEVICE_MUST_RUN_DAILY,
     CONF_DEVICE_WEIGHT_PRIORITY, CONF_DEVICE_WEIGHT_FIT, CONF_DEVICE_WEIGHT_URGENCY,
     DEFAULT_DEVICE_PRIORITY, DEFAULT_DEVICE_MIN_ON_MINUTES,
     DEFAULT_ALLOWED_START, DEFAULT_ALLOWED_END,
@@ -191,7 +188,7 @@ def ha_devices_to_sim(
             allowed_end=_t(d.get(CONF_DEVICE_ALLOWED_END, DEFAULT_ALLOWED_END), DEFAULT_ALLOWED_END),
             priority=int(d.get(CONF_DEVICE_PRIORITY, DEFAULT_DEVICE_PRIORITY)),
             min_on_minutes=float(d.get(CONF_DEVICE_MIN_ON_MINUTES, DEFAULT_DEVICE_MIN_ON_MINUTES)),
-            must_run_daily=bool(d.get(CONF_DEVICE_MUST_RUN_DAILY, False)),
+            must_run_daily=bool(d.get("device_must_run_daily", False)),
             w_priority=float(d.get(CONF_DEVICE_WEIGHT_PRIORITY, DEFAULT_DEVICE_WEIGHT_PRIORITY)),
             w_fit=float(d.get(CONF_DEVICE_WEIGHT_FIT, DEFAULT_DEVICE_WEIGHT_FIT)),
             w_urgency=float(d.get(CONF_DEVICE_WEIGHT_URGENCY, DEFAULT_DEVICE_WEIGHT_URGENCY)),
@@ -421,9 +418,9 @@ async def async_run_daily_optimization(
                 copy.deepcopy(initial_managed_devices),
             )
 
-        objective_alpha  = float(cfg.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA))
+        objective_alpha  = float(cfg.get("optimizer_alpha", 0.5))
         base_load_noise  = float(cfg.get(CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE))
-        optimizer_n_runs = int(cfg.get(CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS))
+        optimizer_n_runs = int(cfg.get("optimizer_n_runs", 5))
         risk_lambda      = float(cfg.get(CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA))
         results = optimize(
             sim_cfg,
@@ -515,7 +512,7 @@ async def async_run_daily_optimization(
         "bat_soc_start": bat_soc_start,
         "forecast_kwh": forecast_kwh,
         "peak_pv_w": peak_pv_w,
-        "objective_alpha": float(cfg.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA)),
+        "objective_alpha": float(cfg.get("optimizer_alpha", 0.5)),
         "ema_sample_count": coordinator.consumption_learner.sample_count,
     }
     coordinator.optimizer_chosen = {

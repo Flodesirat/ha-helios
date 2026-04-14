@@ -20,7 +20,7 @@ from .const import (
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
     CONF_DEVICE_POWER_W, CONF_DEVICE_POWER_ENTITY, CONF_DEVICE_PRIORITY,
     CONF_DEVICE_MIN_ON_MINUTES, CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
-    CONF_DEVICE_INTERRUPTIBLE, CONF_DEVICE_MUST_RUN_DAILY, CONF_DEVICE_DEADLINE,
+    CONF_DEVICE_INTERRUPTIBLE, CONF_DEVICE_DEADLINE,
     CONF_DEVICE_WEIGHT_PRIORITY, CONF_DEVICE_WEIGHT_FIT, CONF_DEVICE_WEIGHT_URGENCY,
     # EV
     CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET, CONF_EV_PLUGGED_ENTITY,
@@ -119,7 +119,7 @@ class ManagedDevice:
         # Pre-parsed for efficiency (called every dispatch cycle per device)
         self._allowed_start_t: time | None = _parse_time(self.allowed_start)
         self._allowed_end_t: time | None   = _parse_time(self.allowed_end)
-        self.must_run_daily: bool = bool(config.get(CONF_DEVICE_MUST_RUN_DAILY, False))
+        self.must_run_daily: bool = bool(config.get("device_must_run_daily", False))
         self.deadline: str | None = config.get(CONF_DEVICE_DEADLINE)
 
         # Interruptible is derived from device type (explicit override allowed)

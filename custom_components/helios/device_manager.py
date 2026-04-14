@@ -15,12 +15,12 @@ from .managed_device import ManagedDevice
 
 from .const import (
     DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE,
-    CONF_SCAN_INTERVAL_MINUTES, CONF_DISPATCH_THRESHOLD,
+    CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
     TEMPO_RED,
     APPLIANCE_STATE_IDLE, APPLIANCE_STATE_PREPARING, APPLIANCE_STATE_RUNNING,
     APPLIANCE_STATE_DONE,
-    DEFAULT_SCAN_INTERVAL, DEFAULT_DISPATCH_THRESHOLD,
+    DEFAULT_SCAN_INTERVAL,
     STORAGE_KEY, STORAGE_VERSION,
 )
 
@@ -44,7 +44,7 @@ class DeviceManager:
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._coordinator = None  # Set by EnergyOptimizerCoordinator after construction
         self._scan_interval: float = float(config.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL))
-        self._dispatch_threshold: float = float(config.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD))
+        self._dispatch_threshold: float = float(config.get("dispatch_threshold", 0.3))
         # Decision log — rolling buffer, max 100 entries
         self.decision_log: deque[dict] = deque(maxlen=100)
         # Remaining dispatch budget after last greedy allocation

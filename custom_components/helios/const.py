@@ -19,6 +19,7 @@ CONF_GRID_SUBSCRIPTION_W     = "grid_subscription_w"     # puissance souscrite a
 # Config entry keys — battery
 # ---------------------------------------------------------------------------
 CONF_BATTERY_ENABLED              = "battery_enabled"
+CONF_BATTERY_PRIORITY             = "battery_priority"
 CONF_BATTERY_SOC_ENTITY           = "battery_soc_entity"
 CONF_BATTERY_CHARGE_SCRIPT        = "battery_charge_script"
 CONF_BATTERY_AUTOCONSUM_SCRIPT    = "battery_autoconsum_script"
@@ -53,7 +54,6 @@ CONF_DEVICE_MIN_ON_MINUTES = "device_min_on_minutes"
 CONF_DEVICE_ALLOWED_START  = "device_allowed_start"
 CONF_DEVICE_ALLOWED_END    = "device_allowed_end"
 CONF_DEVICE_INTERRUPTIBLE  = "device_interruptible"    # derived from type, stored explicitly
-CONF_DEVICE_MUST_RUN_DAILY = "device_must_run_daily"
 CONF_DEVICE_DEADLINE       = "device_deadline"         # "HH:MM" finish-by time
 
 # Per-device dispatch weights (must sum to 1.0 — validated in config flow)
@@ -121,20 +121,10 @@ APPLIANCE_STATE_RUNNING   = "running"
 APPLIANCE_STATE_DONE      = "done"
 
 # ---------------------------------------------------------------------------
-# Config entry keys — scoring weights (ScoringEngine)
-# ---------------------------------------------------------------------------
-CONF_WEIGHT_PV_SURPLUS   = "weight_pv_surplus"
-CONF_WEIGHT_TEMPO        = "weight_tempo"
-CONF_WEIGHT_BATTERY_SOC  = "weight_battery_soc"
-CONF_WEIGHT_SOLAR        = "weight_solar"
-
-# ---------------------------------------------------------------------------
 # Config entry keys — general / strategy
 # ---------------------------------------------------------------------------
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
-CONF_DISPATCH_THRESHOLD    = "dispatch_threshold"  # global_score below which no dispatch
 CONF_GRID_ALLOWANCE_W      = "grid_allowance_w"    # W autorisés depuis le réseau en mode Pleine (SOC ≥ 96 %)
-CONF_OPTIMIZER_ALPHA       = "optimizer_alpha"     # 0.0 = économies pures, 1.0 = autoconsommation pure
 # Off-peak time slots (global, used by water heater HC logic) — HH:MM strings
 CONF_OFF_PEAK_1_START = "off_peak_1_start"
 CONF_OFF_PEAK_1_END   = "off_peak_1_end"
@@ -142,7 +132,6 @@ CONF_OFF_PEAK_2_START = "off_peak_2_start"
 CONF_OFF_PEAK_2_END   = "off_peak_2_end"
 
 CONF_BASE_LOAD_NOISE       = "base_load_noise"     # std-dev du bruit multiplicatif journalier sur la charge
-CONF_OPTIMIZER_N_RUNS      = "optimizer_n_runs"    # nombre de tirages Monte Carlo par combinaison
 CONF_RISK_LAMBDA           = "risk_lambda"         # coefficient de pénalité sur l'écart-type de l'objectif
 CONF_EMA_ALPHA             = "ema_alpha"           # facteur d'apprentissage EMA de la charge de fond
 CONF_EMA_ENABLED           = "ema_enabled"         # activer/désactiver l'apprentissage EMA
@@ -205,11 +194,8 @@ STORAGE_VERSION = 1
 # Defaults
 # ---------------------------------------------------------------------------
 DEFAULT_SCAN_INTERVAL              = 5      # minutes
-DEFAULT_DISPATCH_THRESHOLD         = 0.3
 DEFAULT_GRID_ALLOWANCE_W           = 250    # W
-DEFAULT_OPTIMIZER_ALPHA            = 0.5    # équilibré autoconsommation / économies
 DEFAULT_BASE_LOAD_NOISE            = 0.20   # ±20 % de bruit journalier sur la charge domestique
-DEFAULT_OPTIMIZER_N_RUNS           = 5      # 5 tirages Monte Carlo par combinaison de poids
 DEFAULT_RISK_LAMBDA                = 0.5    # obj = mean − 0.5 × std  (risque modéré)
 DEFAULT_EMA_ALPHA                  = 0.05   # convergence lente (~1 semaine) pour stabilité
 DEFAULT_EMA_ENABLED                = True   # apprentissage activé par défaut
@@ -217,15 +203,11 @@ DEFAULT_SAMPLE_INTERVAL_SECONDS    = 30     # s — fréquence d'échantillonnag
 DEFAULT_PEAK_PV_W                  = 3000.0 # W — used when no real-time data available
 DEFAULT_GRID_SUBSCRIPTION_W        = 9000   # W
 
+DEFAULT_BATTERY_PRIORITY           = 7
 DEFAULT_BATTERY_SOC_MIN            = 10     # %
 DEFAULT_BATTERY_SOC_MAX            = 95     # %
 DEFAULT_BATTERY_SOC_RESERVE_ROUGE  = 80     # %
 DEFAULT_BATTERY_CAPACITY_KWH       = 5.0
-
-DEFAULT_WEIGHT_PV_SURPLUS          = 0.4
-DEFAULT_WEIGHT_TEMPO               = 0.3
-DEFAULT_WEIGHT_BATTERY_SOC         = 0.2
-DEFAULT_WEIGHT_SOLAR               = 0.1
 
 DEFAULT_DEVICE_PRIORITY            = 5
 DEFAULT_DEVICE_MIN_ON_MINUTES      = 30

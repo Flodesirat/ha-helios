@@ -28,18 +28,10 @@ from .const import (
     # Strategy
     CONF_ENABLED, DEFAULT_ENABLED, DEFAULT_SCAN_INTERVAL,
     CONF_SCAN_INTERVAL_MINUTES,
-    CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD,
     CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W,
-    CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA,
     CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA,
     CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE,
-    CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS,
     CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA,
-    # Scoring weights
-    CONF_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_PV_SURPLUS,
-    CONF_WEIGHT_TEMPO, DEFAULT_WEIGHT_TEMPO,
-    CONF_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_BATTERY_SOC,
-    CONF_WEIGHT_SOLAR, DEFAULT_WEIGHT_SOLAR,
 )
 from .coordinator import EnergyOptimizerCoordinator
 from .managed_device import ManagedDevice
@@ -208,17 +200,17 @@ async def async_get_config_entry_diagnostics(
         "strategy": {
             "enabled":              cfg.get(CONF_ENABLED, DEFAULT_ENABLED),
             "scan_interval_minutes": cfg.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL),
-            "dispatch_threshold":   cfg.get(CONF_DISPATCH_THRESHOLD, DEFAULT_DISPATCH_THRESHOLD),
+            "dispatch_threshold":   cfg.get("dispatch_threshold", 0.3),
             "grid_allowance_w":     cfg.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W),
-            "optimizer_alpha":      cfg.get(CONF_OPTIMIZER_ALPHA, DEFAULT_OPTIMIZER_ALPHA),
+            "optimizer_alpha":      cfg.get("optimizer_alpha", 0.5),
             "ema_alpha":            cfg.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA),
             "base_load_noise":      cfg.get(CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE),
-            "optimizer_n_runs":     cfg.get(CONF_OPTIMIZER_N_RUNS, DEFAULT_OPTIMIZER_N_RUNS),
+            "optimizer_n_runs":     cfg.get("optimizer_n_runs", 5),
             "risk_lambda":          cfg.get(CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA),
-            "weight_pv_surplus":    cfg.get(CONF_WEIGHT_PV_SURPLUS, DEFAULT_WEIGHT_PV_SURPLUS),
-            "weight_tempo":         cfg.get(CONF_WEIGHT_TEMPO, DEFAULT_WEIGHT_TEMPO),
-            "weight_battery_soc":   cfg.get(CONF_WEIGHT_BATTERY_SOC, DEFAULT_WEIGHT_BATTERY_SOC),
-            "weight_solar":         cfg.get(CONF_WEIGHT_SOLAR, DEFAULT_WEIGHT_SOLAR),
+            "weight_pv_surplus":    cfg.get("weight_pv_surplus", 0.4),
+            "weight_tempo":         cfg.get("weight_tempo", 0.3),
+            "weight_battery_soc":   cfg.get("weight_battery_soc", 0.2),
+            "weight_solar":         cfg.get("weight_solar", 0.1),
         },
     }
 
