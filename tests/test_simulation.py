@@ -101,15 +101,17 @@ def _wh_sim_device(wh_temp: float = 50.0, **kwargs) -> SimDevice:
 
 def _clear_summer_cfg(**kwargs) -> SimConfig:
     # Build defaults first; caller's kwargs override them.
+    # dispatch_threshold removed — unified algorithm has no threshold.
     defaults: dict = dict(
         season="summer",
         cloud="clear",
         peak_pv_w=5000.0,
         bat_enabled=False,
-        dispatch_threshold=0.3,
         forecast_noise=0.0,
         base_load_noise=0.0,
     )
+    # Drop legacy key so callers passing dispatch_threshold don't crash
+    kwargs.pop("dispatch_threshold", None)
     defaults.update(kwargs)
     return SimConfig(**defaults)
 
@@ -304,20 +306,20 @@ class TestRunWithManagedDevices:
         expected_kwh = active_steps * 2000 * step_h / 1000
         assert result.devices[0].energy_kwh == pytest.approx(expected_kwh, rel=1e-6)
 
-    def test_wh_must_run_forces_on_at_night_low_score(self):
-        """At night, if WH temp < legionella min, must_run forces it on even with score 0."""
+    def test_wh_urgency_forces_on_at_night_below_legionella_min(self):
+        """At night, if WH temp < legionella min, urgency=1 forces it ON."""
         sd = _wh_sim_device(wh_temp=40.0, allowed_start=0.0, allowed_end=24.0)
         md = ManagedDevice(_wh_config())
 
-        # Very low threshold so nothing dispatches normally, but must_run bypasses it
+        # No threshold in the unified algorithm — urgency drives the decision.
         result = simulate(
-            _clear_summer_cfg(dispatch_threshold=0.99),
+            _clear_summer_cfg(),
             [deepcopy(sd)],
             managed_devices=[deepcopy(md)],
         )
-        # The WH must have activated (because legionella safety overrides score)
+        # The WH must have activated (because legionella safety sets urgency=1)
         active_steps = [s for s in result.steps if "ChauffeEau" in s.active_devices]
-        assert len(active_steps) > 0, "Legionella must_run must override high threshold"
+        assert len(active_steps) > 0, "Legionella urgency must force WH ON"
 
     def test_result_devices_list_matches_input_order(self):
         """result.devices must be the same list as the input devices (mutated in-place)."""
@@ -380,46 +382,14 @@ class TestHaDevicesToSim:
 
 
 # ---------------------------------------------------------------------------
-# optimizer.optimize() — handles tuple-returning devices_fn
+# optimizer.optimize() — removed; stub raises NotImplementedError
 # ---------------------------------------------------------------------------
 
-class TestOptimizerWithManagedDevices:
+class TestOptimizerStub:
 
-    def test_optimize_with_tuple_devices_fn(self):
-        """optimize() must work when devices_fn() returns (sim_devs, managed_devs)."""
+    def test_optimize_raises_not_implemented(self):
+        """optimizer.optimize() is stubbed and must raise NotImplementedError."""
         from custom_components.helios.simulation.optimizer import optimize
-
-        sd = _wh_sim_device(wh_temp=50.0)
-        md = ManagedDevice(_wh_config())
-        cfg = SimConfig(season="spring", cloud="clear", peak_pv_w=3000,
-                        bat_enabled=False, dispatch_threshold=0.3,
-                        forecast_noise=0.0, base_load_noise=0.0)
-
-        def _tuple_fn():
-            return [deepcopy(sd)], [deepcopy(md)]
-
-        results = optimize(
-            cfg, _tuple_fn,
-            # weight_step=0.3 → combos exist (0.3+0.3+0.3+0.1=1.0)
-            weight_step=0.3, threshold_values=[0.3], n_runs=1, progress=False,
-        )
-        assert len(results) > 0
-        assert results[0].objective is not None
-
-    def test_optimize_with_plain_list_devices_fn(self):
-        """optimize() must still work with the old-style list-returning devices_fn."""
-        from custom_components.helios.simulation.optimizer import optimize
-
-        sd = _wh_sim_device(wh_temp=50.0)
-        cfg = SimConfig(season="spring", cloud="clear", peak_pv_w=3000,
-                        bat_enabled=False, dispatch_threshold=0.3,
-                        forecast_noise=0.0, base_load_noise=0.0)
-
-        def _plain_fn():
-            return [deepcopy(sd)]
-
-        results = optimize(
-            cfg, _plain_fn,
-            weight_step=0.3, threshold_values=[0.3], n_runs=1, progress=False,
-        )
-        assert len(results) > 0
+        import pytest
+        with pytest.raises(NotImplementedError):
+            optimize(None, None)

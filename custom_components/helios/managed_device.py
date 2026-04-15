@@ -705,6 +705,9 @@ class BatteryDevice:
         self.last_reason: str       = ""
         self.last_effective_score: float = 0.0
         self.min_on_remaining_s: float   = 0.0
+        # BatteryDevice has no min_on concept — turned_on_at always None so
+        # _min_on_elapsed() returns True immediately (no constraint to enforce).
+        self.turned_on_at: float | None = None
 
     def update(self, soc: float | None, tempo_red: bool) -> None:
         """Update runtime state before each dispatch cycle."""

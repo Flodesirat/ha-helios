@@ -14,10 +14,10 @@ from typing import Callable
 _TARIFF_JSON = Path(__file__).parent / "config" / "tariff.json"
 
 from .profiles import pv_power_w, base_load_w, tempo_color, solar_elevation, Season, CloudCover
-from .devices import SimDevice, default_devices
+from .devices import SimDevice, SimBatteryDevice, default_devices
 from .sim_hass import SimHass
 from custom_components.helios.scoring_engine import ScoringEngine as _ScoringEngine
-from custom_components.helios.managed_device import ManagedDevice as _ManagedDevice
+from custom_components.helios.managed_device import ManagedDevice as _ManagedDevice, BatteryDevice as _BatteryDevice
 from custom_components.helios.const import APPLIANCE_STATE_IDLE, APPLIANCE_STATE_PREPARING
 from custom_components.helios.device_manager import DeviceManager as _DeviceManager
 
@@ -109,7 +109,7 @@ class _SimDatetimeProxy:
 
     Installed on the ``device_manager`` and ``managed_device`` module namespaces
     for the duration of the simulation so that allowed-window checks and
-    must_run_now logic operate on simulated wall-clock time rather than real time.
+    urgency logic operate on simulated wall-clock time rather than real time.
     """
 
     def __init__(self) -> None:
@@ -138,12 +138,11 @@ _sim_dt_proxy = _SimDatetimeProxy()
 
 def _build_sim_device_manager(
     managed_devices: list[_ManagedDevice],
-    cfg: "SimConfig",
+    sim_bat: SimBatteryDevice | None,
 ) -> _DeviceManager:
     """Create a DeviceManager bypassing the normal __init__ (which needs hass/Store)."""
     dm = object.__new__(_DeviceManager)
     dm.devices = managed_devices
-    dm._dispatch_threshold = cfg.dispatch_threshold
     dm._scan_interval = float(STEP_MINUTES)
     dm.decision_log = deque(maxlen=1000)
     dm.remaining_w = 0.0
@@ -152,7 +151,8 @@ def _build_sim_device_manager(
     dm._hass = None
     dm._unsub_ready_listeners = []
     dm._last_suppressed_names = frozenset()
-    dm.battery_device = None  # BatteryDevice not used in simulation (Lot 8)
+    # Wire up the real BatteryDevice (from SimBatteryDevice) if provided
+    dm.battery_device = sim_bat.as_battery_device() if sim_bat is not None else None
     return dm
 
 
@@ -199,6 +199,7 @@ class StepResult:
     bat_action: str
     bat_w: float              # >0 = charging, <0 = discharging, 0 = idle
     score: float
+    remaining_w: float = 0.0  # budget remaining after dispatch
     active_devices: list[str] = field(default_factory=list)
 
 
@@ -221,7 +222,8 @@ class SimConfig:
     bat_soc_max: float = 95.0
     bat_efficiency: float = 0.75       # round-trip efficiency (0–1)
     bat_discharge_start: float = 6.0   # hour before which battery never discharges
-    dispatch_threshold: float = 0.30
+    bat_priority: int = 7              # BatteryDevice dispatch priority (1–10)
+    bat_soc_min_rouge: float = 80.0    # SOC reserve on Tempo red days
     forecast_noise: float = 0.15    # std-dev of forecast error (0=perfect, 0.15=±15%)
     base_load_noise: float = 0.0   # day-level multiplicative Gaussian noise on base load
     base_load_fn: Callable[[float], float] | None = None
@@ -273,8 +275,9 @@ async def async_run(
 ) -> SimResult:
     """Run a full-day simulation using the real DeviceManager.async_dispatch logic.
 
-    This mirrors what the live coordinator does each 5-min scan cycle, including:
-    SOC gate, overcommit detection, must_run overrides, and the greedy allocation loop.
+    This mirrors what the live coordinator does each 5-min scan cycle, including
+    the greedy allocation loop with dynamic fit recalculation and BatteryDevice
+    integration.
 
     Args:
         cfg:             Simulation configuration.
@@ -291,8 +294,19 @@ async def async_run(
     if managed_devices is None:
         managed_devices = _managed_from_sim(devices, sim_date=_sim_date)
 
+    # Build SimBatteryDevice if battery enabled
+    sim_bat: SimBatteryDevice | None = None
+    if cfg.bat_enabled:
+        sim_bat = SimBatteryDevice(
+            priority=cfg.bat_priority,
+            soc_min=cfg.bat_soc_min,
+            soc_min_rouge=cfg.bat_soc_min_rouge,
+            soc_max=cfg.bat_soc_max,
+            charge_max_w=cfg.bat_max_charge_w,
+        )
+
     # Build DeviceManager (bypasses __init__ to avoid hass / Store dependency)
-    dm = _build_sim_device_manager(managed_devices, cfg)
+    dm = _build_sim_device_manager(managed_devices, sim_bat)
 
     step_h = STEP_MINUTES / 60.0
     bat_soc = cfg.bat_soc_start
@@ -357,8 +371,6 @@ async def async_run(
 
             # Battery discharge headroom — mirrors coordinator._compute_bat_available_w:
             # available whenever SOC > soc_min, regardless of current PV production.
-            # This lets the battery supplement device loads (washing machine, etc.) even
-            # when there is positive PV surplus, which is the correct real-world behaviour.
             bat_can_discharge = (
                 cfg.bat_enabled and bat_soc > cfg.bat_soc_min and hour >= cfg.bat_discharge_start
             )
@@ -373,8 +385,6 @@ async def async_run(
                 )
 
             # Virtual surplus (PV − base load, without Helios devices)
-            # Mirrors coordinator._build_score_input: already adds back helios_on_w
-            # because base_w doesn't include them.
             surplus_w = max(0.0, pv_w - base_w)
 
             global_score = _score(
@@ -385,10 +395,9 @@ async def async_run(
                 elevation=elev,
             )
 
-            # Real surplus before dispatch (PV − base − currently-ON devices)
-            # Used by DeviceManager for the overcommit check.
-            on_w = sum(md.power_w for md in managed_devices if md.is_on)
-            real_surplus_w = max(0.0, pv_w - base_w - on_w)
+            # Update SimBatteryDevice state before each dispatch cycle
+            if sim_bat is not None:
+                sim_bat.update(bat_soc if cfg.bat_enabled else None, t_color == "red")
 
             # Build SimHass from current physical state of all sim devices
             state_dict: dict[str, str] = {}
@@ -399,9 +408,7 @@ async def async_run(
             score_input: dict = {
                 "global_score":       global_score,
                 "surplus_w":          surplus_w,
-                "real_surplus_w":     real_surplus_w,
                 "bat_available_w":    bat_available_w,
-                "dispatch_threshold": cfg.dispatch_threshold,
                 "battery_soc":        bat_soc if cfg.bat_enabled else None,
                 "tempo_color":        t_color,
                 "pv_power_w":         pv_w,
@@ -411,7 +418,7 @@ async def async_run(
                 "grid_allowance_w":   (
                     250.0 if cfg.bat_enabled and bat_soc >= cfg.bat_soc_max else 0.0
                 ),
-                "soc_reserve_rouge":  80.0,
+                "soc_reserve_rouge":  cfg.bat_soc_min_rouge,
                 "forecast_kwh":       _forecast_table[i],
             }
 
@@ -446,13 +453,16 @@ async def async_run(
             ts = f"{h:02d}:{m:02d}"
             for entry in list(dm.decision_log)[dm_log_len:]:
                 decision_log.append({
-                    "ts":       ts,
-                    "device":   entry["device"],
-                    "action":   entry["action"],
-                    "score":    entry.get("global_score", round(global_score, 3)),
-                    "pv_w":     entry.get("pv_w", round(pv_w)),
+                    "ts":        ts,
+                    "device":    entry["device"],
+                    "action":    entry["action"],
+                    "score":     entry.get("global_score", round(global_score, 3)),
+                    "pv_w":      entry.get("pv_w", round(pv_w)),
                     "surplus_w": entry.get("surplus_w", round(surplus_w)),
-                    "bat_soc":  round(bat_soc, 1),
+                    "bat_soc":   round(bat_soc, 1),
+                    "fit":       entry.get("fit", 0.0),
+                    "urgency":   entry.get("urgency", 0.0),
+                    "remaining_w": round(dm.remaining_w),
                 })
 
             # Power accounting
@@ -515,6 +525,7 @@ async def async_run(
                 bat_action=bat_action,
                 bat_w=bat_w,
                 score=global_score,
+                remaining_w=dm.remaining_w,
                 active_devices=[sd.name for sd in devices if sd.active],
             ))
 
@@ -540,7 +551,7 @@ async def async_run(
 
 
 # ---------------------------------------------------------------------------
-# Sync wrapper (called from executor threads — daily_optimizer, optimizer)
+# Sync wrapper (called from executor threads — daily_optimizer)
 # ---------------------------------------------------------------------------
 
 def run(

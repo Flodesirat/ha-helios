@@ -7,9 +7,9 @@ Usage (depuis la racine du dépôt) :
 Examples:
     python sim.py
     python sim.py --cloud cloudy --peak-pv 6000 --tempo red -v
-    python sim.py --no-battery --threshold 0.5
-    python sim.py --compare                      # toutes saisons × météo
-    python sim.py --optimize --opt-runs 5 --opt-risk-lambda 0.5
+    python sim.py --no-battery
+    python sim.py --compare
+    python sim.py -v --decisions
 """
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from pathlib import Path
 from .engine import SimConfig, SimResult, Tariff, run
 from .devices import default_devices, load_devices_from_json, load_appliance_schedule, apply_appliance_schedule
 from .profiles import load_base_load_from_json
-from .optimizer import OptResult, optimize
 
 _DEFAULT_SCHED = Path(__file__).parent / "config" / "appliance_schedule.json"
 
@@ -56,17 +55,17 @@ def print_report(result: SimResult, cfg: SimConfig, verbose: bool = False) -> No
         print()
         print(f"  Légende du tableau horaire")
         print(f"  ┌──────────────────────────────────────────────────────────────────────────┐")
-        print(f"  │  Réseau  +import (tiré du réseau)  /  -export (injecté sur le réseau)   │")
-        print(f"  │  Batterie  +charge (absorbe surplus PV)  /  -décharge (couvre déficit)  │")
-        print(f"  │  SOC     état de charge de la batterie en %                             │")
-        print(f"  │  Score   indice de dispatch [0–1] = f(surplus PV, Tempo, SOC, prévision)│")
-        print(f"  │          ≥ seuil ({cfg.dispatch_threshold:.2f}) → les appareils éligibles sont activés          │")
+        print(f"  │  Réseau   +import (tiré du réseau)  /  -export (injecté sur le réseau)  │")
+        print(f"  │  Batterie +charge (absorbe surplus PV)  /  -décharge (couvre déficit)   │")
+        print(f"  │  SOC      état de charge de la batterie en %                            │")
+        print(f"  │  Score    indice de dispatch [0–1] = f(surplus PV, Tempo, prévision)    │")
+        print(f"  │  Remaining budget restant après dispatch (W)                            │")
         print(f"  └──────────────────────────────────────────────────────────────────────────┘")
         print()
         print(f"  {'H':>5}  {'PV':>7}  {'Maison':>7}  {'Réseau':>8}  "
-              f"{'Batterie':>9}  {'SOC':>5}  {'Score':>5}  Appareils")
+              f"{'Batterie':>9}  {'SOC':>5}  {'Score':>5}  {'Remaining':>10}  Appareils")
         print(f"  {'─'*5}  {'─'*7}  {'─'*7}  {'─'*8}  "
-              f"{'─'*9}  {'─'*5}  {'─'*5}  {'─'*28}")
+              f"{'─'*9}  {'─'*5}  {'─'*5}  {'─'*10}  {'─'*28}")
 
         prev_h = -1
         for s in result.steps:
@@ -86,8 +85,9 @@ def print_report(result: SimResult, cfg: SimConfig, verbose: bool = False) -> No
             else:
                 bat_str = "—"
             devs = ", ".join(s.active_devices) if s.active_devices else "—"
+            rem_str = _fmt_w(s.remaining_w)
             print(f"  {h:02d}:00  {_fmt_w(s.pv_w):>7}  {_fmt_w(s.total_load_w):>7}  "
-                  f"{grid_str:>8}  {bat_str:>9}  {soc_str:>5}  {s.score:.2f}  {devs}")
+                  f"{grid_str:>8}  {bat_str:>9}  {soc_str:>5}  {s.score:.2f}  {rem_str:>10}  {devs}")
 
     print()
     print(f"  {'PV produit':<30} {result.e_pv_kwh:>6.2f} kWh")
@@ -121,97 +121,16 @@ def print_report(result: SimResult, cfg: SimConfig, verbose: bool = False) -> No
     print()
 
 
-def print_optimize(results: list[OptResult], top: int, alpha: float, n_runs: int, risk_lambda: float, args=None) -> None:
-    """Print optimization results table."""
-    print()
-    print("╔══════════════════════════════════════════════════════════════════════════════════╗")
-    print(f"║  HELIOS — Optimisation paramètres  (α={alpha:.1f} : autocons. / coût)              ║")
-    print("╚══════════════════════════════════════════════════════════════════════════════════╝")
-    print()
-    # Legend block
-    print(f"  Légende des colonnes d'objectif  (tirages Monte Carlo : {n_runs}  λ risque : {risk_lambda})")
-    print(f"  ┌──────────────────────────────────────────────────────────────────────────┐")
-    print(f"  │  Moy  = E[α·autocons + (1-α)·économie]  — moyenne sur les {n_runs} tirages{'':<{3 - len(str(n_runs))}} │")
-    print(f"  │  Std  = écart-type de l'objectif entre tirages (0 si déterministe)       │")
-    print(f"  │  Obj  = Moy − λ·Std  (objectif ajusté au risque, utilisé pour le tri)   │")
-    print(f"  │         λ=0 → tri sur la moyenne pure  /  λ élevé → pénalise instabilité│")
-    print(f"  └──────────────────────────────────────────────────────────────────────────┘")
-    print()
-    print(f"  {'#':>3}  {'Surplus':>7}  {'Tempo':>5}  {'SOC':>5}  {'Seuil':>5}"
-          f"  {'Autocons.':>10}  {'Économie':>9}  {'Coût':>6}  {'Obj (↑)':>8}  {'Moy':>8}  {'Std':>6}")
-    print(f"  {'─'*3}  {'─'*7}  {'─'*5}  {'─'*5}  {'─'*5}"
-          f"  {'─'*10}  {'─'*9}  {'─'*6}  {'─'*8}  {'─'*8}  {'─'*6}")
-    for i, r in enumerate(results[:top], 1):
-        print(f"  {i:>3}  {r.w_surplus:>6.0%}  {r.w_tempo:>4.0%}  {r.w_soc:>4.0%}"
-              f"  {r.threshold:>4.0%}"
-              f"  {_bar(r.autoconsumption, 8)} {r.autoconsumption*100:4.1f}%"
-              f"  {r.savings_rate*100:>7.1f}%"
-              f"  {r.cost_eur:>5.2f}€"
-              f"  {r.objective:>7.4f}"
-              f"  {r.obj_mean:>7.4f}"
-              f"  {r.obj_std:>5.4f}")
-    print()
-    best = results[0]
-    print("  ── Configuration optimale ──────────────────────────────────────────────────────")
-    print(f"  Ajouter dans SimConfig / scoring :")
-    print(f"    weight_pv_surplus  = {best.w_surplus}")
-    print(f"    weight_tempo       = {best.w_tempo}")
-    print(f"    weight_battery_soc = {best.w_soc}")
-    print(f"    weight_solar    = {best.w_solar}")
-    print(f"  dispatch_threshold   = {best.threshold}")
-    print()
-
-    # Build replay command
-    if args is not None:
-        parts = ["python sim.py -v"]
-        if args.season != "summer":        parts.append(f"--season {args.season}")
-        if args.cloud != "clear":          parts.append(f"--cloud {args.cloud}")
-        if args.peak_pv != 4000.0:         parts.append(f"--peak-pv {args.peak_pv:.0f}")
-        if args.tempo != "blue":           parts.append(f"--tempo {args.tempo}")
-        if args.bat_soc != 50.0:           parts.append(f"--bat-soc {args.bat_soc:.0f}")
-        if args.bat_capacity != 10.0:      parts.append(f"--bat-capacity {args.bat_capacity:.1f}")
-        if args.bat_charge_max != 2000.0:  parts.append(f"--bat-charge-max {args.bat_charge_max:.0f}")
-        if args.bat_discharge_max != 2000.0: parts.append(f"--bat-discharge-max {args.bat_discharge_max:.0f}")
-        if args.bat_efficiency != 0.75:    parts.append(f"--bat-efficiency {args.bat_efficiency}")
-        if args.bat_discharge_start != 6.0: parts.append(f"--bat-discharge-start {args.bat_discharge_start}")
-        if args.bat_soc_min != 20.0:       parts.append(f"--bat-soc-min {args.bat_soc_min:.0f}")
-        if args.bat_soc_max != 95.0:       parts.append(f"--bat-soc-max {args.bat_soc_max:.0f}")
-        if args.no_battery:                parts.append("--no-battery")
-        if args.forecast_noise != 0.15:    parts.append(f"--forecast-noise {args.forecast_noise}")
-        if args.devices:                   parts.append(f"--devices {args.devices}")
-        if args.base_load:                 parts.append(f"--base-load {args.base_load}")
-        if args.tariff:                    parts.append(f"--tariff {args.tariff}")
-        # Optimal weights and threshold
-        parts.append(f"--weight-surplus {best.w_surplus}")
-        parts.append(f"--weight-tempo {best.w_tempo}")
-        parts.append(f"--weight-soc {best.w_soc}")
-        parts.append(f"--weight-solar {best.w_solar}")
-        parts.append(f"--threshold {best.threshold}")
-        parts.append(f"--decision")
-
-        cmd = " \\\n    ".join(parts)
-        print("  ── Rejouer cette configuration heure par heure ─────────────────────────────────")
-        print()
-        print(f"  {cmd}")
-        print()
-
-
 def print_comparison(seasons: list[str], clouds: list[str], cfg_base: SimConfig, devices: list | None) -> None:
     """Run all season × cloud combinations and print a comparison table."""
     results: list[tuple[str, str, SimResult]] = []
     for season in seasons:
         for cloud in clouds:
-            cfg = SimConfig(
+            from dataclasses import replace
+            cfg = replace(
+                cfg_base,
                 season=season,
                 cloud=cloud,
-                peak_pv_w=cfg_base.peak_pv_w,
-                tempo=cfg_base.tempo,
-                bat_soc_start=cfg_base.bat_soc_start,
-                bat_enabled=cfg_base.bat_enabled,
-                bat_capacity_kwh=cfg_base.bat_capacity_kwh,
-                dispatch_threshold=cfg_base.dispatch_threshold,
-                base_load_fn=cfg_base.base_load_fn,
-                scoring=cfg_base.scoring,
             )
             results.append((season, cloud, run(cfg, devices)))
 
@@ -279,12 +198,14 @@ def main() -> None:
                         metavar="PCT", help="Battery minimum SOC (%%) — floor for discharge")
     parser.add_argument("--bat-soc-max", type=float, default=95.0,
                         metavar="PCT", help="Battery maximum SOC (%%) — ceiling for charge")
+    parser.add_argument("--bat-priority", type=int, default=7,
+                        metavar="1-10", help="Battery dispatch priority (1=low, 10=high, default: 7)")
+    parser.add_argument("--bat-soc-min-red", type=float, default=80.0,
+                        metavar="PCT", help="Battery SOC reserve on Tempo red days (%%)")
     parser.add_argument("--no-battery", action="store_true",
                         help="Disable battery")
     parser.add_argument("--forecast-noise", type=float, default=0.15,
                         metavar="0-1", help="Forecast error std-dev (0=perfect, 0.15=±15%%)")
-    parser.add_argument("--threshold", type=float, default=0.30,
-                        metavar="0-1", help="Dispatch score threshold")
     parser.add_argument("--weight-surplus", type=float, default=None,
                         metavar="0-1", help="Override PV surplus weight")
     parser.add_argument("--weight-tempo", type=float, default=None,
@@ -295,18 +216,8 @@ def main() -> None:
                         metavar="0-1", help="Override solar potential weight")
     parser.add_argument("--compare", action="store_true",
                         help="Compare all solar profiles in a table")
-    parser.add_argument("--optimize", action="store_true",
-                        help="Grid-search optimal scoring weights and dispatch threshold")
-    parser.add_argument("--opt-alpha", type=float, default=0.5, metavar="0-1",
-                        help="Objective weight: 1=autoconsumption only, 0=cost savings only")
-    parser.add_argument("--opt-runs", type=int, default=1, metavar="N",
-                        help="Monte Carlo runs per config (variance estimation)")
-    parser.add_argument("--opt-risk-lambda", type=float, default=0.5, metavar="0-2",
-                        help="Risk penalty λ: objective = mean − λ×std (0=pure mean, 2=very conservative)")
     parser.add_argument("--base-load-noise", type=float, default=0.0, metavar="0-1",
                         help="Std-dev of day-level multiplicative noise on base load (0=deterministic)")
-    parser.add_argument("--opt-top", type=int, default=10, metavar="N",
-                        help="Number of top results to display")
     parser.add_argument("--devices", metavar="JSON",
                         help="Path to devices JSON (default: simulation/config/devices.json)")
     parser.add_argument("--base-load", metavar="JSON",
@@ -357,7 +268,8 @@ def main() -> None:
         bat_discharge_start=args.bat_discharge_start,
         bat_soc_min=args.bat_soc_min,
         bat_soc_max=args.bat_soc_max,
-        dispatch_threshold=args.threshold,
+        bat_priority=args.bat_priority,
+        bat_soc_min_rouge=args.bat_soc_min_red,
         forecast_noise=args.forecast_noise,
         base_load_noise=args.base_load_noise,
         base_load_fn=base_load_fn,
@@ -372,43 +284,21 @@ def main() -> None:
             cfg,
             devices,
         )
-    elif args.optimize:
-        _opt_sched_path = Path(args.appliance_schedule) if args.appliance_schedule else (_DEFAULT_SCHED if _DEFAULT_SCHED.exists() else None)
-        _sched = load_appliance_schedule(_opt_sched_path) if _opt_sched_path else {}
-        if args.devices:
-            def devices_fn(_p=args.devices, _s=_sched):
-                devs = load_devices_from_json(_p)
-                if _s:
-                    apply_appliance_schedule(devs, _s)
-                return devs
-        elif _sched:
-            def devices_fn(_s=_sched):
-                devs = default_devices()
-                apply_appliance_schedule(devs, _s)
-                return devs
-        else:
-            devices_fn = default_devices
-        results = optimize(
-            cfg,
-            devices_fn,
-            objective_alpha=args.opt_alpha,
-            n_runs=args.opt_runs,
-            risk_lambda=args.opt_risk_lambda,
-            base_load_noise=args.base_load_noise,
-        )
-        print_optimize(results, top=args.opt_top, alpha=args.opt_alpha,
-                       n_runs=args.opt_runs, risk_lambda=args.opt_risk_lambda, args=args)
     else:
         result = run(cfg, devices)
         print_report(result, cfg, verbose=args.verbose)
         if args.decisions and result.decision_log:
             print()
             print("  ── Décisions appareils (5 min) ──────────────────────────────────────────────")
-            print(f"  {'Heure':>5}  {'Appareil':<18} {'Action':>4}  {'Score':>5}  {'PV':>6}  {'Surplus':>7}  {'SOC':>5}")
-            print(f"  {'─'*5}  {'─'*18}  {'─'*4}  {'─'*5}  {'─'*6}  {'─'*7}  {'─'*5}")
+            print(f"  {'Heure':>5}  {'Appareil':<18} {'Action':>6}  {'Eff.Score':>9}  {'Fit':>5}  {'Urgency':>7}  {'Remaining':>10}  {'SOC':>5}")
+            print(f"  {'─'*5}  {'─'*18}  {'─'*6}  {'─'*9}  {'─'*5}  {'─'*7}  {'─'*10}  {'─'*5}")
             for e in result.decision_log:
-                print(f"  {e['ts']:>5}  {e['device']:<18} {e['action']:>4}  {e['score']:>5.3f}"
-                      f"  {e['pv_w']:>5}W  {e['surplus_w']:>6}W  {e['bat_soc']:>4.0f}%")
+                eff_score = e.get("score", 0.0)
+                fit_v = e.get("fit", 0.0)
+                urg_v = e.get("urgency", 0.0)
+                rem_v = e.get("remaining_w", 0)
+                print(f"  {e['ts']:>5}  {e['device']:<18} {e['action']:>6}  {eff_score:>9.3f}"
+                      f"  {fit_v:>5.3f}  {urg_v:>7.3f}  {rem_v:>10}W  {e['bat_soc']:>4.0f}%")
             print()
 
 

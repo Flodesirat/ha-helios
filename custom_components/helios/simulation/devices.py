@@ -23,8 +23,7 @@ class SimDevice:
     min_on_minutes: float = 0.0
 
     # Optional constraints
-    run_quota_h: float | None = None   # pool: daily run-time target (hours)
-    must_run_daily: bool = False       # water heater: legionella safety
+    run_quota_h: float | None = None   # daily run-time target (hours) — any device type
 
     # Scoring weights (must sum ≈ 1.0)
     w_priority: float = 0.30
@@ -173,7 +172,7 @@ class SimDevice:
         """Build a config dict compatible with ManagedDevice.__init__.
 
         Maps SimDevice fields to the const keys expected by ManagedDevice so that
-        the real dispatch logic (is_satisfied, must_run_now, urgency_modifier, …)
+        the real dispatch logic (is_satisfied, urgency_modifier, …)
         operates correctly on this simulated device.
         """
         from custom_components.helios.const import (
@@ -207,7 +206,6 @@ class SimDevice:
             CONF_DEVICE_MIN_ON_MINUTES:  self.min_on_minutes,
             CONF_DEVICE_ALLOWED_START:   _h2hm(self.allowed_start),
             CONF_DEVICE_ALLOWED_END:     _h2hm(self.allowed_end),
-            "device_must_run_daily":     self.must_run_daily,
             CONF_DEVICE_WEIGHT_PRIORITY: self.w_priority,
             CONF_DEVICE_WEIGHT_FIT:      self.w_fit,
             CONF_DEVICE_WEIGHT_URGENCY:  self.w_urgency,
@@ -236,6 +234,131 @@ class SimDevice:
         if self.appliance_cycle_duration_minutes is not None:
             cfg[CONF_APPLIANCE_CYCLE_DURATION_MINUTES] = self.appliance_cycle_duration_minutes
         return cfg
+
+
+# ---------------------------------------------------------------------------
+# SimBatteryDevice — battery as a dispatch candidate in the simulation
+# ---------------------------------------------------------------------------
+
+class SimBatteryDevice:
+    """Battery device for the simulation dispatch loop.
+
+    Mirrors the interface of BatteryDevice so that DeviceManager.async_dispatch
+    can treat it as a first-class candidate.  Initialized from SimConfig params
+    rather than a HA config dict.
+
+    The BMS handles the physical charge/discharge autonomously; SimBatteryDevice
+    only represents the *demand for charging* in the dispatch budget allocation.
+    """
+
+    def __init__(
+        self,
+        priority: int = 7,
+        soc_min: float = 10.0,
+        soc_min_rouge: float = 80.0,
+        soc_max: float = 95.0,
+        charge_max_w: float = 2000.0,
+    ) -> None:
+        from custom_components.helios.const import (
+            CONF_BATTERY_PRIORITY,
+            CONF_BATTERY_SOC_MIN,
+            CONF_BATTERY_SOC_MAX,
+            CONF_BATTERY_SOC_RESERVE_ROUGE,
+            CONF_BATTERY_MAX_CHARGE_POWER_W,
+        )
+        # Store params for reference
+        self._priority       = priority
+        self._soc_min        = soc_min
+        self._soc_min_rouge  = soc_min_rouge
+        self._soc_max        = soc_max
+        self._charge_max_w   = charge_max_w
+
+        # Build a real BatteryDevice under the hood so DeviceManager
+        # isinstance(device, BatteryDevice) checks work correctly.
+        from custom_components.helios.managed_device import BatteryDevice as _BD
+        self._bd = _BD({
+            CONF_BATTERY_PRIORITY:          priority,
+            CONF_BATTERY_SOC_MIN:           soc_min,
+            CONF_BATTERY_SOC_MAX:           soc_max,
+            CONF_BATTERY_SOC_RESERVE_ROUGE: soc_min_rouge,
+            CONF_BATTERY_MAX_CHARGE_POWER_W: charge_max_w,
+        })
+
+    # --- Proxy the BatteryDevice interface ---
+
+    def update(self, soc: float | None, tempo_red: bool) -> None:
+        """Update runtime state before each dispatch cycle."""
+        self._bd.update(soc, tempo_red)
+
+    @property
+    def urgency(self) -> float:
+        return self._bd.urgency
+
+    @property
+    def power_w(self) -> float:
+        return self._bd.power_w
+
+    @property
+    def fit(self) -> float:
+        return self._bd.fit
+
+    @fit.setter
+    def fit(self, value: float) -> None:
+        self._bd.fit = value
+
+    @property
+    def is_on(self) -> bool:
+        return self._bd.is_on
+
+    @is_on.setter
+    def is_on(self, value: bool) -> None:
+        self._bd.is_on = value
+
+    @property
+    def satisfied(self) -> bool:
+        return self._bd.satisfied
+
+    @property
+    def effective_score(self) -> float:
+        return self._bd.effective_score
+
+    @property
+    def manual_mode(self) -> bool:
+        return self._bd.manual_mode
+
+    @manual_mode.setter
+    def manual_mode(self, value: bool) -> None:
+        self._bd.manual_mode = value
+
+    @property
+    def last_reason(self) -> str:
+        return self._bd.last_reason
+
+    @last_reason.setter
+    def last_reason(self, value: str) -> None:
+        self._bd.last_reason = value
+
+    @property
+    def last_effective_score(self) -> float:
+        return self._bd.last_effective_score
+
+    @last_effective_score.setter
+    def last_effective_score(self, value: float) -> None:
+        self._bd.last_effective_score = value
+
+    @property
+    def min_on_remaining_s(self) -> float:
+        return self._bd.min_on_remaining_s
+
+    def is_manual(self, reader=None) -> bool:
+        return self._bd.is_manual(reader if reader is not None else (lambda eid: None))
+
+    def as_battery_device(self):
+        """Return the underlying BatteryDevice for use in DeviceManager."""
+        return self._bd
+
+    def tick(self, step_minutes: float) -> None:
+        """No-op: BMS handles charging autonomously."""
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +401,6 @@ def load_devices_from_json(path: str) -> list[SimDevice]:
             priority=int(d.get("priority", 5)),
             min_on_minutes=float(d.get("min_on_minutes", 0.0)),
             run_quota_h=run_quota_h,
-            must_run_daily=bool(d.get("must_run_daily", False)),
             device_type=device_type,
             pool_required_min=pool_required_min,
             appliance_cycle_duration_minutes=int(cycle_min) if cycle_min is not None else None,
@@ -300,7 +422,6 @@ def default_devices() -> list[SimDevice]:
             allowed_end=18.0,
             priority=8,
             min_on_minutes=30,
-            must_run_daily=True,
         ),
         SimDevice(
             name="Pompe piscine",

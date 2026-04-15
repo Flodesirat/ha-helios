@@ -27,7 +27,6 @@ def _run(bat_efficiency: float = 0.9, **kwargs) -> tuple:
         bat_capacity_kwh=10.0,
         bat_max_charge_w=3000.0,
         bat_max_discharge_w=3000.0,
-        dispatch_threshold=1.1,  # never dispatch devices → cleaner accounting
         forecast_noise=0.0,
         base_load_noise=0.0,
         **kwargs,
@@ -78,7 +77,6 @@ class TestBatteryRoundtripEfficiency:
             cloud="clear",
             peak_pv_w=4000.0,
             bat_enabled=False,
-            dispatch_threshold=1.1,
             forecast_noise=0.0,
             base_load_noise=0.0,
         )

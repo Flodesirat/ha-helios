@@ -11,7 +11,7 @@
 | 5   | ✅ Terminé (2026-04-14) | `config_flow.py` : `battery_priority` ajouté dans `_battery_schema()`, champs `weight_*`/`dispatch_threshold`/`optimizer_alpha` supprimés des traductions. 350 tests passent. |
 | 6   | ✅ Terminé (2026-04-14) | `daily_optimizer.py` : `ForecastResult`, `async_run_daily_forecast`, suppression grid search. 351 tests passent. |
 | 7   | ✅ Terminé (2026-04-15) | `sensor.py` : `ForecastSensor`, attributs `f_surplus/f_tempo/f_solar`, `urgency/effective_score` batterie, `reason` device. `switch.py` : `BatteryManualSwitch`. 351 tests passent. |
-| 8   | ⬜ À faire | `simulation/` |
+| 8   | ✅ Terminé (2026-04-15) | `simulation/` : `SimBatteryDevice`, suppression `dispatch_threshold` et grid search, `--bat-priority`/`--bat-soc-min-red`, colonnes `Remaining`. 350 tests passent. |
 | 9   | ⬜ À faire | Tests |
 | 10  | ⬜ À faire | `www/helios-card.js` |
 
@@ -416,63 +416,44 @@ Il existe aussi un options flow (sections `sources | battery | strategy`).
 
 ---
 
-## Lot 8 — Simulation (`simulation/`) : dispatch unifié + CLI
-
-### Fichiers à lire
-- `custom_components/helios/simulation/engine.py` — moteur principal (~550 lignes)
-- `custom_components/helios/simulation/devices.py` — `SimDevice` et chargement JSON
-- `custom_components/helios/simulation/optimizer.py` — `OptResult` et `optimize()` à supprimer
-- `custom_components/helios/simulation/run.py` — point d'entrée CLI
-- `sim.py` — point d'entrée racine
-- README.md section "Simulation" complète
-
-### État actuel
-- `simulation/engine.py` ligne 146 : `dm._dispatch_threshold = cfg.dispatch_threshold` — à supprimer
-- `simulation/engine.py` ligne 223 : `dispatch_threshold: float = 0.30` dans `SimConfig` — à supprimer
-- `simulation/engine.py` ligne 276 : docstring mentionne "dispatch_threshold", "must_run overrides", "SOC gate" — à mettre à jour
-- `simulation/devices.py` ligne 26 : `run_quota_h` existe mais lié à pool via `pool_required_min` — à généraliser
-- `simulation/optimizer.py` : contient le grid search et `OptResult` — à supprimer
-- Pas de `BatteryDevice` dans la simulation
+## Lot 8 — Simulation (`simulation/`) : dispatch unifié + CLI ✅ TERMINÉ
 
 ### Tâches
 
 #### Modèles de simulation (`devices.py`)
-- [ ] Ajouter `SimBatteryDevice` avec les mêmes règles que `BatteryDevice` du Lot 3 :
+- [x] Ajouter `SimBatteryDevice` avec les mêmes règles que `BatteryDevice` du Lot 3 :
   - `urgency`, `power_w`, `fit=1.0`, `satisfied`, `effective_score`
   - Paramètres : `soc_min`, `soc_min_rouge`, `soc_max`, `charge_max_w`, `priority`, `tempo_color`
   - Méthode `tick()` : la charge/décharge BMS reste autonome — `SimBatteryDevice` représente uniquement la demande de charge
-- [ ] Supprimer `must_run` de `SimDevice`
-- [ ] Rendre `run_quota_h` générique : applicable à tout type (retirer le couplage exclusif avec `pool_required_min`)
-- [ ] Charger `bat_priority` depuis `devices.json` (champ optionnel `"battery_priority"`, défaut `7`)
+- [x] Supprimer `must_run_daily` de `SimDevice`
+- [x] Rendre `run_quota_h` générique : applicable à tout type (retirer le couplage exclusif avec `pool_required_min`)
+- [x] `--bat-priority` câblé dans `SimConfig.bat_priority` (champ optionnel, défaut `7`)
 
 #### Algorithme de dispatch (`engine.py`)
-- [ ] Supprimer `dispatch_threshold` de `SimConfig` et tous ses usages
-- [ ] Implémenter l'algorithme unifié 4 étapes (identique au Lot 4, adapté pour la simulation synchrone)
-- [ ] Implémenter `compute_fit()` avec les 3 zones (identique au Lot 4)
-- [ ] Recalcul dynamique du `fit` après chaque allocation dans la phase greedy
-- [ ] Intégrer `SimBatteryDevice` dans le cycle de dispatch
-- [ ] Supprimer la logique `must_run_now` dans le moteur
-- [ ] Supprimer la logique d'overcommit
+- [x] Supprimer `dispatch_threshold` de `SimConfig` et tous ses usages
+- [x] Algorithme unifié 4 étapes délégué au vrai `DeviceManager.async_dispatch` (identique au Lot 4)
+- [x] `compute_fit()` avec les 3 zones fourni par `device_manager.py` (même code que production)
+- [x] Recalcul dynamique du `fit` après chaque allocation dans la phase greedy
+- [x] `SimBatteryDevice` intégré dans le cycle de dispatch via `dm.battery_device`
+- [x] Logique `must_run_now` supprimée (remplacée par urgency dans le vrai dispatcher)
+- [x] Logique d'overcommit supprimée
 
 #### Suppression du grid search
-- [ ] Supprimer `simulation/optimizer.py` (ou vider et ne garder que des stubs si importé ailleurs — vérifier)
-- [ ] Vérifier que rien n'importe `OptResult` ou `optimize` hormis `daily_optimizer.py` (qui sera mis à jour en Lot 6)
+- [x] `simulation/optimizer.py` vidé — stub `OptResult` + `optimize()` lève `NotImplementedError`
+- [x] `simulation/__init__.py` nettoyé (`OptResult`/`optimize` retirés)
 
 #### CLI (`sim.py` / `run.py`)
-- [ ] Ajouter `--bat-priority N` (défaut `7`)
-- [ ] Vérifier que `--bat-soc-min-red PCT` existe et est correctement câblé dans `SimConfig`
-- [ ] Supprimer `--optimize` si présent
-- [ ] Ajouter la colonne `Remaining` dans la sortie verbose (`-v`) :
-  ```
-  H       PV   Maison  Réseau  Batterie  SOC  Score  Remaining  Appareils
-  ```
-- [ ] Mettre à jour les colonnes du log `--decisions` :
-  ```
-  Heure  Appareil  Action  Eff.Score  Fit  Urgency  Remaining  SOC
-  ```
+- [x] Ajout `--bat-priority N` (défaut `7`)
+- [x] Ajout `--bat-soc-min-red PCT` câblé dans `SimConfig.bat_soc_min_rouge`
+- [x] Suppression `--optimize` et `--threshold`
+- [x] Colonne `Remaining` dans la sortie verbose (`-v`)
+- [x] Colonnes `--decisions` : `Eff.Score  Fit  Urgency  Remaining  SOC`
 
-### Définition de terminé
-`pytest tests/test_simulation.py -x -q` passe. `python sim.py -v --decisions` s'exécute sans erreur avec les appareils par défaut.
+#### Correctif annexe
+- [x] `BatteryDevice.turned_on_at = None` ajouté dans `managed_device.py` pour éviter `AttributeError` dans `_min_on_elapsed`
+
+### Résultat
+`pytest tests/test_simulation.py -x -q` : **29 passed**. `pytest tests/ -q` : **350 passed**. `python sim.py -v --decisions` s'exécute sans erreur.
 
 ---
 
