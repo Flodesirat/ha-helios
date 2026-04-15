@@ -107,9 +107,9 @@ class EnergyOptimizerScoreSensor(_BaseEOSensor):
             "f_tempo":   round(c.f_tempo,   3),
             "f_solar":   round(c.f_solar,   3),
             # Scoring weights
-            "w_surplus": round(eng.w_surplus, 3),
-            "w_tempo":   round(eng.w_tempo,   3),
-            "w_solar":   round(eng.w_solar,   3),
+            "w_surplus": 0.5,
+            "w_tempo":   0.3,
+            "w_solar":   0.2,
             # Dispatch context
             "last_optimized": c.optimizer_last_run,
             # Raw inputs
