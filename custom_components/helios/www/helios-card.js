@@ -23,7 +23,7 @@
  *     house_power:   sensor.helios_house_power
  *     battery_soc:   sensor.my_battery_soc        # optionnel — SOC batterie (%)
  *     battery_power: sensor.helios_battery_power  # optionnel — négatif=charge, positif=décharge
- *     score:         sensor.helios_global_score
+ *     score:         sensor.helios_score
  *   devices:                                      # optionnel — section appareils (mode full uniquement)
  *     - name: Piscine
  *       type: pool
@@ -194,12 +194,10 @@ class HeliosCard extends HTMLElement {
         :host {
           display: block;
           --helios-grid-color: #7B1FA2;
-          --helios-threshold-line-color: rgba(0,0,0,0.55);
         }
         @media (prefers-color-scheme: dark) {
           :host {
             --helios-grid-color: #be2afd;
-            --helios-threshold-line-color: rgba(255,255,255,0.55);
           }
         }
 
@@ -286,16 +284,6 @@ class HeliosCard extends HTMLElement {
           background: var(--secondary-background-color, #f0f0f0);
           border-radius: 4px;
           overflow: hidden;
-        }
-        .bar-threshold {
-          position: absolute;
-          top: -3px;
-          width: 2px;
-          height: 13px;
-          background: var(--helios-threshold-line-color);
-          border-radius: 1px;
-          transform: translateX(-50%);
-          display: none;
         }
         .bar-fill {
           height: 100%;
@@ -475,6 +463,49 @@ class HeliosCard extends HTMLElement {
           font-weight: 700;
         }
 
+        /* ---- Forecast section ---- */
+        .forecast {
+          margin-top: 6px;
+        }
+        .forecast-title {
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--secondary-text-color);
+          margin-bottom: 4px;
+        }
+        .forecast-sub {
+          font-size: 9px;
+          color: var(--secondary-text-color);
+          margin-bottom: 4px;
+        }
+        .forecast-chips {
+          display: flex;
+          gap: 4px;
+          flex-wrap: wrap;
+        }
+        .forecast-chip {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          flex: 1;
+          min-width: 56px;
+          background: var(--secondary-background-color, #f0f0f0);
+          border-radius: 6px;
+          padding: 3px 5px;
+        }
+        .forecast-chip-lbl {
+          font-size: 8px;
+          color: var(--secondary-text-color);
+          white-space: nowrap;
+          text-align: center;
+        }
+        .forecast-chip-val {
+          font-size: 11px;
+          font-weight: 700;
+        }
+
         /* ---- Modal overlay ---- */
         .modal-overlay {
           position: fixed;
@@ -601,6 +632,7 @@ class HeliosCard extends HTMLElement {
         .hm-window { font-size: 14px; font-weight: 600; }
         .dev-row { cursor: pointer; }
         .dev-row:hover { background: var(--divider-color, #e8e8e8); }
+        #h-node-bat { cursor: pointer; }
       </style>
 
       <div class="card">
@@ -614,7 +646,6 @@ class HeliosCard extends HTMLElement {
             <div class="lbl">Score</div>
             <div class="bar-wrap">
               <div class="bar-bg"><div class="bar-fill" id="h-score-bar"></div></div>
-              <div class="bar-threshold" id="h-score-threshold"></div>
             </div>
             <div class="score-num" id="h-score-num">—</div>
           </div>
@@ -623,28 +654,18 @@ class HeliosCard extends HTMLElement {
               <div class="score-factor-fill" id="h-sf-surplus-fill"></div>
               <span class="score-factor-lbl">☀️ Surplus</span>
               <span class="score-factor-val" id="h-sf-surplus-val">—</span>
-              <span class="score-factor-w"  id="h-sf-surplus-w"></span>
             </div>
             <span class="score-sep">+</span>
             <div class="score-factor" id="h-sf-tempo">
               <div class="score-factor-fill" id="h-sf-tempo-fill"></div>
               <span class="score-factor-lbl">🎨 Tempo</span>
               <span class="score-factor-val" id="h-sf-tempo-val">—</span>
-              <span class="score-factor-w"  id="h-sf-tempo-w"></span>
-            </div>
-            <span class="score-sep">+</span>
-            <div class="score-factor" id="h-sf-soc">
-              <div class="score-factor-fill" id="h-sf-soc-fill"></div>
-              <span class="score-factor-lbl">🔋 SOC</span>
-              <span class="score-factor-val" id="h-sf-soc-val">—</span>
-              <span class="score-factor-w"  id="h-sf-soc-w"></span>
             </div>
             <span class="score-sep">+</span>
             <div class="score-factor" id="h-sf-solar">
               <div class="score-factor-fill" id="h-sf-solar-fill"></div>
               <span class="score-factor-lbl">🌞 Solaire</span>
               <span class="score-factor-val" id="h-sf-solar-val">—</span>
-              <span class="score-factor-w"  id="h-sf-solar-w"></span>
             </div>
           </div>
           <div class="budget-row" id="h-budget-row">
@@ -665,6 +686,20 @@ class HeliosCard extends HTMLElement {
               <span class="budget-chip-val" id="h-bud-rem">—</span>
             </div>
           </div>
+          <div class="forecast" id="h-forecast" style="display:none">
+            <div class="forecast-title">Prévision journalière</div>
+            <div class="forecast-sub" id="h-forecast-sub"></div>
+            <div class="forecast-chips">
+              <div class="forecast-chip"><span class="forecast-chip-lbl">☀️ PV prévu</span><span class="forecast-chip-val" id="h-fc-pv">—</span></div>
+              <div class="forecast-chip"><span class="forecast-chip-lbl">🏠 Conso</span><span class="forecast-chip-val" id="h-fc-conso">—</span></div>
+              <div class="forecast-chip"><span class="forecast-chip-lbl">⬇️ Import</span><span class="forecast-chip-val" id="h-fc-import">—</span></div>
+              <div class="forecast-chip"><span class="forecast-chip-lbl">⬆️ Export</span><span class="forecast-chip-val" id="h-fc-export">—</span></div>
+              <div class="forecast-chip"><span class="forecast-chip-lbl">🔄 Autoconso</span><span class="forecast-chip-val" id="h-fc-sc">—</span></div>
+              <div class="forecast-chip"><span class="forecast-chip-lbl">🛡️ Autosuff.</span><span class="forecast-chip-val" id="h-fc-ss">—</span></div>
+              <div class="forecast-chip"><span class="forecast-chip-lbl">💶 Coût</span><span class="forecast-chip-val" id="h-fc-cost">—</span></div>
+              <div class="forecast-chip"><span class="forecast-chip-lbl">💰 Économie</span><span class="forecast-chip-val" id="h-fc-save">—</span></div>
+            </div>
+          </div>
         </div>
 
         <div class="devices" id="h-devices" style="display:none"></div>
@@ -672,6 +707,10 @@ class HeliosCard extends HTMLElement {
 
       <div class="modal-overlay" id="h-modal" hidden>
         <div class="modal-box" id="h-modal-box"></div>
+      </div>
+
+      <div class="modal-overlay" id="h-bat-modal" hidden>
+        <div class="modal-box" id="h-bat-modal-box"></div>
       </div>
     `;
 
@@ -684,6 +723,11 @@ class HeliosCard extends HTMLElement {
         history.pushState(null, "", url);
         window.dispatchEvent(new Event("location-changed", { bubbles: true, composed: true }));
       }
+    });
+
+    // Batterie — nœud SVG cliquable
+    this.shadowRoot.getElementById("h-node-bat").addEventListener("click", () => {
+      this._openBatModal();
     });
 
     // Device row click → open modal (delegation sur l'élément stable #h-devices)
@@ -711,6 +755,23 @@ class HeliosCard extends HTMLElement {
         const readyEntity = btn.dataset.readyEntity;
         if (readyEntity && this._hass)
           this._hass.callService("input_boolean", "turn_on", { entity_id: readyEntity });
+      }
+    });
+
+    // Bat modal actions
+    const batModal = this.shadowRoot.getElementById("h-bat-modal");
+    batModal.addEventListener("click", (e) => {
+      if (e.target === batModal) { this._closeBatModal(); return; }
+      const btn = e.target.closest("[data-action]");
+      if (!btn) return;
+      const action = btn.dataset.action;
+      if (action === "close-bat") { this._closeBatModal(); return; }
+      if (action === "toggle-bat-manual") {
+        const sw = this._batManualSwitchEntity();
+        if (sw && this._hass) {
+          const isOn = this._hass.states[sw]?.state === "on";
+          this._hass.callService("homeassistant", isOn ? "turn_off" : "turn_on", { entity_id: sw });
+        }
       }
     });
 
@@ -775,7 +836,7 @@ class HeliosCard extends HTMLElement {
       pv_power:       "sensor.helios_pv_power",
       grid_power:     "sensor.helios_grid_power",
       house_power:    "sensor.helios_house_power",
-      score:   "sensor.helios_global_score",
+      score:   "sensor.helios_score",
       battery: "sensor.helios_battery",
     };
     for (const [key, eid] of Object.entries(SYSTEM)) {
@@ -807,13 +868,13 @@ class HeliosCard extends HTMLElement {
     const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
     if (entryId) {
       const disc = this._discoverEntities(entryId);
-      if (disc?.["global_score"]) {
+      if (disc?.["score"]) {
         return {
           entityRefs: {
             pv_power:       disc["pv_power"],
             grid_power:     disc["grid_power"],
             house_power:    disc["house_power"],
-            score:          disc["global_score"],
+            score:          disc["score"],
             battery:        disc["battery"],
             _soc_from_attr: true,
           },
@@ -932,17 +993,14 @@ class HeliosCard extends HTMLElement {
 
     // Score decomposition chips
     const factors = [
-      { key: "surplus",  fAttr: "f_surplus",  wAttr: "w_surplus"  },
-      { key: "tempo",    fAttr: "f_tempo",    wAttr: "w_tempo"    },
-      { key: "soc",      fAttr: "f_soc",      wAttr: "w_soc"      },
-      { key: "solar",    fAttr: "f_solar",    wAttr: "w_solar"    },
+      { key: "surplus", fAttr: "f_surplus" },
+      { key: "tempo",   fAttr: "f_tempo"   },
+      { key: "solar",   fAttr: "f_solar"   },
     ];
-    for (const { key, fAttr, wAttr } of factors) {
+    for (const { key, fAttr } of factors) {
       const f = this._attr(e.score, fAttr);
-      const w = this._attr(e.score, wAttr);
       const fColor = f === null ? "#9E9E9E" : f > 0.6 ? "#4CAF50" : f > 0.3 ? "#FF9800" : "#F44336";
       this._txt(`h-sf-${key}-val`, f !== null ? f.toFixed(2) : "—");
-      this._txt(`h-sf-${key}-w`,   w !== null ? `×${w.toFixed(2)}` : "");
       const fill = this.shadowRoot.getElementById(`h-sf-${key}-fill`);
       if (fill) {
         fill.style.height     = f !== null ? `${Math.round(f * 100)}%` : "0%";
@@ -962,26 +1020,14 @@ class HeliosCard extends HTMLElement {
     this._txt("h-bud-bat",      batAvailW !== null ? this._fmt(batAvailW) : "—");
     this._txt("h-bud-rem",      remainingW !== null ? this._fmt(remainingW) : "—");
 
-    // Score bar
-    const threshold = this._attr(e.score, "dispatch_threshold");
-    const scoreColor = score > threshold ? "#4CAF50" : "#F44336";
+    // Score bar — couleur dynamique selon niveau
+    const scoreColor = score > 0.6 ? "#4CAF50" : score > 0.3 ? "#FF9800" : "#F44336";
     const bar = this.shadowRoot.getElementById("h-score-bar");
     if (bar) {
       bar.style.width      = `${Math.round(score * 100)}%`;
       bar.style.background = scoreColor;
     }
     this._txt("h-score-num", this._hass ? score.toFixed(2) : "—");
-
-    // Threshold marker
-    const threshEl  = this.shadowRoot.getElementById("h-score-threshold");
-    if (threshEl) {
-      if (threshold !== null && threshold >= 0 && threshold <= 1) {
-        threshEl.style.left    = `${Math.round(threshold * 100)}%`;
-        threshEl.style.display = "block";
-      } else {
-        threshEl.style.display = "none";
-      }
-    }
 
     // Progress rings
     const maxPow  = this._attr(e.score, "peak_pv_w") ?? 6000;
@@ -1009,6 +1055,40 @@ class HeliosCard extends HTMLElement {
     const infoBtn = this.shadowRoot.getElementById("h-info-btn");
     if (infoBtn) infoBtn.hidden = !this._config.info_url;
 
+    // Forecast section
+    const forecastEl = this.shadowRoot.getElementById("h-forecast");
+    const forecastEid = (() => {
+      const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
+      if (entryId) {
+        const disc = this._discoverEntities(entryId);
+        if (disc?.["forecast"]) return disc["forecast"];
+      }
+      const fb = "sensor.helios_forecast";
+      return this._hass?.states[fb] ? fb : null;
+    })();
+    const hasForecast = forecastEid && this._hass?.states[forecastEid]?.state !== "unavailable";
+    if (forecastEl) forecastEl.style.display = hasForecast ? "" : "none";
+    if (hasForecast) {
+      const fmtKwh  = v => v !== null ? `${parseFloat(v).toFixed(1)} kWh` : "—";
+      const fmtPct  = v => v !== null ? `${Math.round(v)} %` : "—";
+      const fmtEur  = v => v !== null ? `${parseFloat(v).toFixed(2)} €` : "—";
+      this._txt("h-fc-pv",     fmtKwh(this._attr(forecastEid, "forecast_pv_kwh")));
+      this._txt("h-fc-conso",  fmtKwh(this._attr(forecastEid, "forecast_consumption_kwh")));
+      this._txt("h-fc-import", fmtKwh(this._attr(forecastEid, "forecast_import_kwh")));
+      this._txt("h-fc-export", fmtKwh(this._attr(forecastEid, "forecast_export_kwh")));
+      this._txt("h-fc-sc",     fmtPct(this._attr(forecastEid, "forecast_self_consumption_pct")));
+      this._txt("h-fc-ss",     fmtPct(this._attr(forecastEid, "forecast_self_sufficiency_pct")));
+      this._txt("h-fc-cost",   fmtEur(this._attr(forecastEid, "forecast_cost")));
+      this._txt("h-fc-save",   fmtEur(this._attr(forecastEid, "forecast_savings")));
+      const lastFc = this._attr(forecastEid, "last_forecast");
+      if (lastFc) {
+        const d = new Date(lastFc);
+        const sub = isNaN(d) ? lastFc
+          : `Prévision du ${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+        this._txt("h-forecast-sub", sub);
+      }
+    }
+
     // Compact: marge réduite + masquer footer + devices
     const compact  = !!this._config.compact;
     const cardEl   = this.shadowRoot.querySelector(".card");
@@ -1017,14 +1097,16 @@ class HeliosCard extends HTMLElement {
     if (scoreDecomp) scoreDecomp.style.display = compact ? "none" : "";
     const budgetRow = this.shadowRoot.getElementById("h-budget-row");
     if (budgetRow) budgetRow.style.display = compact ? "none" : "";
+    if (forecastEl && compact) forecastEl.style.display = "none";
     const devices = this.shadowRoot.getElementById("h-devices");
     if (devices && compact) devices.style.display = "none";
 
     // Devices section (full mode uniquement)
     if (!compact) this._updateDevices(discoveredDevices);
 
-    // Rafraîchit la modale si elle est ouverte
+    // Rafraîchit les modales si elles sont ouvertes
     if (this._modalSlug) this._refreshModal();
+    if (this._batModalOpen) this._refreshBatModal();
   }
 
   // ------------------------------------------------------------------ Devices
@@ -1052,7 +1134,7 @@ class HeliosCard extends HTMLElement {
   _renderDevice(dev) {
     const icon     = dev.icon || this._defaultIcon(dev.type);
     const isOn     = this._deviceIsOn(dev);
-    const reason   = this._attr(dev.entity, "last_decision_reason") ?? "";
+    const reason   = this._attr(dev.entity, "reason") ?? "";
     const priority = this._attr(dev.entity, "device_priority") ?? dev.priority ?? null;
     const detail   = this._deviceDetail(dev);
 
@@ -1100,7 +1182,7 @@ class HeliosCard extends HTMLElement {
   }
 
   _deviceIsOn(dev) {
-    return this._str(dev.entity) === "running";
+    return this._str(dev.entity) === "on";
   }
 
   _deviceStatus(dev, isOn) {
@@ -1181,15 +1263,17 @@ class HeliosCard extends HTMLElement {
 
   _reasonLabel(reason) {
     const map = {
-      dispatch:       "Surplus",
-      must_run:       "Forcé",
+      urgency:        "Urgence",
+      greedy:         "Surplus",
       satisfied:      "Satisfait",
-      score_too_low:  "Score faible",
-      no_budget:      "Budget",
-      overcommit:     "Surcharge",
-      fit_negligible: "Fit faible",
-      outside_window: "Hors plage",
+      budget:         "Budget",
+      off_hours:      "Hors plage",
       manual:         "Manuel",
+      // rétrocompat (anciens logs)
+      must_run:       "Forcé",
+      dispatch:       "Surplus",
+      no_budget:      "Budget",
+      outside_window: "Hors plage",
     };
     return map[reason] ?? reason;
   }
@@ -1277,7 +1361,7 @@ class HeliosCard extends HTMLElement {
     const priorityScore= this._attr(dev.entity, "last_priority_score");
     const fit          = this._attr(dev.entity, "last_fit");
     const urgency      = this._attr(dev.entity, "last_urgency");
-    const reason       = this._attr(dev.entity, "last_decision_reason");
+    const reason       = this._attr(dev.entity, "reason");
     const dailyMin     = this._attr(dev.entity, "daily_on_minutes");
     const priority     = this._attr(dev.entity, "device_priority") ?? dev.priority;
 
@@ -1384,6 +1468,112 @@ class HeliosCard extends HTMLElement {
     }
   }
 
+  // ------------------------------------------------------------------ Bat modal
+  _batManualSwitchEntity() {
+    const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
+    if (entryId) {
+      const disc = this._discoverEntities(entryId);
+      if (disc?.["battery_manual"]) return disc["battery_manual"];
+    }
+    const candidate = "switch.helios_battery_manual";
+    return this._hass?.states[candidate] !== undefined ? candidate : null;
+  }
+
+  _openBatModal() {
+    this._batModalOpen = true;
+    const modal = this.shadowRoot.getElementById("h-bat-modal");
+    if (modal) {
+      modal.removeAttribute("hidden");
+      this._refreshBatModal();
+    }
+  }
+
+  _closeBatModal() {
+    this._batModalOpen = false;
+    const modal = this.shadowRoot.getElementById("h-bat-modal");
+    if (modal) modal.setAttribute("hidden", "");
+  }
+
+  _refreshBatModal() {
+    const box = this.shadowRoot.getElementById("h-bat-modal-box");
+    if (!box) return;
+    box.innerHTML = this._buildBatModalContent();
+  }
+
+  _buildBatModalContent() {
+    const { entityRefs: e } = this._resolveAll();
+    const battAction   = this._str(e.battery) ?? "idle";
+    const soc          = this._attr(e.battery, "soc");
+    const powerW       = this._attr(e.battery, "power_w");
+    const urgency      = this._attr(e.battery, "urgency");
+    const effScore     = this._attr(e.battery, "effective_score");
+
+    const sw       = this._batManualSwitchEntity();
+    const manual   = sw ? this._hass?.states[sw]?.state === "on" : false;
+
+    const actionDotColor = {
+      charge:    "#1565C0",
+      discharge: "#0288D1",
+      reserve:   "#FF9800",
+      idle:      "#9E9E9E",
+    }[battAction] ?? "#9E9E9E";
+
+    const actionLabel = {
+      charge:    "En charge",
+      discharge: "Décharge",
+      reserve:   "Réserve",
+      idle:      "Veille",
+    }[battAction] ?? battAction;
+
+    // SOC bar
+    const socColor = soc === null ? "#9E9E9E" : soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336";
+    const socPct   = soc !== null ? Math.round(soc) : 0;
+    const socBar   = `
+      <div class="hm-progress-wrap">
+        <div class="hm-bar-bg"><div class="hm-bar-fill" style="width:${socPct}%;background:${socColor}"></div></div>
+        <span class="hm-bar-text">SOC : ${soc !== null ? socPct + " %" : "—"}</span>
+      </div>`;
+
+    // urgency chip
+    const urgColor = urgency === null ? "#9E9E9E" : urgency > 0.6 ? "#4CAF50" : urgency > 0.3 ? "#FF9800" : "#F44336";
+    const urgChip  = `<span class="hm-factor" style="max-width:80px;">
+        <span class="hm-factor-lbl">⏱ Urgence</span>
+        <span class="hm-factor-val" style="color:${urgColor}">${urgency !== null ? urgency.toFixed(2) : "—"}</span>
+      </span>`;
+    const effColor = effScore === null ? "#9E9E9E" : effScore > 0.6 ? "#4CAF50" : effScore > 0.3 ? "#FF9800" : "#F44336";
+    const effChip  = `<span class="hm-factor" style="max-width:80px;">
+        <span class="hm-factor-lbl">🎯 Score eff.</span>
+        <span class="hm-factor-val" style="color:${effColor}">${effScore !== null ? effScore.toFixed(2) : "—"}</span>
+      </span>`;
+
+    const controlHtml = sw ? `
+      <div class="hm-section">
+        <div class="hm-section-title">Contrôle</div>
+        <div class="hm-manual-row">
+          <span class="hm-manual-label">${manual ? "Mode manuel actif" : "Mode automatique"}</span>
+          <button class="hm-manual-btn ${manual ? "hm-manual-on" : "hm-manual-off"}" data-action="toggle-bat-manual">
+            ${manual ? "Repasser en auto" : "Forcer manuel"}
+          </button>
+        </div>
+      </div>` : "";
+
+    return `
+      <div class="hm-header">
+        <span class="hm-icon">🔋</span>
+        <span class="hm-title">Batterie</span>
+        <div class="hm-hdr-dot" style="background:${actionDotColor}"></div>
+        <span class="hm-hdr-status">${actionLabel}</span>
+        <button class="hm-close" data-action="close-bat">✕</button>
+      </div>
+      ${controlHtml}
+      <div class="hm-section">
+        <div class="hm-section-title">État</div>
+        ${socBar}
+        <div class="hm-stat">Demande : ${powerW !== null ? this._fmt(powerW) : "—"}</div>
+        <div class="hm-factors-row">${urgChip}${effChip}</div>
+      </div>`;
+  }
+
   // ------------------------------------------------------------------ SVG helpers
   _flow(lineId, lblId, { active, power, color, marker, x1, y1, x2, y2, lblX, lblY, lblAnchor, lblColor }) {
     const line = this.shadowRoot.getElementById(lineId);
@@ -1441,7 +1631,7 @@ class HeliosCard extends HTMLElement {
         pv_power:   "sensor.helios_pv_power",
         grid_power: "sensor.helios_grid_power",
         house_power:"sensor.helios_house_power",
-        score:      "sensor.helios_global_score",
+        score:      "sensor.helios_score",
         battery:    "sensor.helios_battery",
       },
       devices: [],

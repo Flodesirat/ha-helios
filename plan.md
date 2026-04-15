@@ -13,7 +13,7 @@
 | 7   | ✅ Terminé (2026-04-15) | `sensor.py` : `ForecastSensor`, attributs `f_surplus/f_tempo/f_solar`, `urgency/effective_score` batterie, `reason` device. `switch.py` : `BatteryManualSwitch`. 351 tests passent. |
 | 8   | ✅ Terminé (2026-04-15) | `simulation/` : `SimBatteryDevice`, suppression `dispatch_threshold` et grid search, `--bat-priority`/`--bat-soc-min-red`, colonnes `Remaining`. 350 tests passent. |
 | 9   | ✅ Terminé (2026-04-15) | `test_fit.py`, `test_battery_device.py`, `test_dispatch.py` créés. 406 tests passent, zéro régression. |
-| 10  | ⬜ À faire | `www/helios-card.js` |
+| 10  | ✅ Terminé (2026-04-15) | `www/helios-card.js` : renommage `sensor.helios_score`, suppression chip SOC et poids, suppression `dispatch_threshold`, correction états appareils (`reason`, `"on"`), modale batterie cliquable, section prévision journalière. `test_card.html` mis à jour. |
 
 ---
 
