@@ -113,20 +113,24 @@ const MOCK_ENTITIES = {
   "sensor.helios_pv_power":              mockEntity("pv_power"),
   "sensor.helios_grid_power":            mockEntity("grid_power"),
   "sensor.helios_house_power":           mockEntity("house_power"),
-  "sensor.helios_score":                 mockEntity("score"),
-  "sensor.helios_battery":              mockEntity("battery"),
-  "sensor.helios_forecast":             mockEntity("forecast"),
-  "sensor.helios_pool":                 mockEntity("device_state_pool"),
-  "sensor.helios_water_heater":         mockEntity("device_state_water_heater"),
-  "sensor.helios_dishwasher":           mockEntity("device_state_dishwasher"),
-  "sensor.helios_washing_machine":      mockEntity("device_state_washing_machine"),
-  "sensor.helios_ev":                   mockEntity("device_state_ev"),
-  "switch.helios_battery_manual":              mockEntity("battery_manual"),
-  "switch.helios_pool_manual":                 mockEntity("device_pool_manual"),
-  "switch.helios_water_heater_manual":         mockEntity("device_water_heater_manual"),
-  "switch.helios_dishwasher_manual":           mockEntity("device_dishwasher_manual"),
-  "switch.helios_washing_machine_manual":      mockEntity("device_washing_machine_manual"),
-  "switch.helios_ev_manual":                   mockEntity("device_ev_manual"),
+  "sensor.helios_global_score":          mockEntity("global_score"),
+  "sensor.helios_battery":               mockEntity("battery"),
+  "sensor.helios_forecast":              mockEntity("forecast"),
+  "sensor.helios_energy_pv":             mockEntity("energy_pv"),
+  "sensor.helios_energy_import":         mockEntity("energy_import"),
+  "sensor.helios_energy_export":         mockEntity("energy_export"),
+  "sensor.helios_energy_consumption":    mockEntity("energy_consumption"),
+  "sensor.helios_pool":                  mockEntity("device_state_pool"),
+  "sensor.helios_water_heater":          mockEntity("device_state_water_heater"),
+  "sensor.helios_dishwasher":            mockEntity("device_state_dishwasher"),
+  "sensor.helios_washing_machine":       mockEntity("device_state_washing_machine"),
+  "sensor.helios_ev":                    mockEntity("device_state_ev"),
+  "switch.helios_battery_manual":        mockEntity("battery_manual"),
+  "switch.helios_pool_manual":           mockEntity("pool_manual"),
+  "switch.helios_water_heater_manual":   mockEntity("water_heater_manual"),
+  "switch.helios_dishwasher_manual":     mockEntity("dishwasher_manual"),
+  "switch.helios_washing_machine_manual":mockEntity("washing_machine_manual"),
+  "switch.helios_ev_manual":             mockEntity("ev_manual"),
 };
 
 // Log panel
@@ -183,10 +187,12 @@ const hassDay = makeHass({
   "sensor.helios_pv_power":    state(2800),
   "sensor.helios_grid_power":  state(-300),
   "sensor.helios_house_power": state(1200),
-  "sensor.helios_score": state(0.74, {
+  "sensor.helios_global_score": state(0.74, {
     tempo_color: "blue", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000,
     surplus_w: 1300, virtual_surplus_w: 2750, bat_available_w: 1200, remaining_w: 620,
-    f_surplus: 0.88, f_tempo: 0.70, f_solar: 0.42,
+    f_surplus: 0.88, w_surplus: 0.5,
+    f_tempo:   0.70, w_tempo:   0.3,
+    f_solar:   0.42, w_solar:   0.2,
   }),
   "sensor.helios_battery": state("charge", {
     battery_enabled: true, soc: 58, power_w: 650, available_w: 1200,
@@ -203,8 +209,13 @@ const hassDay = makeHass({
     forecast_savings: 2.84,
     last_forecast: "2026-04-15T05:00:00",
   }),
+  "sensor.helios_energy_pv":          state(9.4),
+  "sensor.helios_energy_import":      state(0.3),
+  "sensor.helios_energy_export":      state(4.1),
+  "sensor.helios_energy_consumption": state(5.6),
 
-  "sensor.helios_pool": state("on", {
+  // pool : état "running" → test du fix _deviceIsOn (running = ON)
+  "sensor.helios_pool": state("running", {
     device_name: "Piscine", device_type: "pool", device_priority: 7,
     manual_mode: false, power_w: 750,
     last_effective_score: 0.82, last_priority_score: 0.7, last_fit: 0.95, last_urgency: 0.6,
@@ -212,7 +223,8 @@ const hassDay = makeHass({
     filtration_done_min: 150, filtration_required_min: 240, force_remaining_min: 0,
     daily_on_minutes: 150, allowed_start: "08:00", allowed_end: "20:00",
   }),
-  "sensor.helios_water_heater": state("on", {
+  // chauffe-eau : état "running", thermostat à mi-course
+  "sensor.helios_water_heater": state("running", {
     device_name: "Chauffe-eau", device_type: "water_heater", device_priority: 6,
     manual_mode: false, power_w: 2000,
     last_effective_score: 0.45, last_priority_score: 0.6, last_fit: 0.55, last_urgency: 0.2,
@@ -220,7 +232,8 @@ const hassDay = makeHass({
     temperature: 54.2, wh_temp_target: 61,
     daily_on_minutes: 65, allowed_start: "06:00", allowed_end: "22:00",
   }),
-  "sensor.helios_dishwasher": state("waiting", {
+  // lave-vaisselle : idle, bouton "Prêt !" visible
+  "sensor.helios_dishwasher": state("off", {
     device_name: "Lave-vaisselle", device_type: "appliance", device_priority: 4,
     manual_mode: false, power_w: 0,
     last_effective_score: 0.31, last_priority_score: 0.4, last_fit: 0.38, last_urgency: 0.1,
@@ -228,6 +241,7 @@ const hassDay = makeHass({
     appliance_state: "idle", appliance_ready_entity: "input_boolean.lave_vaisselle_pret",
     daily_on_minutes: 0, allowed_start: "00:00", allowed_end: "24:00",
   }),
+  // voiture : état "on" → test du chemin historique
   "sensor.helios_ev": state("on", {
     device_name: "Voiture électrique", device_type: "ev_charger", device_priority: 8,
     manual_mode: false, power_w: 1380,
@@ -237,11 +251,11 @@ const hassDay = makeHass({
     daily_on_minutes: 90, allowed_start: "00:00", allowed_end: "24:00",
   }),
 
-  "switch.helios_battery_manual":           state("off"),
-  "switch.helios_pool_manual":              state("off"),
-  "switch.helios_water_heater_manual":      state("off"),
-  "switch.helios_dishwasher_manual":        state("off"),
-  "switch.helios_ev_manual":                state("off"),
+  "switch.helios_battery_manual":        state("off"),
+  "switch.helios_pool_manual":           state("off"),
+  "switch.helios_water_heater_manual":   state("off"),
+  "switch.helios_dishwasher_manual":     state("off"),
+  "switch.helios_ev_manual":             state("off"),
 });
 
 // ---------------------------------------------------------------------------
@@ -251,18 +265,20 @@ const hassManual = makeHass({
   "sensor.helios_pv_power":    state(1800),
   "sensor.helios_grid_power":  state(200),
   "sensor.helios_house_power": state(1900),
-  "sensor.helios_score": state(0.51, {
+  "sensor.helios_global_score": state(0.51, {
     tempo_color: "white", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000,
     surplus_w: 400, virtual_surplus_w: 1600, bat_available_w: 800, remaining_w: 200,
-    f_surplus: 0.45, f_tempo: 0.50, f_solar: 0.55,
+    f_surplus: 0.45, w_surplus: 0.5,
+    f_tempo:   0.50, w_tempo:   0.3,
+    f_solar:   0.55, w_solar:   0.2,
   }),
   "sensor.helios_battery": state("idle", {
     battery_enabled: true, soc: 72, power_w: 0, available_w: 800,
     urgency: 0.12, effective_score: 0.22,
   }),
 
-  // Piscine : forcée (urgency → force, force_remaining_min > 0)
-  "sensor.helios_pool": state("on", {
+  // Piscine : forcée (urgency → force, force_remaining_min > 0), état "running"
+  "sensor.helios_pool": state("running", {
     device_name: "Piscine", device_type: "pool", device_priority: 7,
     manual_mode: false, power_w: 750,
     last_effective_score: 1.0, last_priority_score: 0.7, last_fit: 0.0, last_urgency: 1.0,
@@ -270,8 +286,8 @@ const hassManual = makeHass({
     filtration_done_min: 80, filtration_required_min: 240, force_remaining_min: 45,
     daily_on_minutes: 80, allowed_start: "08:00", allowed_end: "20:00",
   }),
-  // Chauffe-eau : en mode MANUEL (switch à on)
-  "sensor.helios_water_heater": state("on", {
+  // Chauffe-eau : mode MANUEL, état "running"
+  "sensor.helios_water_heater": state("running", {
     device_name: "Chauffe-eau", device_type: "water_heater", device_priority: 6,
     manual_mode: true, power_w: 2000,
     last_effective_score: 0.0, last_priority_score: 0.0, last_fit: 0.0, last_urgency: 0.0,
@@ -288,7 +304,7 @@ const hassManual = makeHass({
     soc: 41, plugged: true,
     daily_on_minutes: 0, allowed_start: "10:00", allowed_end: "17:00",
   }),
-  // Lave-linge : hors plage, prêt à démarrer
+  // Lave-linge : hors plage, prêt à démarrer (bouton "Prêt !" visible)
   "sensor.helios_washing_machine": state("off", {
     device_name: "Lave-linge", device_type: "appliance", device_priority: 3,
     manual_mode: false, power_w: 0,
@@ -312,10 +328,12 @@ const hassNight = makeHass({
   "sensor.helios_pv_power":    state(0),
   "sensor.helios_grid_power":  state(450),
   "sensor.helios_house_power": state(900),
-  "sensor.helios_score": state(0.22, {
+  "sensor.helios_global_score": state(0.22, {
     tempo_color: "red", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000,
     surplus_w: 0, virtual_surplus_w: 0, bat_available_w: 0, remaining_w: 0,
-    f_surplus: 0.0, f_tempo: 0.10, f_solar: 0.15,
+    f_surplus: 0.0, w_surplus: 0.5,
+    f_tempo:   0.10, w_tempo:  0.3,
+    f_solar:   0.15, w_solar:  0.2,
   }),
   // Pas de sensor.helios_battery → batterie absente
 
@@ -335,7 +353,8 @@ const hassNight = makeHass({
     temperature: 62.1, wh_temp_target: 61,
     daily_on_minutes: 120, allowed_start: "06:00", allowed_end: "22:00",
   }),
-  "sensor.helios_dishwasher": state("on", {
+  // lave-vaisselle : appliance "running" → test état En marche
+  "sensor.helios_dishwasher": state("running", {
     device_name: "Lave-vaisselle", device_type: "appliance", device_priority: 4,
     manual_mode: false, power_w: 1950,
     last_effective_score: 0.55, last_priority_score: 0.4, last_fit: 0.82, last_urgency: 0.5,
@@ -356,10 +375,12 @@ const hassCompact = makeHass({
   "sensor.helios_pv_power":    state(1500),
   "sensor.helios_grid_power":  state(800),
   "sensor.helios_house_power": state(2200),
-  "sensor.helios_score": state(0.15, {
+  "sensor.helios_global_score": state(0.15, {
     tempo_color: "red", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000,
     surplus_w: 0, virtual_surplus_w: 0, bat_available_w: 0, remaining_w: 0,
-    f_surplus: 0.0, f_tempo: 0.10, f_solar: 0.8,
+    f_surplus: 0.0, w_surplus: 0.5,
+    f_tempo:   0.10, w_tempo:  0.3,
+    f_solar:   0.8,  w_solar:  0.2,
   }),
   "sensor.helios_battery": state("reserve", {
     battery_enabled: true, soc: 18, power_w: 0, available_w: 0,

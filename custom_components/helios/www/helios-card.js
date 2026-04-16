@@ -700,18 +700,21 @@ class HeliosCard extends HTMLElement {
               <div class="score-factor-fill" id="h-sf-surplus-fill"></div>
               <span class="score-factor-lbl">☀️ Surplus</span>
               <span class="score-factor-val" id="h-sf-surplus-val">—</span>
+              <span class="score-factor-w" id="h-sf-surplus-w"></span>
             </div>
             <span class="score-sep">+</span>
             <div class="score-factor" id="h-sf-tempo">
               <div class="score-factor-fill" id="h-sf-tempo-fill"></div>
               <span class="score-factor-lbl">🎨 Tempo</span>
               <span class="score-factor-val" id="h-sf-tempo-val">—</span>
+              <span class="score-factor-w" id="h-sf-tempo-w"></span>
             </div>
             <span class="score-sep">+</span>
             <div class="score-factor" id="h-sf-solar">
               <div class="score-factor-fill" id="h-sf-solar-fill"></div>
               <span class="score-factor-lbl">🌞 Solaire</span>
               <span class="score-factor-val" id="h-sf-solar-val">—</span>
+              <span class="score-factor-w" id="h-sf-solar-w"></span>
             </div>
           </div>
           <div class="budget-row" id="h-budget-row">
@@ -1070,14 +1073,16 @@ class HeliosCard extends HTMLElement {
 
     // Score decomposition chips
     const factors = [
-      { key: "surplus", fAttr: "f_surplus" },
-      { key: "tempo",   fAttr: "f_tempo"   },
-      { key: "solar",   fAttr: "f_solar"   },
+      { key: "surplus", fAttr: "f_surplus", wAttr: "w_surplus" },
+      { key: "tempo",   fAttr: "f_tempo",   wAttr: "w_tempo"   },
+      { key: "solar",   fAttr: "f_solar",   wAttr: "w_solar"   },
     ];
-    for (const { key, fAttr } of factors) {
+    for (const { key, fAttr, wAttr } of factors) {
       const f = this._attr(e.score, fAttr);
+      const w = this._attr(e.score, wAttr);
       const fColor = f === null ? "#9E9E9E" : f > 0.6 ? "#4CAF50" : f > 0.3 ? "#FF9800" : "#F44336";
       this._txt(`h-sf-${key}-val`, f !== null ? f.toFixed(2) : "—");
+      this._txt(`h-sf-${key}-w`,   w !== null ? `×${w}` : "");
       const fill = this.shadowRoot.getElementById(`h-sf-${key}-fill`);
       if (fill) {
         fill.style.height     = f !== null ? `${Math.round(f * 100)}%` : "0%";
@@ -1502,17 +1507,18 @@ class HeliosCard extends HTMLElement {
     const priority     = this._attr(dev.entity, "device_priority") ?? dev.priority;
 
     const devFactors = [
-      { label: "🎯 Priorité", val: priorityScore },
-      { label: "⚡ Fit",      val: fit           },
-      { label: "⏱ Urgence",  val: urgency       },
+      { label: "🎯 Priorité", val: priorityScore, w: 0.4 },
+      { label: "⚡ Fit",      val: fit,           w: 0.3 },
+      { label: "⏱ Urgence",  val: urgency,       w: 0.3 },
     ];
-    const factorChips = devFactors.map(({ label, val }) => {
+    const factorChips = devFactors.map(({ label, val, w }) => {
       const fc = val === null ? "#9E9E9E" : val > 0.6 ? "#4CAF50" : val > 0.3 ? "#FF9800" : "#F44336";
       return `
         <div class="hm-factor">
           <div class="hm-factor-fill" style="height:${val !== null ? Math.round(val * 100) : 0}%;background:${fc}33"></div>
           <span class="hm-factor-lbl">${label}</span>
           <span class="hm-factor-val" style="color:${fc}">${val !== null ? val.toFixed(2) : "—"}</span>
+          <span class="hm-factor-w">×${w}</span>
         </div>`;
     }).join('<span class="hm-factor-sep">+</span>');
 
