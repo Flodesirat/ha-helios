@@ -23,7 +23,7 @@
  *     house_power:   sensor.helios_house_power
  *     battery_soc:   sensor.my_battery_soc        # optionnel — SOC batterie (%)
  *     battery_power: sensor.helios_battery_power  # optionnel — négatif=charge, positif=décharge
- *     score:         sensor.helios_score
+ *     score:         sensor.helios_global_score
  *   devices:                                      # optionnel — section appareils (mode full uniquement)
  *     - name: Piscine
  *       type: pool
@@ -735,7 +735,10 @@ class HeliosCard extends HTMLElement {
     this.shadowRoot.getElementById("h-devices").addEventListener("click", (e) => {
       if (e.target.closest("button")) return;
       const row = e.target.closest(".dev-row[data-slug]");
-      if (row) this._openModal(row.dataset.slug);
+      if (row) {
+        if (row.dataset.slug === "__battery__") this._openBatModal();
+        else this._openModal(row.dataset.slug);
+      }
     });
 
     // Modal actions (delegation sur l'overlay, attaché une seule fois)
@@ -836,7 +839,7 @@ class HeliosCard extends HTMLElement {
       pv_power:       "sensor.helios_pv_power",
       grid_power:     "sensor.helios_grid_power",
       house_power:    "sensor.helios_house_power",
-      score:   "sensor.helios_score",
+      score:   "sensor.helios_global_score",
       battery: "sensor.helios_battery",
     };
     for (const [key, eid] of Object.entries(SYSTEM)) {
@@ -868,13 +871,13 @@ class HeliosCard extends HTMLElement {
     const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
     if (entryId) {
       const disc = this._discoverEntities(entryId);
-      if (disc?.["score"]) {
+      if (disc?.["global_score"]) {
         return {
           entityRefs: {
             pv_power:       disc["pv_power"],
             grid_power:     disc["grid_power"],
             house_power:    disc["house_power"],
-            score:          disc["score"],
+            score:          disc["global_score"],
             battery:        disc["battery"],
             _soc_from_attr: true,
           },
@@ -1102,7 +1105,7 @@ class HeliosCard extends HTMLElement {
     if (devices && compact) devices.style.display = "none";
 
     // Devices section (full mode uniquement)
-    if (!compact) this._updateDevices(discoveredDevices);
+    if (!compact) this._updateDevices(discoveredDevices, e);
 
     // Rafraîchit les modales si elles sont ouvertes
     if (this._modalSlug) this._refreshModal();
@@ -1110,17 +1113,18 @@ class HeliosCard extends HTMLElement {
   }
 
   // ------------------------------------------------------------------ Devices
-  _updateDevices(devCfgs) {
+  _updateDevices(devCfgs, entityRefs = {}) {
     const devicesEl = this.shadowRoot.getElementById("h-devices");
     if (!devicesEl) return;
-    if (devCfgs.length === 0) { devicesEl.style.display = "none"; return; }
+    const batRow = this._renderBatteryRow(entityRefs);
+    if (devCfgs.length === 0 && !batRow) { devicesEl.style.display = "none"; return; }
     devicesEl.style.display = "flex";
     const sorted = [...devCfgs].sort((a, b) => {
       const sa = this._attr(a.entity, "last_effective_score") ?? -1;
       const sb = this._attr(b.entity, "last_effective_score") ?? -1;
       return sb - sa;
     });
-    devicesEl.innerHTML = sorted.map(d => this._renderDevice(d)).join("");
+    devicesEl.innerHTML = (batRow ?? "") + sorted.map(d => this._renderDevice(d)).join("");
     devicesEl.querySelectorAll(".dev-ready-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         const entityId = btn.dataset.readyEntity;
@@ -1129,6 +1133,42 @@ class HeliosCard extends HTMLElement {
         }
       });
     });
+  }
+
+  _renderBatteryRow(entityRefs) {
+    const batEid = entityRefs?.battery;
+    if (!batEid) return null;
+    const enabled = this._attr(batEid, "battery_enabled");
+    if (enabled === false) return null;
+
+    const action  = this._str(batEid) ?? "idle";
+    const soc     = this._attr(batEid, "soc");
+    const powerW  = this._attr(batEid, "power_w");
+    const manual  = this._hass?.states[this._batManualSwitchEntity()]?.state === "on";
+
+    const actionLabel = { charge: "En charge", discharge: "Décharge", reserve: "Réserve", idle: "Veille" }[action] ?? action;
+    const dotColor    = manual ? "#FF9800"
+      : { charge: "#1565C0", discharge: "#0288D1", reserve: "#FF9800", idle: "#9E9E9E" }[action] ?? "#9E9E9E";
+    const statusText  = manual ? "Manuel" : actionLabel;
+
+    const socColor = soc === null ? "#9E9E9E" : soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336";
+    const detail   = soc !== null ? `SOC : <span style="color:${socColor};font-weight:700">${Math.round(soc)} %</span>` : "";
+    const powerHtml = (action === "charge" || action === "discharge") && powerW !== null && Math.abs(powerW) > 5
+      ? `<span class="dev-power">${this._fmt(Math.abs(powerW))}</span>` : "";
+
+    return `
+      <div class="dev-row" data-slug="__battery__">
+        <div class="dev-icon">🔋</div>
+        <div class="dev-info">
+          <div class="dev-name-row"><span class="dev-name">Batterie</span></div>
+          ${detail ? `<div class="dev-detail">${detail}</div>` : ""}
+        </div>
+        <div class="dev-status">
+          <div class="dot" style="background:${dotColor}"></div>
+          <span class="dev-status-text">${statusText}</span>
+          ${powerHtml}
+        </div>
+      </div>`;
   }
 
   _renderDevice(dev) {
@@ -1631,7 +1671,7 @@ class HeliosCard extends HTMLElement {
         pv_power:   "sensor.helios_pv_power",
         grid_power: "sensor.helios_grid_power",
         house_power:"sensor.helios_house_power",
-        score:      "sensor.helios_score",
+        score:      "sensor.helios_global_score",
         battery:    "sensor.helios_battery",
       },
       devices: [],
