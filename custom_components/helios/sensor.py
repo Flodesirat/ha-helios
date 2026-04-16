@@ -33,6 +33,7 @@ async def async_setup_entry(
     entities = [
         EnergyOptimizerSurplusSensor(coordinator, entry),
         EnergyOptimizerScoreSensor(coordinator, entry),
+        EnergyDailySavingsSensor(coordinator, entry),
         EnergyOptimizerBatterySensor(coordinator, entry),
         EnergyOptimizerTempoNextColorSensor(coordinator, entry),
         EnergyOptimizerPVPowerSensor(coordinator, entry),
@@ -283,6 +284,52 @@ class EnergyDailyConsumptionSensor(_DailyEnergySensor):
     @property
     def native_value(self) -> float:
         return round(self.coordinator._energy_consumption_kwh, 3)
+
+
+class EnergyDailySavingsSensor(_BaseEOSensor):
+    """Money saved today by solar self-consumption (€).
+
+    Formula at each sample: (house_power - max(0, grid_power)) * dt_h * price_€/kWh
+    The price used is: price_hc during off-peak slots, price_rouge_hp on Tempo rouge peak,
+    price_hp otherwise.
+    """
+
+    _attr_translation_key = "eo_daily_savings"
+    suggested_object_id = "daily_savings"
+    _unique_suffix = "daily_savings"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+
+    @property
+    def last_reset(self) -> datetime:
+        return self.coordinator._energy_last_reset
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator._savings_eur, 4)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        cfg = self.coordinator._cfg
+        from .const import (
+            CONF_PRICE_BLUE_HC, CONF_PRICE_BLUE_HP,
+            CONF_PRICE_WHITE_HC, CONF_PRICE_WHITE_HP,
+            CONF_PRICE_RED_HC, CONF_PRICE_RED_HP,
+            DEFAULT_PRICE_BLUE_HC, DEFAULT_PRICE_BLUE_HP,
+            DEFAULT_PRICE_WHITE_HC, DEFAULT_PRICE_WHITE_HP,
+            DEFAULT_PRICE_RED_HC, DEFAULT_PRICE_RED_HP,
+        )
+        return {
+            "blue_hc":       float(cfg.get(CONF_PRICE_BLUE_HC,  DEFAULT_PRICE_BLUE_HC)),
+            "blue_hp":       float(cfg.get(CONF_PRICE_BLUE_HP,  DEFAULT_PRICE_BLUE_HP)),
+            "white_hc":      float(cfg.get(CONF_PRICE_WHITE_HC, DEFAULT_PRICE_WHITE_HC)),
+            "white_hp":      float(cfg.get(CONF_PRICE_WHITE_HP, DEFAULT_PRICE_WHITE_HP)),
+            "red_hc":        float(cfg.get(CONF_PRICE_RED_HC,   DEFAULT_PRICE_RED_HC)),
+            "red_hp":        float(cfg.get(CONF_PRICE_RED_HP,   DEFAULT_PRICE_RED_HP)),
+            "current_price": round(self.coordinator._current_price_eur_kwh(), 4),
+        }
 
 
 def _soc_level_label(soc: float | None) -> str | None:

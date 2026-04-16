@@ -33,8 +33,15 @@ from .const import (
     BATTERY_ACTION_AUTOCONSOMMATION,
     normalize_tempo_color,
     CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN,
-    TEMPO_RED,
+    TEMPO_BLUE, TEMPO_WHITE, TEMPO_RED,
     STORAGE_KEY_OPTIMIZER, STORAGE_KEY_ENERGY, STORAGE_VERSION,
+    CONF_PRICE_BLUE_HC, CONF_PRICE_BLUE_HP,
+    CONF_PRICE_WHITE_HC, CONF_PRICE_WHITE_HP,
+    CONF_PRICE_RED_HC, CONF_PRICE_RED_HP,
+    DEFAULT_PRICE_BLUE_HC, DEFAULT_PRICE_BLUE_HP,
+    DEFAULT_PRICE_WHITE_HC, DEFAULT_PRICE_WHITE_HP,
+    DEFAULT_PRICE_RED_HC, DEFAULT_PRICE_RED_HP,
+    CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END, CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
 )
 from .scoring_engine import ScoringEngine
 from .battery_strategy import BatteryStrategy
@@ -124,6 +131,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._energy_import_kwh:      float = 0.0
         self._energy_export_kwh:      float = 0.0
         self._energy_consumption_kwh: float = 0.0
+        # Daily savings accumulator — €, reset at midnight
+        self._savings_eur: float = 0.0
 
         # Sensor sampling — fires every sample_interval, fills buffers only
         sample_s = int(cfg.get(CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS))
@@ -207,10 +216,44 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._energy_import_kwh      += max(0.0,  grid_w) * dt_kwh
         self._energy_export_kwh      += max(0.0, -grid_w) * dt_kwh
 
+        # Savings accumulation — self-consumed power (not imported) * current tariff
+        self_consumed_w = max(0.0, house_w - max(0.0, grid_w))
+        self._savings_eur += self_consumed_w * dt_kwh * self._current_price_eur_kwh()
+
     @staticmethod
     def _buf_mean(buf: deque[float], fallback: float = 0.0) -> float:
         """Return mean of buffer, or fallback if empty."""
         return sum(buf) / len(buf) if buf else fallback
+
+    # ------------------------------------------------------------------
+    # Electricity price helpers
+    # ------------------------------------------------------------------
+    def _is_off_peak_now(self) -> bool:
+        """Return True if the current time falls in any configured off-peak slot."""
+        from datetime import time as dtime
+        from .managed_device import _parse_off_peak_slots, _is_in_slot
+        now_t = dt_util.now().time()
+        slots = _parse_off_peak_slots(self._cfg)
+        return any(_is_in_slot(now_t, s, e) for s, e in slots)
+
+    def _current_price_eur_kwh(self) -> float:
+        """Return the applicable electricity price in €/kWh at the current moment.
+
+        Picks from the 6-cell Tempo tariff matrix (color × HC/HP).
+        Falls back to blue HP when the Tempo color is unknown.
+        """
+        cfg = self._cfg
+        hc = self._is_off_peak_now()
+        color = self.tempo_color or TEMPO_BLUE
+        if color == TEMPO_RED:
+            return float(cfg.get(CONF_PRICE_RED_HC,   DEFAULT_PRICE_RED_HC)   if hc else
+                         cfg.get(CONF_PRICE_RED_HP,   DEFAULT_PRICE_RED_HP))
+        if color == TEMPO_WHITE:
+            return float(cfg.get(CONF_PRICE_WHITE_HC, DEFAULT_PRICE_WHITE_HC) if hc else
+                         cfg.get(CONF_PRICE_WHITE_HP, DEFAULT_PRICE_WHITE_HP))
+        # blue (default)
+        return float(cfg.get(CONF_PRICE_BLUE_HC, DEFAULT_PRICE_BLUE_HC) if hc else
+                     cfg.get(CONF_PRICE_BLUE_HP, DEFAULT_PRICE_BLUE_HP))
 
     # ------------------------------------------------------------------
     # Daily energy reset
@@ -221,6 +264,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._energy_import_kwh      = 0.0
         self._energy_export_kwh      = 0.0
         self._energy_consumption_kwh = 0.0
+        self._savings_eur            = 0.0
         self._energy_last_reset = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
         _LOGGER.debug("Helios: daily energy counters reset at midnight")
         await self._async_save_energy()
@@ -283,6 +327,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._energy_import_kwh      = float(data.get("import_kwh",      0.0))
         self._energy_export_kwh      = float(data.get("export_kwh",      0.0))
         self._energy_consumption_kwh = float(data.get("consumption_kwh", 0.0))
+        self._savings_eur            = float(data.get("savings_eur",     0.0))
         _LOGGER.info(
             "Helios: daily energy restored — PV %.2f kWh, import %.2f kWh, export %.2f kWh, conso %.2f kWh",
             self._energy_pv_kwh, self._energy_import_kwh,
@@ -297,6 +342,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "import_kwh":      round(self._energy_import_kwh,      3),
             "export_kwh":      round(self._energy_export_kwh,      3),
             "consumption_kwh": round(self._energy_consumption_kwh, 3),
+            "savings_eur":     round(self._savings_eur,            4),
         })
 
     # ------------------------------------------------------------------

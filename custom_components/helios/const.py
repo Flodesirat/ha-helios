@@ -130,6 +130,13 @@ CONF_OFF_PEAK_1_START = "off_peak_1_start"
 CONF_OFF_PEAK_1_END   = "off_peak_1_end"
 CONF_OFF_PEAK_2_START = "off_peak_2_start"
 CONF_OFF_PEAK_2_END   = "off_peak_2_end"
+# Electricity prices for savings computation (€/kWh) — Tempo color × HC/HP
+CONF_PRICE_BLUE_HC  = "price_blue_hc"
+CONF_PRICE_BLUE_HP  = "price_blue_hp"
+CONF_PRICE_WHITE_HC = "price_white_hc"
+CONF_PRICE_WHITE_HP = "price_white_hp"
+CONF_PRICE_RED_HC   = "price_red_hc"
+CONF_PRICE_RED_HP   = "price_red_hp"
 
 CONF_BASE_LOAD_NOISE       = "base_load_noise"     # std-dev du bruit multiplicatif journalier sur la charge
 CONF_RISK_LAMBDA           = "risk_lambda"         # coefficient de pénalité sur l'écart-type de l'objectif
@@ -234,3 +241,11 @@ DEFAULT_POOL_SPLIT_SESSIONS        = True
 DEFAULT_APPLIANCE_POWER_THRESHOLD_W     = 10.0   # W — "cycle ended" detection
 DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES = 120   # min — fallback if no power sensor
 DEFAULT_APPLIANCE_DEADLINE_SLOTS        = "12:00,18:00"
+
+# EDF Tempo tariff defaults TTC (03/03/2026) — HC = 22h–6h, HP = 6h–22h
+DEFAULT_PRICE_BLUE_HC  = 0.1325
+DEFAULT_PRICE_BLUE_HP  = 0.1612
+DEFAULT_PRICE_WHITE_HC = 0.1499
+DEFAULT_PRICE_WHITE_HP = 0.1871
+DEFAULT_PRICE_RED_HC   = 0.1575
+DEFAULT_PRICE_RED_HP   = 0.7060

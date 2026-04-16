@@ -57,6 +57,8 @@ def _make_coord(cfg: dict | None = None) -> MagicMock:
     coord._energy_import_kwh      = 0.0
     coord._energy_export_kwh      = 0.0
     coord._energy_consumption_kwh = 0.0
+    coord._savings_eur            = 0.0
+    coord.tempo_color             = None
     return coord
 
 

@@ -57,6 +57,12 @@ from .const import (
     CONF_BASE_LOAD_NOISE, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
     CONF_SAMPLE_INTERVAL_SECONDS,
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END, CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
+    CONF_PRICE_BLUE_HC, CONF_PRICE_BLUE_HP,
+    CONF_PRICE_WHITE_HC, CONF_PRICE_WHITE_HP,
+    CONF_PRICE_RED_HC, CONF_PRICE_RED_HP,
+    DEFAULT_PRICE_BLUE_HC, DEFAULT_PRICE_BLUE_HP,
+    DEFAULT_PRICE_WHITE_HC, DEFAULT_PRICE_WHITE_HP,
+    DEFAULT_PRICE_RED_HC, DEFAULT_PRICE_RED_HP,
     # Device / general types and defaults
     DEVICE_TYPES, DEVICE_TYPE_GENERIC, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER,
     DEVICE_TYPE_HVAC, DEVICE_TYPE_APPLIANCE, DEVICE_TYPE_POOL,
@@ -562,6 +568,9 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                     CONF_SAMPLE_INTERVAL_SECONDS,
                     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
                     CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
+                    CONF_PRICE_BLUE_HC, CONF_PRICE_BLUE_HP,
+                    CONF_PRICE_WHITE_HC, CONF_PRICE_WHITE_HP,
+                    CONF_PRICE_RED_HC, CONF_PRICE_RED_HP,
                 )
                 if self._current(k) is not None
             }),
@@ -988,4 +997,16 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
             CONF_OFF_PEAK_2_END,
             default=d.get(CONF_OFF_PEAK_2_END, ""),
         ): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TIME)),
+        vol.Optional(CONF_PRICE_BLUE_HC,  default=d.get(CONF_PRICE_BLUE_HC,  DEFAULT_PRICE_BLUE_HC)):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+        vol.Optional(CONF_PRICE_BLUE_HP,  default=d.get(CONF_PRICE_BLUE_HP,  DEFAULT_PRICE_BLUE_HP)):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+        vol.Optional(CONF_PRICE_WHITE_HC, default=d.get(CONF_PRICE_WHITE_HC, DEFAULT_PRICE_WHITE_HC)):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+        vol.Optional(CONF_PRICE_WHITE_HP, default=d.get(CONF_PRICE_WHITE_HP, DEFAULT_PRICE_WHITE_HP)):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+        vol.Optional(CONF_PRICE_RED_HC,   default=d.get(CONF_PRICE_RED_HC,   DEFAULT_PRICE_RED_HC)):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+        vol.Optional(CONF_PRICE_RED_HP,   default=d.get(CONF_PRICE_RED_HP,   DEFAULT_PRICE_RED_HP)):
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
     })
