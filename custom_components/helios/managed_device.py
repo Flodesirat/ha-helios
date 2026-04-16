@@ -475,7 +475,7 @@ class ManagedDevice:
         now: datetime | None = None,
     ) -> float:
         priority_score = self.priority / 10.0
-        fit     = self.compute_fit_score(self.power_w, surplus_w, bat_available_w, grid_allowance_w, tempo_red)
+        fit     = self.compute_fit_score(self.actual_power_w(reader), surplus_w, bat_available_w, grid_allowance_w, tempo_red)
         urgency = self.urgency_modifier(reader, now=now)
 
         self.last_priority_score = round(priority_score, 3)

@@ -464,7 +464,7 @@ class DeviceManager:
                 # Appareils RUNNING : maintenir actifs et déduire du budget
                 if device.device_type == DEVICE_TYPE_APPLIANCE and device.appliance_state == APPLIANCE_STATE_RUNNING:
                     if device.is_on:
-                        remaining -= device.power_w
+                        remaining -= device.actual_power_w(reader)
                         obligatoire.add(device)
                     continue
 
@@ -482,7 +482,7 @@ class DeviceManager:
                         await self._async_set_switch(hass, device, False, reason="satisfied", context=_base_ctx)
                     elif device.is_on and not self._min_on_elapsed(device):
                         # Satisfait mais min_on non écoulé → maintenir ON, protéger de la Phase 4
-                        remaining -= device.power_w
+                        remaining -= device.actual_power_w(reader)
                         obligatoire.add(device)
                     continue
 
@@ -490,6 +490,7 @@ class DeviceManager:
 
             if _urgency >= 1.0:
                 # Allumage forcé par urgence
+                _was_already_on = not isinstance(device, BatteryDevice) and device.is_on
                 if not isinstance(device, BatteryDevice):
                     if device.device_type == DEVICE_TYPE_APPLIANCE and device.appliance_state == APPLIANCE_STATE_PREPARING:
                         _fit_p2 = compute_fit(device.power_w, remaining, bat_available_w, grid_allowance_w)
@@ -500,11 +501,11 @@ class DeviceManager:
                     device.last_effective_score = 1.0
                 else:
                     device.is_on = True
-                remaining -= device.power_w
+                remaining -= device.actual_power_w(reader) if _was_already_on else device.power_w
                 obligatoire.add(device)
             elif device.is_on and not self._min_on_elapsed(device):
                 # min_on non écoulé : maintenir allumé
-                remaining -= device.power_w
+                remaining -= device.actual_power_w(reader)
                 obligatoire.add(device)
 
         # ---- Phase 3 — Greedy (recalcul dynamique du fit à chaque itération) ----
@@ -528,7 +529,8 @@ class DeviceManager:
                 if isinstance(d, BatteryDevice):
                     d.fit = 1.0
                 else:
-                    _fit = compute_fit(d.power_w, remaining, bat_available_w, grid_allowance_w)
+                    _pow = d.actual_power_w(reader) if d.is_on else d.power_w
+                    _fit = compute_fit(_pow, remaining, bat_available_w, grid_allowance_w)
                     _urg = d.urgency_modifier(reader, now=_now_dt)
                     _pri = d.priority / 10.0
                     if d.device_type not in (
@@ -552,6 +554,7 @@ class DeviceManager:
             if best_fit <= 0.0:
                 break  # Plus de budget utilisable
 
+            _was_already_on = not isinstance(best, BatteryDevice) and best.is_on
             if isinstance(best, BatteryDevice):
                 best.is_on = True
             elif (
@@ -590,7 +593,7 @@ class DeviceManager:
                     },
                 )
 
-            remaining -= best.power_w
+            remaining -= best.actual_power_w(reader) if _was_already_on else best.power_w
             selected.add(best)
             greedy_candidates.remove(best)
 

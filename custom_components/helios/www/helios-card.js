@@ -975,6 +975,7 @@ class HeliosCard extends HTMLElement {
 
   _doUpdate() {
     const { entityRefs: e, devices: discoveredDevices } = this._resolveAll();
+    const compact = !!this._config.compact;
 
     const pv         = this._num(e.pv_power);
     const grid       = this._num(e.grid_power);
@@ -1187,7 +1188,6 @@ class HeliosCard extends HTMLElement {
     }
 
     // Compact: marge réduite + masquer footer + devices
-    const compact  = !!this._config.compact;
     const cardEl   = this.shadowRoot.querySelector(".card");
     if (cardEl) compact ? cardEl.setAttribute("data-compact", "") : cardEl.removeAttribute("data-compact");
     const scoreDecomp = this.shadowRoot.getElementById("h-score-decomp");
@@ -1316,10 +1316,11 @@ class HeliosCard extends HTMLElement {
   }
 
   _deviceIsOn(dev) {
-    return this._str(dev.entity) === "on";
+    const st = this._str(dev.entity);
+    return st === "on" || st === "running";
   }
 
-  _deviceStatus(dev, isOn) {
+  _deviceStatus(dev, _isOn) {
     const manual = this._attr(dev.entity, "manual_mode") === true;
     if (manual) return { dotColor: "#FF9800", statusText: "Manuel" };
     const st = this._str(dev.entity);
@@ -1334,8 +1335,9 @@ class HeliosCard extends HTMLElement {
     if (dev.type === "ev" || dev.type === "ev_charger") {
       if (this._attr(dev.entity, "plugged") === false) return { dotColor: "#9E9E9E", statusText: "Non branché" };
     }
-    return isOn
-      ? { dotColor: "#4CAF50", statusText: "ON" }
+    const st2 = this._str(dev.entity);
+    return (st2 === "on" || st2 === "running")
+      ? { dotColor: "#4CAF50", statusText: "En marche" }
       : { dotColor: "#9E9E9E", statusText: "OFF" };
   }
 
@@ -1512,7 +1514,7 @@ class HeliosCard extends HTMLElement {
           <span class="hm-factor-lbl">${label}</span>
           <span class="hm-factor-val" style="color:${fc}">${val !== null ? val.toFixed(2) : "—"}</span>
         </div>`;
-    }).join('<span class="hm-factor-sep">×</span>');
+    }).join('<span class="hm-factor-sep">+</span>');
 
     const titleScore = effScore !== null
       ? `Score — effectif : <strong>${effScore.toFixed(3)}</strong>`
