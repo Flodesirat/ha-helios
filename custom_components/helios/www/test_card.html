@@ -120,6 +120,8 @@ const MOCK_ENTITIES = {
   "sensor.helios_energy_import":         mockEntity("energy_import"),
   "sensor.helios_energy_export":         mockEntity("energy_export"),
   "sensor.helios_energy_consumption":    mockEntity("energy_consumption"),
+  "sensor.helios_daily_savings":         mockEntity("daily_savings"),
+  "sensor.helios_total_savings":         mockEntity("total_savings"),
   "sensor.helios_pool":                  mockEntity("device_state_pool"),
   "sensor.helios_water_heater":          mockEntity("device_state_water_heater"),
   "sensor.helios_dishwasher":            mockEntity("device_state_dishwasher"),
@@ -213,6 +215,8 @@ const hassDay = makeHass({
   "sensor.helios_energy_import":      state(0.3),
   "sensor.helios_energy_export":      state(4.1),
   "sensor.helios_energy_consumption": state(5.6),
+  "sensor.helios_daily_savings":      state(1.84),
+  "sensor.helios_total_savings":      state(312.47),
 
   // pool : état "running" → test du fix _deviceIsOn (running = ON)
   "sensor.helios_pool": state("running", {

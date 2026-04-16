@@ -285,6 +285,40 @@ class HeliosCard extends HTMLElement {
           font-weight: 700;
         }
 
+        /* ---- Savings row ---- */
+        .savings-row {
+          display: flex;
+          gap: 6px;
+          margin: 0 0 8px;
+          padding-bottom: 8px;
+          border-bottom: 1px solid var(--divider-color, #e0e0e0);
+        }
+        .savings-chip {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          background: #E8F5E9;
+          border-radius: 6px;
+          padding: 4px 4px 3px;
+        }
+        @media (prefers-color-scheme: dark) {
+          .savings-chip { background: #1B5E20; }
+        }
+        .savings-chip-lbl {
+          font-size: 9px;
+          color: var(--secondary-text-color);
+          white-space: nowrap;
+        }
+        .savings-chip-val {
+          font-size: 12px;
+          font-weight: 700;
+          color: #2E7D32;
+        }
+        @media (prefers-color-scheme: dark) {
+          .savings-chip-val { color: #81C784; }
+        }
+
         /* ---- Score / chips ---- */
         .footer {
           padding-top: 10px;
@@ -687,6 +721,17 @@ class HeliosCard extends HTMLElement {
           </div>
         </div>
 
+        <div class="savings-row" id="h-savings-row" style="display:none">
+          <div class="savings-chip">
+            <span class="savings-chip-lbl">💰 Économies auj.</span>
+            <span class="savings-chip-val" id="h-sav-daily">—</span>
+          </div>
+          <div class="savings-chip">
+            <span class="savings-chip-lbl">💰 Économies totales</span>
+            <span class="savings-chip-val" id="h-sav-total">—</span>
+          </div>
+        </div>
+
         <div class="footer" id="h-footer">
           <div class="score-row">
             <div class="lbl">Score</div>
@@ -941,6 +986,26 @@ class HeliosCard extends HTMLElement {
     };
   }
 
+  // Résout les entity_id des capteurs d'économies (journalier + total).
+  _resolveSavingsIds() {
+    const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
+    if (entryId) {
+      const disc = this._discoverEntities(entryId);
+      if (disc) {
+        return {
+          daily: disc["daily_savings"] ?? null,
+          total: disc["total_savings"] ?? null,
+        };
+      }
+    }
+    const states = this._hass?.states;
+    const fb = key => states?.[`sensor.helios_${key}`] ? `sensor.helios_${key}` : null;
+    return {
+      daily: fb("daily_savings"),
+      total: fb("total_savings"),
+    };
+  }
+
   // Résout les entités ET les appareils en un seul passage.
   // Priorité : entry_id explicite → auto-découverte → patterns état → config manuelle.
   _resolveAll() {
@@ -1156,6 +1221,25 @@ class HeliosCard extends HTMLElement {
       }
     } else if (energyRow && compact) {
       energyRow.style.display = "none";
+    }
+
+    // Savings section
+    const savingsRow = this.shadowRoot.getElementById("h-savings-row");
+    if (savingsRow && !compact) {
+      const savingsIds = this._resolveSavingsIds();
+      const hasSavings = savingsIds.daily || savingsIds.total;
+      savingsRow.style.display = hasSavings ? "" : "none";
+      if (hasSavings) {
+        const fmtEur = eid => {
+          if (!eid) return "—";
+          const v = this._num(eid, null);
+          return v !== null ? `${parseFloat(v).toFixed(2)} €` : "—";
+        };
+        this._txt("h-sav-daily", fmtEur(savingsIds.daily));
+        this._txt("h-sav-total", fmtEur(savingsIds.total));
+      }
+    } else if (savingsRow && compact) {
+      savingsRow.style.display = "none";
     }
 
     // Forecast section
