@@ -133,6 +133,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._energy_consumption_kwh: float = 0.0
         # Daily savings accumulator — €, reset at midnight
         self._savings_eur: float = 0.0
+        # Lifetime savings accumulator — €, never reset
+        self._savings_total_eur: float = 0.0
 
         # Sensor sampling — fires every sample_interval, fills buffers only
         sample_s = int(cfg.get(CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS))
@@ -218,7 +220,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
 
         # Savings accumulation — self-consumed power (not imported) * current tariff
         self_consumed_w = max(0.0, house_w - max(0.0, grid_w))
-        self._savings_eur += self_consumed_w * dt_kwh * self._current_price_eur_kwh()
+        _savings_increment = self_consumed_w * dt_kwh * self._current_price_eur_kwh()
+        self._savings_eur       += _savings_increment
+        self._savings_total_eur += _savings_increment
 
     @staticmethod
     def _buf_mean(buf: deque[float], fallback: float = 0.0) -> float:
@@ -264,7 +268,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._energy_import_kwh      = 0.0
         self._energy_export_kwh      = 0.0
         self._energy_consumption_kwh = 0.0
-        self._savings_eur            = 0.0
+        self._savings_eur       = 0.0
+        # _savings_total_eur intentionally NOT reset here
         self._energy_last_reset = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
         _LOGGER.debug("Helios: daily energy counters reset at midnight")
         await self._async_save_energy()
@@ -315,19 +320,26 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         await self._async_restore_energy()
 
     async def _async_restore_energy(self) -> None:
-        """Restore daily energy accumulators from storage if the saved date is today."""
+        """Restore energy accumulators from storage.
+
+        Daily counters are only restored when the stored date matches today.
+        The lifetime total is always restored regardless of date.
+        """
         data: dict = await self._energy_store.async_load() or {}
         if not data:
             return
+        # Lifetime total — always restored
+        self._savings_total_eur = float(data.get("savings_total_eur", 0.0))
+        # Daily counters — only if the store is from today
         today = dt_util.now().date().isoformat()
         if data.get("date") != today:
-            _LOGGER.debug("Helios: energy store date mismatch (%s vs %s) — starting fresh", data.get("date"), today)
+            _LOGGER.debug("Helios: energy store date mismatch (%s vs %s) — daily counters start fresh", data.get("date"), today)
             return
-        self._energy_pv_kwh          = float(data.get("pv_kwh",          0.0))
-        self._energy_import_kwh      = float(data.get("import_kwh",      0.0))
-        self._energy_export_kwh      = float(data.get("export_kwh",      0.0))
+        self._energy_pv_kwh          = float(data.get("pv_kwh",      0.0))
+        self._energy_import_kwh      = float(data.get("import_kwh",  0.0))
+        self._energy_export_kwh      = float(data.get("export_kwh",  0.0))
         self._energy_consumption_kwh = float(data.get("consumption_kwh", 0.0))
-        self._savings_eur            = float(data.get("savings_eur",     0.0))
+        self._savings_eur            = float(data.get("savings_eur", 0.0))
         _LOGGER.info(
             "Helios: daily energy restored — PV %.2f kWh, import %.2f kWh, export %.2f kWh, conso %.2f kWh",
             self._energy_pv_kwh, self._energy_import_kwh,
@@ -337,12 +349,13 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     async def _async_save_energy(self) -> None:
         """Persist current daily energy accumulators to storage."""
         await self._energy_store.async_save({
-            "date":            dt_util.now().date().isoformat(),
-            "pv_kwh":          round(self._energy_pv_kwh,          3),
-            "import_kwh":      round(self._energy_import_kwh,      3),
-            "export_kwh":      round(self._energy_export_kwh,      3),
-            "consumption_kwh": round(self._energy_consumption_kwh, 3),
-            "savings_eur":     round(self._savings_eur,            4),
+            "date":              dt_util.now().date().isoformat(),
+            "pv_kwh":            round(self._energy_pv_kwh,          3),
+            "import_kwh":        round(self._energy_import_kwh,      3),
+            "export_kwh":        round(self._energy_export_kwh,      3),
+            "consumption_kwh":   round(self._energy_consumption_kwh, 3),
+            "savings_eur":       round(self._savings_eur,            4),
+            "savings_total_eur": round(self._savings_total_eur,      4),
         })
 
     # ------------------------------------------------------------------

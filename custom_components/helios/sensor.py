@@ -34,6 +34,7 @@ async def async_setup_entry(
         EnergyOptimizerSurplusSensor(coordinator, entry),
         EnergyOptimizerScoreSensor(coordinator, entry),
         EnergyDailySavingsSensor(coordinator, entry),
+        EnergyTotalSavingsSensor(coordinator, entry),
         EnergyOptimizerBatterySensor(coordinator, entry),
         EnergyOptimizerTempoNextColorSensor(coordinator, entry),
         EnergyOptimizerPVPowerSensor(coordinator, entry),
@@ -330,6 +331,25 @@ class EnergyDailySavingsSensor(_BaseEOSensor):
             "red_hp":        float(cfg.get(CONF_PRICE_RED_HP,   DEFAULT_PRICE_RED_HP)),
             "current_price": round(self.coordinator._current_price_eur_kwh(), 4),
         }
+
+
+class EnergyTotalSavingsSensor(_BaseEOSensor):
+    """Cumulative money saved by solar self-consumption since integration setup (€).
+
+    Never resets — survives restarts via the energy store.
+    """
+
+    _attr_translation_key = "eo_total_savings"
+    suggested_object_id = "total_savings"
+    _unique_suffix = "total_savings"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator._savings_total_eur, 4)
 
 
 def _soc_level_label(soc: float | None) -> str | None:
