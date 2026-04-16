@@ -362,6 +362,18 @@
       "eo_house_power": {
         "name": "Consommation maison"
       },
+      "eo_energy_pv": {
+        "name": "Énergie PV aujourd'hui"
+      },
+      "eo_energy_import": {
+        "name": "Import réseau aujourd'hui"
+      },
+      "eo_energy_export": {
+        "name": "Export réseau aujourd'hui"
+      },
+      "eo_energy_consumption": {
+        "name": "Consommation maison aujourd'hui"
+      },
       "eo_device_state": {
         "name": "{name}",
         "state": {

@@ -362,6 +362,18 @@
       "eo_house_power": {
         "name": "House power"
       },
+      "eo_energy_pv": {
+        "name": "PV energy today"
+      },
+      "eo_energy_import": {
+        "name": "Grid import today"
+      },
+      "eo_energy_export": {
+        "name": "Grid export today"
+      },
+      "eo_energy_consumption": {
+        "name": "House consumption today"
+      },
       "eo_device_state": {
         "name": "{name}",
         "state": {

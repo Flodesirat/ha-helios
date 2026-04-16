@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import time as _time
 from collections import deque
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -34,7 +34,7 @@ from .const import (
     normalize_tempo_color,
     CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN,
     TEMPO_RED,
-    STORAGE_KEY_OPTIMIZER, STORAGE_VERSION,
+    STORAGE_KEY_OPTIMIZER, STORAGE_KEY_ENERGY, STORAGE_VERSION,
 )
 from .scoring_engine import ScoringEngine
 from .battery_strategy import BatteryStrategy
@@ -81,6 +81,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         ema_alpha = float(cfg.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA))
         self.consumption_learner = ConsumptionLearner(hass, entry.entry_id, alpha=ema_alpha)
         self._optimizer_store  = Store(hass, STORAGE_VERSION, STORAGE_KEY_OPTIMIZER)
+        self._energy_store     = Store(hass, STORAGE_VERSION, STORAGE_KEY_ENERGY)
         self.grid_allowance_w: float = float(
             cfg.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W)
         )
@@ -116,6 +117,14 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         # Sampling buffers — rolling window for power signal averaging
         self._rebuild_buffers()
 
+        # Daily energy accumulators — Riemann sum, reset at midnight
+        _today = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        self._energy_last_reset: datetime = _today
+        self._energy_pv_kwh:          float = 0.0
+        self._energy_import_kwh:      float = 0.0
+        self._energy_export_kwh:      float = 0.0
+        self._energy_consumption_kwh: float = 0.0
+
         # Sensor sampling — fires every sample_interval, fills buffers only
         sample_s = int(cfg.get(CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS))
         self._unsub_sample = async_track_time_interval(
@@ -131,6 +140,13 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             hour=5,
             minute=0,
             second=0,
+        )
+
+        # Midnight reset for daily energy counters
+        self._unsub_energy_reset = async_track_time_change(
+            hass,
+            self._async_reset_daily_energy,
+            hour=0, minute=0, second=0,
         )
 
     # ------------------------------------------------------------------
@@ -168,9 +184,12 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                 return 0.0
 
         cfg = self._cfg
-        self._buf_pv.append(_float(cfg.get(CONF_PV_POWER_ENTITY)))
-        self._buf_house.append(_float(cfg.get(CONF_HOUSE_POWER_ENTITY)))
-        self._buf_grid.append(_float(cfg.get(CONF_GRID_POWER_ENTITY)))
+        pv_w    = _float(cfg.get(CONF_PV_POWER_ENTITY))
+        house_w = _float(cfg.get(CONF_HOUSE_POWER_ENTITY))
+        grid_w  = _float(cfg.get(CONF_GRID_POWER_ENTITY))
+        self._buf_pv.append(pv_w)
+        self._buf_house.append(house_w)
+        self._buf_grid.append(grid_w)
         if cfg.get(CONF_BATTERY_ENABLED):
             self._buf_battery.append(_float(cfg.get(CONF_BATTERY_POWER_ENTITY)))
 
@@ -180,10 +199,32 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             if buf is not None:
                 buf.append(device.actual_power_w(reader))
 
+        # Energy accumulation — rectangular Riemann integration (W·s → kWh)
+        sample_s = int(cfg.get(CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS))
+        dt_kwh = sample_s / 3_600_000.0
+        self._energy_pv_kwh          += max(0.0, pv_w)   * dt_kwh
+        self._energy_consumption_kwh += max(0.0, house_w) * dt_kwh
+        self._energy_import_kwh      += max(0.0,  grid_w) * dt_kwh
+        self._energy_export_kwh      += max(0.0, -grid_w) * dt_kwh
+
     @staticmethod
     def _buf_mean(buf: deque[float], fallback: float = 0.0) -> float:
         """Return mean of buffer, or fallback if empty."""
         return sum(buf) / len(buf) if buf else fallback
+
+    # ------------------------------------------------------------------
+    # Daily energy reset
+    # ------------------------------------------------------------------
+    async def _async_reset_daily_energy(self, now) -> None:  # noqa: ANN001
+        """Reset energy accumulators at midnight."""
+        self._energy_pv_kwh          = 0.0
+        self._energy_import_kwh      = 0.0
+        self._energy_export_kwh      = 0.0
+        self._energy_consumption_kwh = 0.0
+        self._energy_last_reset = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        _LOGGER.debug("Helios: daily energy counters reset at midnight")
+        await self._async_save_energy()
+        self.async_set_updated_data(self._snapshot())
 
     # ------------------------------------------------------------------
     # Daily optimizer callback
@@ -195,14 +236,18 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("Helios daily optimizer failed: %s", err)
 
-    def async_unload(self) -> None:
+    async def async_unload(self) -> None:
         """Cancel recurring scheduler and appliance listeners when the entry is unloaded."""
+        await self._async_save_energy()
         if self._unsub_sample:
             self._unsub_sample()
             self._unsub_sample = None
         if self._unsub_daily_opt:
             self._unsub_daily_opt()
             self._unsub_daily_opt = None
+        if self._unsub_energy_reset:
+            self._unsub_energy_reset()
+            self._unsub_energy_reset = None
         self.device_manager.async_unload()
 
     # ------------------------------------------------------------------
@@ -211,19 +256,48 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     async def async_setup(self) -> None:
         """Restore persisted optimizer state (weights, threshold, diagnostics)."""
         data: dict = await self._optimizer_store.async_load() or {}
+        if data:
+            self.optimizer_last_run         = data.get("optimizer_last_run")
+            self.optimizer_context          = data.get("optimizer_context") or {}
+            self.optimizer_chosen           = data.get("optimizer_chosen") or {}
+            self.optimizer_top20            = data.get("optimizer_top20") or []
+            self.optimizer_chosen_schedule  = data.get("optimizer_chosen_schedule") or []
+
+            if self.optimizer_last_run:
+                _LOGGER.info(
+                    "Helios: optimizer state restored (last run: %s)", self.optimizer_last_run
+                )
+
+        await self._async_restore_energy()
+
+    async def _async_restore_energy(self) -> None:
+        """Restore daily energy accumulators from storage if the saved date is today."""
+        data: dict = await self._energy_store.async_load() or {}
         if not data:
             return
+        today = dt_util.now().date().isoformat()
+        if data.get("date") != today:
+            _LOGGER.debug("Helios: energy store date mismatch (%s vs %s) — starting fresh", data.get("date"), today)
+            return
+        self._energy_pv_kwh          = float(data.get("pv_kwh",          0.0))
+        self._energy_import_kwh      = float(data.get("import_kwh",      0.0))
+        self._energy_export_kwh      = float(data.get("export_kwh",      0.0))
+        self._energy_consumption_kwh = float(data.get("consumption_kwh", 0.0))
+        _LOGGER.info(
+            "Helios: daily energy restored — PV %.2f kWh, import %.2f kWh, export %.2f kWh, conso %.2f kWh",
+            self._energy_pv_kwh, self._energy_import_kwh,
+            self._energy_export_kwh, self._energy_consumption_kwh,
+        )
 
-        self.optimizer_last_run         = data.get("optimizer_last_run")
-        self.optimizer_context          = data.get("optimizer_context") or {}
-        self.optimizer_chosen           = data.get("optimizer_chosen") or {}
-        self.optimizer_top20            = data.get("optimizer_top20") or []
-        self.optimizer_chosen_schedule  = data.get("optimizer_chosen_schedule") or []
-
-        if self.optimizer_last_run:
-            _LOGGER.info(
-                "Helios: optimizer state restored (last run: %s)", self.optimizer_last_run
-            )
+    async def _async_save_energy(self) -> None:
+        """Persist current daily energy accumulators to storage."""
+        await self._energy_store.async_save({
+            "date":            dt_util.now().date().isoformat(),
+            "pv_kwh":          round(self._energy_pv_kwh,          3),
+            "import_kwh":      round(self._energy_import_kwh,      3),
+            "export_kwh":      round(self._energy_export_kwh,      3),
+            "consumption_kwh": round(self._energy_consumption_kwh, 3),
+        })
 
     # ------------------------------------------------------------------
     # Main update cycle
@@ -275,6 +349,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                 }
                 await self.device_manager.async_dispatch(self.hass, dispatch_input)
 
+            await self._async_save_energy()
             return self._snapshot()
 
         except Exception as err:

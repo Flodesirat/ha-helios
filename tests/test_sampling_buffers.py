@@ -52,6 +52,11 @@ def _make_coord(cfg: dict | None = None) -> MagicMock:
     coord._buf_devices = {}
     coord.device_manager = MagicMock()
     coord.device_manager.devices = []
+    # Energy accumulators
+    coord._energy_pv_kwh          = 0.0
+    coord._energy_import_kwh      = 0.0
+    coord._energy_export_kwh      = 0.0
+    coord._energy_consumption_kwh = 0.0
     return coord
 
 

@@ -126,11 +126,15 @@ class TestDailyForecastScheduling:
 
             EnergyOptimizerCoordinator(hass, entry)
 
-            mock_track.assert_called_once()
-            _, kwargs = mock_track.call_args
-            assert kwargs.get("hour")   == 5
-            assert kwargs.get("minute") == 0
-            assert kwargs.get("second") == 0
+            # Two time-change subscriptions: 05:00 optimizer + 00:00 energy reset
+            assert mock_track.call_count == 2
+            calls_kwargs = [c[1] for c in mock_track.call_args_list]
+            five_am = next(k for k in calls_kwargs if k.get("hour") == 5)
+            assert five_am.get("minute") == 0
+            assert five_am.get("second") == 0
+            midnight = next(k for k in calls_kwargs if k.get("hour") == 0)
+            assert midnight.get("minute") == 0
+            assert midnight.get("second") == 0
 
     @pytest.mark.asyncio
     async def test_5am_callback_calls_forecast(self):

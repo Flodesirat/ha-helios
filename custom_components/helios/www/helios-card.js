@@ -258,6 +258,33 @@ class HeliosCard extends HTMLElement {
         }
         @keyframes flowDash { to { stroke-dashoffset: -26; } }
 
+        /* ---- Daily energy ---- */
+        .energy-row {
+          display: flex;
+          gap: 6px;
+          margin: 4px 0 8px;
+          padding-bottom: 8px;
+          border-bottom: 1px solid var(--divider-color, #e0e0e0);
+        }
+        .energy-chip {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          background: var(--secondary-background-color, #f0f0f0);
+          border-radius: 6px;
+          padding: 4px 4px 3px;
+        }
+        .energy-chip-lbl {
+          font-size: 9px;
+          color: var(--secondary-text-color);
+          white-space: nowrap;
+        }
+        .energy-chip-val {
+          font-size: 12px;
+          font-weight: 700;
+        }
+
         /* ---- Score / chips ---- */
         .footer {
           padding-top: 10px;
@@ -641,6 +668,25 @@ class HeliosCard extends HTMLElement {
           ${this._buildSvg()}
         </div>
 
+        <div class="energy-row" id="h-energy-row" style="display:none">
+          <div class="energy-chip">
+            <span class="energy-chip-lbl">☀️ PV</span>
+            <span class="energy-chip-val" id="h-en-pv">—</span>
+          </div>
+          <div class="energy-chip">
+            <span class="energy-chip-lbl">⬇️ Import</span>
+            <span class="energy-chip-val" id="h-en-import">—</span>
+          </div>
+          <div class="energy-chip">
+            <span class="energy-chip-lbl">⬆️ Export</span>
+            <span class="energy-chip-val" id="h-en-export">—</span>
+          </div>
+          <div class="energy-chip">
+            <span class="energy-chip-lbl">🏠 Conso</span>
+            <span class="energy-chip-val" id="h-en-conso">—</span>
+          </div>
+        </div>
+
         <div class="footer" id="h-footer">
           <div class="score-row">
             <div class="lbl">Score</div>
@@ -865,6 +911,33 @@ class HeliosCard extends HTMLElement {
     return { entityRefs, devices };
   }
 
+  // Résout les entity_id des capteurs d'énergie journalière.
+  // Priorité : auto-découverte via entry_id → patterns d'états → config manuelle.
+  _resolveEnergyIds() {
+    const cfg = this._config?.energy ?? {};
+    const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
+    if (entryId) {
+      const disc = this._discoverEntities(entryId);
+      if (disc) {
+        return {
+          pv:          cfg.pv          ?? disc["energy_pv"]          ?? null,
+          import:      cfg.import      ?? disc["energy_import"]       ?? null,
+          export:      cfg.export      ?? disc["energy_export"]       ?? null,
+          consumption: cfg.consumption ?? disc["energy_consumption"]  ?? null,
+        };
+      }
+    }
+    // Fallback — pattern sur les states (sans entry_id)
+    const states = this._hass?.states;
+    const fb = key => states?.[`sensor.helios_${key}`] ? `sensor.helios_${key}` : null;
+    return {
+      pv:          cfg.pv          ?? fb("energy_pv"),
+      import:      cfg.import      ?? fb("energy_import"),
+      export:      cfg.export      ?? fb("energy_export"),
+      consumption: cfg.consumption ?? fb("energy_consumption"),
+    };
+  }
+
   // Résout les entités ET les appareils en un seul passage.
   // Priorité : entry_id explicite → auto-découverte → patterns état → config manuelle.
   _resolveAll() {
@@ -1057,6 +1130,27 @@ class HeliosCard extends HTMLElement {
     // Bouton info
     const infoBtn = this.shadowRoot.getElementById("h-info-btn");
     if (infoBtn) infoBtn.hidden = !this._config.info_url;
+
+    // Daily energy section
+    const energyRow = this.shadowRoot.getElementById("h-energy-row");
+    if (energyRow && !compact) {
+      const energyIds = this._resolveEnergyIds();
+      const hasEnergy = Object.values(energyIds).some(Boolean);
+      energyRow.style.display = hasEnergy ? "" : "none";
+      if (hasEnergy) {
+        const fmtE = eid => {
+          if (!eid) return "—";
+          const v = this._num(eid, null);
+          return v !== null ? `${parseFloat(v).toFixed(1)} kWh` : "—";
+        };
+        this._txt("h-en-pv",     fmtE(energyIds.pv));
+        this._txt("h-en-import", fmtE(energyIds.import));
+        this._txt("h-en-export", fmtE(energyIds.export));
+        this._txt("h-en-conso",  fmtE(energyIds.consumption));
+      }
+    } else if (energyRow && compact) {
+      energyRow.style.display = "none";
+    }
 
     // Forecast section
     const forecastEl = this.shadowRoot.getElementById("h-forecast");

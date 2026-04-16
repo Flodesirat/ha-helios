@@ -6,7 +6,7 @@ from datetime import datetime
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPower
+from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -40,6 +40,10 @@ async def async_setup_entry(
         EnergyOptimizerHousePowerSensor(coordinator, entry),
         EnergyOptimizerBaseLoadSensor(coordinator, entry),
         ForecastSensor(coordinator, entry),
+        EnergyDailyPVSensor(coordinator, entry),
+        EnergyDailyImportSensor(coordinator, entry),
+        EnergyDailyExportSensor(coordinator, entry),
+        EnergyDailyConsumptionSensor(coordinator, entry),
     ]
     for device in coordinator.device_manager.devices:
         entities.append(DeviceStateSensor(coordinator, entry, device))
@@ -216,6 +220,69 @@ class EnergyOptimizerHousePowerSensor(_BaseEOSensor):
     @property
     def native_value(self) -> float:
         return self.coordinator.house_power_w
+
+
+# ------------------------------------------------------------------ Daily energy sensors
+
+class _DailyEnergySensor(_BaseEOSensor):
+    """Base class for daily energy accumulators (Riemann sum, reset at midnight)."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_suggested_display_precision = 2
+
+    @property
+    def last_reset(self) -> datetime:
+        return self.coordinator._energy_last_reset
+
+
+class EnergyDailyPVSensor(_DailyEnergySensor):
+    """PV energy produced today (kWh)."""
+
+    _attr_translation_key = "eo_energy_pv"
+    suggested_object_id = "energy_pv"
+    _unique_suffix = "energy_pv"
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator._energy_pv_kwh, 3)
+
+
+class EnergyDailyImportSensor(_DailyEnergySensor):
+    """Grid energy imported today (kWh)."""
+
+    _attr_translation_key = "eo_energy_import"
+    suggested_object_id = "energy_import"
+    _unique_suffix = "energy_import"
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator._energy_import_kwh, 3)
+
+
+class EnergyDailyExportSensor(_DailyEnergySensor):
+    """Grid energy exported today (kWh)."""
+
+    _attr_translation_key = "eo_energy_export"
+    suggested_object_id = "energy_export"
+    _unique_suffix = "energy_export"
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator._energy_export_kwh, 3)
+
+
+class EnergyDailyConsumptionSensor(_DailyEnergySensor):
+    """House energy consumed today (kWh)."""
+
+    _attr_translation_key = "eo_energy_consumption"
+    suggested_object_id = "energy_consumption"
+    _unique_suffix = "energy_consumption"
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator._energy_consumption_kwh, 3)
 
 
 def _soc_level_label(soc: float | None) -> str | None:

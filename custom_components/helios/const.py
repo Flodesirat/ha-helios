@@ -188,6 +188,7 @@ DEFAULT_ENABLED      = True
 # ---------------------------------------------------------------------------
 STORAGE_KEY           = f"{DOMAIN}_pool_run"    # device state (pool counters, manual_mode…)
 STORAGE_KEY_OPTIMIZER = f"{DOMAIN}_optimizer"   # daily optimizer results (weights, schedule…)
+STORAGE_KEY_ENERGY    = f"{DOMAIN}_energy"      # daily energy accumulators (kWh, reset at midnight)
 STORAGE_VERSION = 1
 
 # ---------------------------------------------------------------------------
