@@ -229,6 +229,7 @@ class EnergyOptimizerHousePowerSensor(_BaseEOSensor):
 class _DailyEnergySensor(_BaseEOSensor):
     """Base class for daily energy accumulators (Riemann sum, reset at midnight)."""
 
+    _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_state_class = SensorStateClass.TOTAL
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
@@ -295,6 +296,7 @@ class EnergyDailySavingsSensor(_BaseEOSensor):
     price_hp otherwise.
     """
 
+    _attr_has_entity_name = True
     _attr_translation_key = "eo_daily_savings"
     suggested_object_id = "daily_savings"
     _unique_suffix = "daily_savings"
@@ -339,6 +341,7 @@ class EnergyTotalSavingsSensor(_BaseEOSensor):
     Never resets — survives restarts via the energy store.
     """
 
+    _attr_has_entity_name = True
     _attr_translation_key = "eo_total_savings"
     suggested_object_id = "total_savings"
     _unique_suffix = "total_savings"

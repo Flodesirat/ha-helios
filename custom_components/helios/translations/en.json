@@ -374,6 +374,12 @@
       "eo_energy_consumption": {
         "name": "House consumption today"
       },
+      "eo_daily_savings": {
+        "name": "Savings today"
+      },
+      "eo_total_savings": {
+        "name": "Total savings"
+      },
       "eo_device_state": {
         "name": "{name}",
         "state": {
@@ -384,6 +390,9 @@
       },
       "eo_base_load_profile": {
         "name": "Learned base load"
+      },
+      "eo_forecast": {
+        "name": "Daily forecast"
       }
     },
     "binary_sensor": {
@@ -407,6 +416,9 @@
       },
       "eo_ev_plugged": {
         "name": "{name} EV plugged"
+      },
+      "eo_battery_manual": {
+        "name": "Battery manual mode"
       }
     },
     "select": {
