@@ -1400,7 +1400,7 @@ class HeliosCard extends HTMLElement {
     // Appliance "ready" button — visible only when idle and ready_entity is configured
     const applianceState = dev.type === "appliance" ? this._attr(dev.entity, "appliance_state") : null;
     const readyEntity    = dev.type === "appliance" ? this._attr(dev.entity, "appliance_ready_entity") : null;
-    const showReadyBtn   = this._str(dev.entity) === "off" && applianceState === "idle" && readyEntity;
+    const showReadyBtn   = applianceState === "idle" && readyEntity;
     const readyBtnHtml   = showReadyBtn
       ? `<button class="dev-ready-btn" data-ready-entity="${readyEntity}">Prêt !</button>`
       : "";
@@ -1437,12 +1437,14 @@ class HeliosCard extends HTMLElement {
     if (manual) return { dotColor: "#FF9800", statusText: "Manuel" };
     const st = this._str(dev.entity);
     if (dev.type === "appliance") {
+      const appState = this._attr(dev.entity, "appliance_state");
       const map = {
-        running: { dotColor: "#4CAF50", statusText: "En marche" },
-        waiting: { dotColor: "#FF9800", statusText: "En attente" },
-        off:     { dotColor: "#9E9E9E", statusText: "Arrêt" },
+        running:   { dotColor: "#4CAF50", statusText: "En marche" },
+        preparing: { dotColor: "#FF9800", statusText: "En attente" },
+        done:      { dotColor: "#9E9E9E", statusText: "Cycle terminé" },
+        idle:      { dotColor: "#9E9E9E", statusText: "Arrêt" },
       };
-      return map[st] ?? { dotColor: "#9E9E9E", statusText: st ?? "—" };
+      return map[appState] ?? { dotColor: "#9E9E9E", statusText: appState ?? st ?? "—" };
     }
     if (dev.type === "ev" || dev.type === "ev_charger") {
       if (this._attr(dev.entity, "plugged") === false) return { dotColor: "#9E9E9E", statusText: "Non branché" };
@@ -1778,7 +1780,7 @@ class HeliosCard extends HTMLElement {
       case "appliance": {
         const appState  = this._attr(dev.entity, "appliance_state");
         const readyEnt  = this._attr(dev.entity, "appliance_ready_entity");
-        const showReady = this._str(dev.entity) === "off" && appState === "idle" && readyEnt;
+        const showReady = appState === "idle" && readyEnt;
         const stateLabel = {
           idle:      "Inactif",
           preparing: "En attente",
