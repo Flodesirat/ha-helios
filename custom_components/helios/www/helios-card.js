@@ -1850,7 +1850,7 @@ class HeliosCard extends HTMLElement {
     const { entityRefs: e } = this._resolveAll();
     const battAction = this._str(e.battery) ?? "idle";
     const soc        = this._attr(e.battery, "soc");
-    const powerW     = this._attr(e.battery, "power_w");
+    const powerW     = this._attr(e.battery, "demand_w");
     const availW     = this._attr(e.battery, "available_w");
     const urgency    = this._attr(e.battery, "urgency");
     const fit        = this._attr(e.battery, "fit");

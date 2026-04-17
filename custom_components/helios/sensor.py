@@ -162,6 +162,7 @@ class EnergyOptimizerBatterySensor(_BaseEOSensor):
             attrs["fit"]             = round(bat.fit, 3)
             attrs["priority"]        = bat.priority
             attrs["effective_score"] = round(bat.effective_score, 3)
+            attrs["demand_w"]        = round(bat.power_w, 1)
         return attrs
 
 
