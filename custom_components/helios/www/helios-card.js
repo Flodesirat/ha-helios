@@ -1833,14 +1833,17 @@ class HeliosCard extends HTMLElement {
 
   _buildBatModalContent() {
     const { entityRefs: e } = this._resolveAll();
-    const battAction   = this._str(e.battery) ?? "idle";
-    const soc          = this._attr(e.battery, "soc");
-    const powerW       = this._attr(e.battery, "power_w");
-    const urgency      = this._attr(e.battery, "urgency");
-    const effScore     = this._attr(e.battery, "effective_score");
+    const battAction = this._str(e.battery) ?? "idle";
+    const soc        = this._attr(e.battery, "soc");
+    const powerW     = this._attr(e.battery, "power_w");
+    const availW     = this._attr(e.battery, "available_w");
+    const urgency    = this._attr(e.battery, "urgency");
+    const fit        = this._attr(e.battery, "fit");
+    const priority   = this._attr(e.battery, "priority");
+    const effScore   = this._attr(e.battery, "effective_score");
 
-    const sw       = this._batManualSwitchEntity();
-    const manual   = sw ? this._hass?.states[sw]?.state === "on" : false;
+    const sw     = this._batManualSwitchEntity();
+    const manual = sw ? this._hass?.states[sw]?.state === "on" : false;
 
     const actionDotColor = {
       charge:    "#1565C0",
@@ -1865,18 +1868,6 @@ class HeliosCard extends HTMLElement {
         <span class="hm-bar-text">SOC : ${soc !== null ? socPct + " %" : "—"}</span>
       </div>`;
 
-    // urgency chip
-    const urgColor = urgency === null ? "#9E9E9E" : urgency > 0.6 ? "#4CAF50" : urgency > 0.3 ? "#FF9800" : "#F44336";
-    const urgChip  = `<span class="hm-factor" style="max-width:80px;">
-        <span class="hm-factor-lbl">⏱ Urgence</span>
-        <span class="hm-factor-val" style="color:${urgColor}">${urgency !== null ? urgency.toFixed(2) : "—"}</span>
-      </span>`;
-    const effColor = effScore === null ? "#9E9E9E" : effScore > 0.6 ? "#4CAF50" : effScore > 0.3 ? "#FF9800" : "#F44336";
-    const effChip  = `<span class="hm-factor" style="max-width:80px;">
-        <span class="hm-factor-lbl">🎯 Score eff.</span>
-        <span class="hm-factor-val" style="color:${effColor}">${effScore !== null ? effScore.toFixed(2) : "—"}</span>
-      </span>`;
-
     const controlHtml = sw ? `
       <div class="hm-section">
         <div class="hm-section-title">Contrôle</div>
@@ -1888,6 +1879,45 @@ class HeliosCard extends HTMLElement {
         </div>
       </div>` : "";
 
+    // État — SOC + puissances
+    const stateHtml = `
+      <div class="hm-section">
+        <div class="hm-section-title">État</div>
+        ${socBar}
+        <div class="hm-stat">Demande : ${powerW !== null ? this._fmt(powerW) : "—"}</div>
+        <div class="hm-stat">Disponible : ${availW !== null ? this._fmt(availW) : "—"}</div>
+      </div>`;
+
+    // Score — même structure que les devices (3 facteurs + score effectif + priorité)
+    const batFactors = [
+      { label: "🎯 Priorité", val: priority !== null ? priority / 10 : null, w: 0.4 },
+      { label: "⚡ Fit",      val: fit,                                      w: 0.3 },
+      { label: "⏱ Urgence",  val: urgency,                                  w: 0.3 },
+    ];
+    const factorChips = batFactors.map(({ label, val, w }) => {
+      const fc = val === null ? "#9E9E9E" : val > 0.6 ? "#4CAF50" : val > 0.3 ? "#FF9800" : "#F44336";
+      return `
+        <div class="hm-factor">
+          <div class="hm-factor-fill" style="height:${val !== null ? Math.round(val * 100) : 0}%;background:${fc}33"></div>
+          <span class="hm-factor-lbl">${label}</span>
+          <span class="hm-factor-val" style="color:${fc}">${val !== null ? val.toFixed(2) : "—"}</span>
+          <span class="hm-factor-w">×${w}</span>
+        </div>`;
+    }).join('<span class="hm-factor-sep">+</span>');
+
+    const titleScore = effScore !== null
+      ? `Score — effectif : <strong>${effScore.toFixed(3)}</strong>`
+      : "Score";
+    const priorityHtml = priority !== null
+      ? `<div class="hm-stat">Priorité : P${priority} / 10</div>` : "";
+
+    const scoreHtml = `
+      <div class="hm-section">
+        <div class="hm-section-title">${titleScore}</div>
+        <div class="hm-factors-row">${factorChips}</div>
+        ${priorityHtml}
+      </div>`;
+
     return `
       <div class="hm-header">
         <span class="hm-icon">🔋</span>
@@ -1897,12 +1927,8 @@ class HeliosCard extends HTMLElement {
         <button class="hm-close" data-action="close-bat">✕</button>
       </div>
       ${controlHtml}
-      <div class="hm-section">
-        <div class="hm-section-title">État</div>
-        ${socBar}
-        <div class="hm-stat">Demande : ${powerW !== null ? this._fmt(powerW) : "—"}</div>
-        <div class="hm-factors-row">${urgChip}${effChip}</div>
-      </div>`;
+      ${stateHtml}
+      ${scoreHtml}`;
   }
 
   // ------------------------------------------------------------------ SVG helpers

@@ -158,7 +158,9 @@ class EnergyOptimizerBatterySensor(_BaseEOSensor):
             "available_w":     c.bat_available_w,
         }
         if bat is not None:
-            attrs["urgency"]        = round(bat.urgency, 3)
+            attrs["urgency"]         = round(bat.urgency, 3)
+            attrs["fit"]             = round(bat.fit, 3)
+            attrs["priority"]        = bat.priority
             attrs["effective_score"] = round(bat.effective_score, 3)
         return attrs
 
