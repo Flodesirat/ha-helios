@@ -864,6 +864,18 @@ class HeliosCard extends HTMLElement {
         if (sw && this._hass)
           this._hass.callService("homeassistant", power === "on" ? "turn_on" : "turn_off", { entity_id: sw });
       }
+      if (action === "pool-force-toggle") {
+        const forceEntity = btn.dataset.forceEntity;
+        const isOn = btn.dataset.forceOn === "true";
+        if (forceEntity && this._hass)
+          this._hass.callService("homeassistant", isOn ? "turn_off" : "turn_on", { entity_id: forceEntity });
+      }
+      if (action === "pool-duration") {
+        const durEntity = btn.dataset.durEntity;
+        const option    = btn.dataset.option;
+        if (durEntity && option && this._hass)
+          this._hass.callService("select", "select_option", { entity_id: durEntity, option });
+      }
     });
 
     // Bat modal actions
@@ -1519,6 +1531,28 @@ class HeliosCard extends HTMLElement {
     return dev.entity.replace(/^sensor\.helios_/, "");
   }
 
+  _poolForceEntity(dev) {
+    const slug = this._devSlug(dev);
+    const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
+    if (entryId) {
+      const disc = this._discoverEntities(entryId);
+      if (disc?.[`pool_${slug}_force`]) return disc[`pool_${slug}_force`];
+    }
+    const candidate = `switch.helios_${slug}_force`;
+    return this._hass?.states[candidate] !== undefined ? candidate : null;
+  }
+
+  _poolDurationEntity(dev) {
+    const slug = this._devSlug(dev);
+    const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
+    if (entryId) {
+      const disc = this._discoverEntities(entryId);
+      if (disc?.[`pool_${slug}_force_duration`]) return disc[`pool_${slug}_force_duration`];
+    }
+    const candidate = `select.helios_${slug}_force_duration`;
+    return this._hass?.states[candidate] !== undefined ? candidate : null;
+  }
+
   _manualSwitchEntity(dev) {
     const candidate = `switch.helios_${this._devSlug(dev)}_manual`;
     return this._hass?.states[candidate] !== undefined ? candidate : null;
@@ -1669,12 +1703,38 @@ class HeliosCard extends HTMLElement {
         if (doneMin === null || reqMin === null) return "";
         const pct      = Math.min(100, reqMin > 0 ? Math.round(doneMin / reqMin * 100) : 100);
         const barColor = pct >= 100 ? "#4CAF50" : "#2196F3";
+
+        // Forçage — entités découvertes dynamiquement
+        const forceEid    = this._poolForceEntity(dev);
+        const durEid      = this._poolDurationEntity(dev);
+        const forceIsOn   = forceEid ? this._hass?.states[forceEid]?.state === "on" : false;
+        const curDuration = durEid ? (this._hass?.states[durEid]?.state ?? "2h") : "2h";
+        const durOptions  = durEid ? (this._hass?.states[durEid]?.attributes?.options ?? ["1h","2h","4h","12h","24h"]) : ["1h","2h","4h","12h","24h"];
+
+        const durChips = forceEid ? durOptions.map(opt => `
+          <button class="hm-manual-btn ${opt === curDuration ? "hm-manual-on" : "hm-manual-off"}"
+            data-action="pool-duration" data-dur-entity="${durEid}" data-option="${opt}"
+            style="padding:3px 8px;font-size:11px">${opt}</button>`
+        ).join("") : "";
+
+        const forceToggleBtn = forceEid ? `
+          <button class="hm-manual-btn ${forceIsOn ? "hm-manual-on" : "hm-manual-off"}"
+            data-action="pool-force-toggle" data-force-entity="${forceEid}" data-force-on="${forceIsOn}">
+            ${forceIsOn ? "🔒 Arrêter le forçage" : "🔒 Forcer maintenant"}
+          </button>` : "";
+
+        const forceHtml = forceEid ? `
+          <div class="hm-section-title" style="margin-top:8px">Forçage</div>
+          ${forceIsOn ? `<span class="hm-force-lbl">🔒 Forcé — ${Math.round(forceRem)} min restantes</span>` : ""}
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0">${durChips}</div>
+          <div>${forceToggleBtn}</div>` : "";
+
         return `
           <div class="hm-progress-wrap">
             <div class="hm-bar-bg"><div class="hm-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
             <span class="hm-bar-text">Filtration : ${(doneMin / 60).toFixed(1)} h / ${(reqMin / 60).toFixed(1)} h (${pct} %)</span>
-            ${forceRem > 1 ? `<span class="hm-force-lbl">🔒 Forcé — ${Math.round(forceRem)} min restantes</span>` : ""}
-          </div>`;
+          </div>
+          ${forceHtml}`;
       }
       case "water_heater": {
         const temp   = this._attr(dev.entity, "temperature");
