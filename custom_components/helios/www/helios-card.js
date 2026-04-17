@@ -858,6 +858,12 @@ class HeliosCard extends HTMLElement {
         if (deviceEntity && this._hass)
           this._hass.callService("helios", "start_appliance", { device_entity: deviceEntity });
       }
+      if (action === "device-power") {
+        const sw = btn.dataset.switchEntity;
+        const power = btn.dataset.power;
+        if (sw && this._hass)
+          this._hass.callService("homeassistant", power === "on" ? "turn_on" : "turn_off", { entity_id: sw });
+      }
     });
 
     // Bat modal actions
@@ -1567,6 +1573,18 @@ class HeliosCard extends HTMLElement {
       </div>`;
 
     // Contrôle manuel
+    const switchEntity = this._attr(dev.entity, "switch_entity");
+    const deviceIsOn   = this._deviceIsOn(dev);
+    const onOffHtml = (manual && switchEntity) ? `
+      <div class="hm-manual-row" style="margin-top:6px">
+        <span class="hm-manual-label">Commande directe</span>
+        <div style="display:flex;gap:6px">
+          <button class="hm-manual-btn ${deviceIsOn ? "hm-manual-on" : "hm-manual-off"}"
+            data-action="device-power" data-switch-entity="${switchEntity}" data-power="on">ON</button>
+          <button class="hm-manual-btn ${!deviceIsOn ? "hm-manual-on" : "hm-manual-off"}"
+            data-action="device-power" data-switch-entity="${switchEntity}" data-power="off">OFF</button>
+        </div>
+      </div>` : "";
     const manualHtml = swEntity ? `
       <div class="hm-section">
         <div class="hm-section-title">Contrôle</div>
@@ -1576,6 +1594,7 @@ class HeliosCard extends HTMLElement {
             ${manual ? "Repasser en auto" : "Forcer manuel"}
           </button>
         </div>
+        ${onOffHtml}
       </div>` : "";
 
     // Détail type-spécifique

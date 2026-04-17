@@ -509,6 +509,7 @@ class DeviceStateSensor(_BaseEOSensor):
             "allowed_start":        d.allowed_start,
             "allowed_end":          d.allowed_end,
             "daily_on_minutes":     round(d.daily_on_minutes, 1),
+            "switch_entity":        d.switch_entity,
         }
         if d.device_type == DEVICE_TYPE_APPLIANCE:
             attrs["appliance_state"]        = d.appliance_state
