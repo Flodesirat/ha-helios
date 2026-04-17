@@ -1632,10 +1632,17 @@ class HeliosCard extends HTMLElement {
       </div>` : "";
 
     // Détail type-spécifique
+    // Puissance actuelle — affichée pour tout appareil en marche
+    const powerW   = this._attr(dev.entity, "power_w");
+    const powerHtml = (isOn && powerW !== null && powerW > 5)
+      ? `<div class="hm-stat" style="font-weight:700;color:#4CAF50">⚡ ${this._fmt(powerW)}</div>`
+      : "";
+
     const detailBody = this._buildModalDetail(dev);
-    const detailHtml = detailBody ? `
+    const detailHtml = (detailBody || powerHtml) ? `
       <div class="hm-section">
         <div class="hm-section-title">État</div>
+        ${powerHtml}
         ${detailBody}
       </div>` : "";
 
