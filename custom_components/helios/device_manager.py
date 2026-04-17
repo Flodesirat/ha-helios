@@ -247,6 +247,29 @@ class DeviceManager:
         """Public entry point for switch entities to trigger an immediate persist."""
         await self._async_save_device_data()
 
+    async def async_force_start_appliance(self, hass: HomeAssistant, device_slug: str) -> bool:
+        """Immediately start an appliance that is in PREPARING (waiting) state.
+
+        Returns True if the appliance was started, False otherwise.
+        Called by the helios.start_appliance service.
+        """
+        from homeassistant.util import slugify
+        device = next(
+            (d for d in self.devices if slugify(d.name) == device_slug),
+            None,
+        )
+        if device is None:
+            _LOGGER.warning("start_appliance: no device with slug '%s'", device_slug)
+            return False
+        if device.appliance_state != APPLIANCE_STATE_PREPARING:
+            _LOGGER.warning(
+                "start_appliance: '%s' is not in waiting state (state=%s)",
+                device.name, device.appliance_state,
+            )
+            return False
+        await self._async_start_appliance(hass, device, global_score=1.0, fit=1.0, urgency=1.0)
+        return True
+
     # ------------------------------------------------------------------
     # Main dispatch loop — called each coordinator cycle
     # ------------------------------------------------------------------

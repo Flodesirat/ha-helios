@@ -392,3 +392,66 @@ class TestMultipleApplianceBudget:
 
         assert dev_a.appliance_state == APPLIANCE_STATE_RUNNING
         assert dev_b.appliance_state == APPLIANCE_STATE_RUNNING
+
+
+# ---------------------------------------------------------------------------
+# async_force_start_appliance
+# ---------------------------------------------------------------------------
+
+class TestForceStartAppliance:
+
+    @pytest.mark.asyncio
+    async def test_starts_when_preparing(self):
+        """Device in PREPARING → transitions to RUNNING and returns True."""
+        dev = _make_device()
+        dev.appliance_state = APPLIANCE_STATE_PREPARING
+        dm  = _make_dm(dev)
+        hass = _make_hass()
+
+        result = await dm.async_force_start_appliance(hass, "lave_vaisselle")
+
+        assert result is True
+        assert dev.appliance_state == APPLIANCE_STATE_RUNNING
+        assert dev.is_on is True
+        hass.services.async_call.assert_awaited_with(
+            "script", "turn_on", {"entity_id": START_SCRIPT}, blocking=False
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_false_unknown_slug(self):
+        """Unknown slug → returns False, device untouched."""
+        dev = _make_device()
+        dev.appliance_state = APPLIANCE_STATE_PREPARING
+        dm  = _make_dm(dev)
+        hass = _make_hass()
+
+        result = await dm.async_force_start_appliance(hass, "unknown_device")
+
+        assert result is False
+        assert dev.appliance_state == APPLIANCE_STATE_PREPARING
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_idle(self):
+        """Device in IDLE (not yet waiting) → returns False."""
+        dev = _make_device()
+        dev.appliance_state = APPLIANCE_STATE_IDLE
+        dm  = _make_dm(dev)
+        hass = _make_hass()
+
+        result = await dm.async_force_start_appliance(hass, "lave_vaisselle")
+
+        assert result is False
+        assert dev.appliance_state == APPLIANCE_STATE_IDLE
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_already_running(self):
+        """Device already RUNNING → returns False."""
+        dev = _make_device()
+        dev.appliance_state = APPLIANCE_STATE_RUNNING
+        dm  = _make_dm(dev)
+        hass = _make_hass()
+
+        result = await dm.async_force_start_appliance(hass, "lave_vaisselle")
+
+        assert result is False
+        assert dev.appliance_state == APPLIANCE_STATE_RUNNING

@@ -1,0 +1,14 @@
+start_appliance:
+  name: Lancer l'électroménager maintenant
+  description: >
+    Déclenche immédiatement le démarrage d'un électroménager en attente (état PREPARING).
+    Lance le script de démarrage configuré et passe l'appareil en état RUNNING.
+  fields:
+    device_entity:
+      name: Entité de l'appareil
+      description: L'entity_id du sensor Helios de l'électroménager (ex. sensor.helios_lave_vaisselle).
+      required: true
+      selector:
+        entity:
+          domain: sensor
+          integration: helios

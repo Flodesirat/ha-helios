@@ -4,12 +4,19 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
+from homeassistant.util import slugify
 
 from .const import DOMAIN, PLATFORMS
 from .coordinator import EnergyOptimizerCoordinator
+
+SERVICE_START_APPLIANCE = "start_appliance"
+_SERVICE_SCHEMA_START_APPLIANCE = vol.Schema({
+    vol.Required("device_entity"): cv.entity_id,
+})
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -79,7 +86,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+
+    _async_register_services(hass)
     return True
+
+
+def _async_register_services(hass: HomeAssistant) -> None:
+    """Register Helios services (idempotent — skipped if already registered)."""
+    if hass.services.has_service(DOMAIN, SERVICE_START_APPLIANCE):
+        return
+
+    async def _handle_start_appliance(call: ServiceCall) -> None:
+        entity_id: str = call.data["device_entity"]
+        # Derive the slug from the entity_id: sensor.helios_{slug}
+        device_slug = entity_id.removeprefix("sensor.helios_")
+        if device_slug == entity_id:
+            _LOGGER.warning("start_appliance: entity_id '%s' is not a Helios device sensor", entity_id)
+            return
+        # Find the coordinator that owns this entry
+        for coordinator in hass.data.get(DOMAIN, {}).values():
+            started = await coordinator.device_manager.async_force_start_appliance(hass, device_slug)
+            if started:
+                await coordinator.async_request_refresh()
+                return
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_START_APPLIANCE,
+        _handle_start_appliance,
+        schema=_SERVICE_SCHEMA_START_APPLIANCE,
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
