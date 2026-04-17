@@ -513,6 +513,7 @@ class DeviceStateSensor(_BaseEOSensor):
         if d.device_type == DEVICE_TYPE_APPLIANCE:
             attrs["appliance_state"]        = d.appliance_state
             attrs["appliance_ready_entity"] = d.appliance_ready_entity
+            attrs["appliance_deadline"]     = d.appliance_deadline_dt.isoformat() if d.appliance_deadline_dt else None
         elif d.device_type == DEVICE_TYPE_WATER_HEATER:
             attrs["wh_temp_target"] = d.wh_temp_target
             if d.wh_temp_entity:
