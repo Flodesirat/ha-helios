@@ -24,6 +24,11 @@ class _BaseDeviceSwitch(CoordinatorEntity, SwitchEntity):
     """Base class for per-device switch entities."""
 
     _attr_has_entity_name = True
+    _attr_suggested_object_id: str | None = None
+
+    @property
+    def suggested_object_id(self) -> str | None:
+        return self._attr_suggested_object_id
 
     def __init__(
         self,
