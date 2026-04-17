@@ -853,6 +853,11 @@ class HeliosCard extends HTMLElement {
         if (readyEntity && this._hass)
           this._hass.callService("input_boolean", "turn_on", { entity_id: readyEntity });
       }
+      if (action === "start-appliance") {
+        const deviceEntity = btn.dataset.deviceEntity;
+        if (deviceEntity && this._hass)
+          this._hass.callService("helios", "start_appliance", { device_entity: deviceEntity });
+      }
     });
 
     // Bat modal actions
@@ -1689,19 +1694,24 @@ class HeliosCard extends HTMLElement {
           done:      "Cycle terminé",
         }[appState] ?? appState ?? "—";
 
-        // Deadline — shown only when waiting (preparing)
-        const deadlineIso = appState === "preparing" ? this._attr(dev.entity, "appliance_deadline") : null;
+        // Deadline + bouton "Lancer maintenant" — uniquement en état preparing
+        const isPreparing = appState === "preparing";
+        const deadlineIso = isPreparing ? this._attr(dev.entity, "appliance_deadline") : null;
         let deadlineHtml = "";
         if (deadlineIso) {
           const d = new Date(deadlineIso);
           const timeStr = isNaN(d) ? deadlineIso : d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
           deadlineHtml = `<div class="hm-stat" style="color:#FF9800;font-weight:600">⏰ Avant ${timeStr}</div>`;
         }
+        const startNowHtml = isPreparing
+          ? `<button class="hm-manual-btn hm-manual-on" data-action="start-appliance" data-device-entity="${dev.entity}">▶ Lancer maintenant</button>`
+          : "";
 
         return `
           <div class="hm-manual-row">
             <span class="hm-stat">${stateLabel}</span>
             ${showReady ? `<button class="dev-ready-btn" data-action="ready" data-ready-entity="${readyEnt}">Prêt !</button>` : ""}
+            ${startNowHtml}
           </div>
           ${deadlineHtml}`;
       }
