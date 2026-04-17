@@ -1554,7 +1554,13 @@ class HeliosCard extends HTMLElement {
   }
 
   _manualSwitchEntity(dev) {
-    const candidate = `switch.helios_${this._devSlug(dev)}_manual`;
+    const slug = this._devSlug(dev);
+    const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
+    if (entryId) {
+      const disc = this._discoverEntities(entryId);
+      if (disc?.[`device_${slug}_manual`]) return disc[`device_${slug}_manual`];
+    }
+    const candidate = `switch.helios_${slug}_manual`;
     return this._hass?.states[candidate] !== undefined ? candidate : null;
   }
 
