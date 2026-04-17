@@ -1682,12 +1682,28 @@ class HeliosCard extends HTMLElement {
         const appState  = this._attr(dev.entity, "appliance_state");
         const readyEnt  = this._attr(dev.entity, "appliance_ready_entity");
         const showReady = this._str(dev.entity) === "off" && appState === "idle" && readyEnt;
-        const stateLabel = { idle: "En attente", waiting: "En attente", running: "En marche", off: "Arrêt" }[appState] ?? appState;
+        const stateLabel = {
+          idle:      "Inactif",
+          preparing: "En attente",
+          running:   "En marche",
+          done:      "Cycle terminé",
+        }[appState] ?? appState ?? "—";
+
+        // Deadline — shown only when waiting (preparing)
+        const deadlineIso = appState === "preparing" ? this._attr(dev.entity, "appliance_deadline") : null;
+        let deadlineHtml = "";
+        if (deadlineIso) {
+          const d = new Date(deadlineIso);
+          const timeStr = isNaN(d) ? deadlineIso : d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+          deadlineHtml = `<div class="hm-stat" style="color:#FF9800;font-weight:600">⏰ Avant ${timeStr}</div>`;
+        }
+
         return `
           <div class="hm-manual-row">
-            <span class="hm-stat">${stateLabel ?? "—"}</span>
+            <span class="hm-stat">${stateLabel}</span>
             ${showReady ? `<button class="dev-ready-btn" data-action="ready" data-ready-entity="${readyEnt}">Prêt !</button>` : ""}
-          </div>`;
+          </div>
+          ${deadlineHtml}`;
       }
       default:
         return "";
