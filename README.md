@@ -439,47 +439,112 @@ Compteurs journaliers remis à zéro à minuit, et cumul total des économies :
 
 ### Carte Lovelace
 
-Une carte SVG animée visualisant les flux d'énergie est disponible. Ajouter manuellement dans **Paramètres → Tableau de bord → Ressources** :
-
-#### Test visuel en local
-
-Pour prévisualiser la carte sans Home Assistant (3 scénarios : jour, nuit, compact) :
-
-```bash
-python3 -m http.server 8765 --directory custom_components/helios/www/
-```
-
-Puis ouvrir [http://localhost:8765/test_card.html](http://localhost:8765/test_card.html) dans un navigateur.
+Une carte SVG animée visualisant les flux d'énergie en temps réel. Ajouter dans **Paramètres → Tableau de bord → Ressources** :
 
 ```
 URL : /helios/helios-card.js
 Type : Module JavaScript
 ```
 
-**Configuration minimale** — la carte détecte automatiquement les entités Helios, aucun identifiant requis :
+#### Test visuel en local
 
-```yaml
-type: custom:helios-card
+```bash
+python3 -m http.server 8765 --directory custom_components/helios/www/
+# → http://localhost:8765/test_card.html
 ```
 
-**Configuration compacte** — flux d'énergie uniquement, sans section appareils :
+---
+
+#### Vue flux SVG
+
+Le cœur de la carte est un diagramme SVG avec quatre nœuds (☀️ PV, 🏠 Maison, ⚡ Réseau, 🔋 Batterie) reliés par des lignes animées indiquant la direction et l'intensité des flux.
+
+Chaque nœud affiche directement dans le SVG :
+- La **puissance instantanée** sur la ligne (W ou kW)
+- L'**énergie journalière** en label secondaire (kWh) — sur la ligne PV, sous les nœuds Réseau et Maison — toujours visible, y compris en mode compact
+
+La **batterie** est toujours cliquable — elle ouvre une modale avec SOC, état, urgence et switch manuel.
+
+---
+
+#### Options de configuration
+
+| Option | Type | Défaut | Description |
+|--------|------|--------|-------------|
+| `compact` | bool | `false` | Vue condensée : flux SVG uniquement, toutes les sections masquées |
+| `info_url` | string | — | URL du bouton ℹ️ (coin haut droit) |
+| `node_urls` | object | — | URLs de navigation au clic sur les nœuds SVG (voir ci-dessous) |
+| `sections` | object | — | Affichage par section en mode non-compact (voir ci-dessous) |
+| `entry_id` | string | auto | Identifiant de l'entrée Helios (détecté automatiquement) |
+| `entities` | object | auto | Entités explicites — remplace l'auto-découverte |
+
+---
+
+#### Mode compact
+
+Flux SVG uniquement, sans aucune section. Idéal pour une vue secondaire ou une tuile résumée.
 
 ```yaml
 type: custom:helios-card
 compact: true
-info_url: /lovelace/energie   # optionnel — URL du bouton ℹ️
+info_url: /lovelace/energie   # optionnel
 ```
 
-**Configuration complète** — entités explicites + section appareils :
+---
+
+#### Navigation au clic sur les nœuds
+
+Les nœuds ☀️, ⚡ et 🏠 peuvent naviguer vers une page Lovelace ou une URL externe. Un nœud sans URL configurée n'est pas cliquable (pas de curseur).
+
+```yaml
+type: custom:helios-card
+node_urls:
+  pv:    /lovelace/solaire        # ☀️ nœud PV
+  grid:  /lovelace/reseau         # ⚡ nœud réseau
+  house: /lovelace/consommation   # 🏠 nœud maison
+```
+
+URLs relatives → navigation HA interne. URLs absolues (`https://…`) → nouvel onglet.
+
+---
+
+#### Sections configurables
+
+En mode non-compact, six sections s'affichent sous le flux SVG quand les données sont disponibles. Chacune peut être masquée indépendamment en la passant à `false`.
+
+| Section | Défaut | Contenu |
+|---------|--------|---------|
+| `money_saving` | `true` | Économies journalières et totales (€) |
+| `score_detailed` | `true` | Décomposition du score global (f_surplus, f_tempo, f_solar avec poids) |
+| `surplus_computation` | `true` | Budget dispatch : surplus, surplus virtuel, bat. disponible, remaining |
+| `forecast` | `true` | Prévision journalière (mise à jour à 5h) |
+| `devices` | `true` | Liste des appareils triés par score effectif |
+
+Exemple — flux + score barre + appareils uniquement :
+
+```yaml
+type: custom:helios-card
+sections:
+  money_saving: false
+  score_detailed: false
+  surplus_computation: false
+  forecast: false
+```
+
+> Les labels kWh dans le SVG (énergie journalière) ne font pas partie des sections — ils sont toujours affichés, y compris en mode compact.
+
+---
+
+#### Configuration complète (entités manuelles)
+
+En mode automatique, la carte détecte toutes les entités Helios via le registre HA. Ce mode manuel permet de pointer explicitement des entités tierces ou de contourner l'auto-découverte.
 
 ```yaml
 type: custom:helios-card
 entities:
   pv_power:      sensor.helios_pv_power
-  grid_power:    sensor.helios_grid_power   # positif = import, négatif = export
+  grid_power:    sensor.helios_grid_power    # positif = import, négatif = export
   house_power:   sensor.helios_house_power
-  battery_soc:   sensor.my_battery_soc      # SOC batterie brut (%)
-  battery_power: sensor.helios_battery_power # négatif = charge, positif = décharge
   score:         sensor.helios_score
 devices:
   - name: Piscine
@@ -492,7 +557,7 @@ devices:
     type: water_heater
     entity:      switch.helios_chauffe_eau_manual
     temp_entity: sensor.temperature_chauffe_eau
-    temp_target: 61                          # optionnel — cible affichée (°C)
+    temp_target: 61                           # optionnel — cible affichée (°C)
   - name: Lave-vaisselle
     type: appliance
     entity:       switch.helios_lave_vaisselle_manual
@@ -500,8 +565,8 @@ devices:
   - name: Voiture
     type: ev_charger
     entity:         switch.helios_voiture_manual
-    soc_entity:     sensor.ev_soc            # optionnel
-    plugged_entity: binary_sensor.ev_branche # optionnel — on = branché
+    soc_entity:     sensor.ev_soc             # optionnel
+    plugged_entity: binary_sensor.ev_branche  # optionnel — on = branché
 ```
 
 ---

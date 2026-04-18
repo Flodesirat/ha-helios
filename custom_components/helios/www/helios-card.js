@@ -11,6 +11,16 @@
  *   type: custom:helios-card
  *   compact: true                                 # optionnel — vue flux condensée (sans section appareils)
  *   info_url: /lovelace/energie                  # optionnel — URL du bouton ℹ️
+ *   node_urls:                                    # optionnel — navigation au clic sur un nœud SVG
+ *     pv:    /lovelace/solaire                   #   ☀️ nœud PV
+ *     grid:  /lovelace/reseau                    #   ⚡ nœud réseau
+ *     house: /lovelace/consommation              #   🏠 nœud maison
+ *   sections:                                     # optionnel — affichage par section (défaut : tout affiché)
+ *     money_saving: true                         # économies journalières et totales
+ *     score_detailed: true                       # décomposition du score (f_surplus, f_tempo, f_solar)
+ *     surplus_computation: true                  # budget dispatch (surplus, virtuel, bat. dispo, remaining)
+ *     forecast: true                             # prévision journalière
+ *     devices: true                              # liste des appareils
  *
  *   Aucun identifiant nécessaire : la carte détecte automatiquement l'intégration Helios
  *   via hass.entities (platform = "helios"), puis par pattern sur les entity_id en fallback.
@@ -61,14 +71,15 @@ class HeliosCard extends HTMLElement {
   // ------------------------------------------------------------------ Layout (full vs compact)
   _makeLayout() {
     return {
-      viewBox: "0 0 300 162", r: 20, fs: 17, fsVal: 9, ringR: 24, ringSW: 2.5,
+      viewBox: "0 0 300 178", r: 20, fs: 17, fsVal: 9, ringR: 24, ringSW: 2.5,
       pv:   { cx: 150, cy: 32,  emojiY: 39  },
       house:{ cx: 150, cy: 114, emojiY: 121 },
-      houseValBelowY: 151,
+      houseValBelowY: 151, houseKwhY: 164,
       grid: { cx: 45,  cy: 114, emojiY: 121 },
+      gridKwhY1: 143, gridKwhY2: 154,
       bat:  { cx: 255, cy: 114 },
       bat_ico_y: 109, bat_soc_y: 126,
-      linePv:  { x1:150, y1:56,  x2:150, y2:90,  lblX:157, lblY:75  },
+      linePv:  { x1:150, y1:56,  x2:150, y2:90,  lblX:157, lblY:75, kwhLblY:85 },
       lineGrid:{ x1:70,  y1:114, x2:129, y2:114, lblX:95,  lblY:108 },
       lineBat: { x1:175, y1:114, x2:230, y2:114, lblX:204, lblY:108 },
     };
@@ -167,22 +178,26 @@ class HeliosCard extends HTMLElement {
         <line id="h-line-grid" class="fl" x1="${L.lineGrid.x1}" y1="${L.lineGrid.y1}" x2="${L.lineGrid.x2}" y2="${L.lineGrid.y2}"/>
         <line id="h-line-bat"  class="fl" x1="${L.lineBat.x1}"  y1="${L.lineBat.y1}"  x2="${L.lineBat.x2}"  y2="${L.lineBat.y2}"/>
         <text id="h-lbl-pv"   x="${L.linePv.lblX}"   y="${L.linePv.lblY}"   font-size="${fsVal}" fill="#E65100" text-anchor="start"></text>
+        <text id="h-lbl-pv-kwh" x="${L.linePv.lblX}" y="${L.linePv.kwhLblY}" font-size="7" fill="#E65100" text-anchor="start" opacity="0.75"></text>
         <text id="h-lbl-grid" x="${L.lineGrid.lblX}" y="${L.lineGrid.lblY}" font-size="${fsVal}" text-anchor="middle"></text>
         <text id="h-lbl-bat"  x="${L.lineBat.lblX}"  y="${L.lineBat.lblY}"  font-size="${fsVal}" text-anchor="middle"></text>
-        <circle cx="${pv.cx}" cy="${pv.cy}" r="${r}" fill="#FFF8E1" stroke="#F9A825" stroke-width="2"/>
-        <text x="${pv.cx}" y="${pv.emojiY}" text-anchor="middle" font-size="${fs}">☀️</text>
+        <text id="h-lbl-import-kwh" x="${grid.cx}" y="${L.gridKwhY1}" font-size="7" text-anchor="middle" opacity="0.8"></text>
+        <text id="h-lbl-export-kwh" x="${grid.cx}" y="${L.gridKwhY2}" font-size="7" fill="#388E3C" text-anchor="middle" opacity="0.8"></text>
+        <text id="h-lbl-house-kwh"  x="${house.cx}" y="${L.houseKwhY}" font-size="7" text-anchor="middle" opacity="0.75"></text>
+        <circle id="h-node-pv" cx="${pv.cx}" cy="${pv.cy}" r="${r}" fill="#FFF8E1" stroke="#F9A825" stroke-width="2"/>
+        <text x="${pv.cx}" y="${pv.emojiY}" text-anchor="middle" font-size="${fs}" pointer-events="none">☀️</text>
         ${ring("h-ring-pv", pv.cx, pv.cy, "#F9A825")}
         <circle id="h-node-house" cx="${house.cx}" cy="${house.cy}" r="${r}" fill="#E8F5E9" stroke="#388E3C" stroke-width="2"/>
-        <text x="${house.cx}" y="${house.emojiY}" text-anchor="middle" font-size="${fs}">🏠</text>
+        <text x="${house.cx}" y="${house.emojiY}" text-anchor="middle" font-size="${fs}" pointer-events="none">🏠</text>
         <text id="h-val-house" x="${house.cx}" y="${L.houseValBelowY}" text-anchor="middle" font-size="${fsVal}" font-weight="600"></text>
         <circle id="h-node-grid" cx="${grid.cx}" cy="${grid.cy}" r="${r}" fill="#F3E5F5" stroke="#7B1FA2" stroke-width="2"/>
-        <text x="${grid.cx}" y="${grid.emojiY}" text-anchor="middle" font-size="${fs}">⚡</text>
+        <text x="${grid.cx}" y="${grid.emojiY}" text-anchor="middle" font-size="${fs}" pointer-events="none">⚡</text>
         ${ring("h-ring-grid", grid.cx, grid.cy, "#7B1FA2")}
         <circle id="h-node-bat" cx="${bcx}" cy="${bcy}" r="${r}" fill="#E3F2FD" stroke="#1565C0" stroke-width="2"/>
-        <rect id="h-bat-body"     x="${bcx - 9}" y="${L.bat_ico_y - 6}" width="18" height="12" rx="2" fill="none" stroke="#1565C0" stroke-width="1.5"/>
-        <rect id="h-bat-terminal" x="${bcx - 2.5}" y="${L.bat_ico_y - 9}" width="5" height="3" rx="1" fill="#1565C0"/>
-        <rect id="h-bat-fill"     x="${bcx - 7}" y="${L.bat_ico_y - 4}" width="0" height="8" rx="1" fill="#1565C0"/>
-        <text id="h-val-bat-soc" x="${bcx}" y="${L.bat_soc_y}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#0D47A1"></text>
+        <rect id="h-bat-body"     x="${bcx - 9}" y="${L.bat_ico_y - 6}" width="18" height="12" rx="2" fill="none" stroke="#1565C0" stroke-width="1.5" pointer-events="none"/>
+        <rect id="h-bat-terminal" x="${bcx - 2.5}" y="${L.bat_ico_y - 9}" width="5" height="3" rx="1" fill="#1565C0" pointer-events="none"/>
+        <rect id="h-bat-fill"     x="${bcx - 7}" y="${L.bat_ico_y - 4}" width="0" height="8" rx="1" fill="#1565C0" pointer-events="none"/>
+        <text id="h-val-bat-soc" x="${bcx}" y="${L.bat_soc_y}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#0D47A1" pointer-events="none"></text>
         ${ring("h-ring-bat", bcx, bcy, "#4CAF50")}
       </svg>`;
   }
@@ -702,25 +717,6 @@ class HeliosCard extends HTMLElement {
           ${this._buildSvg()}
         </div>
 
-        <div class="energy-row" id="h-energy-row" style="display:none">
-          <div class="energy-chip">
-            <span class="energy-chip-lbl">☀️ PV</span>
-            <span class="energy-chip-val" id="h-en-pv">—</span>
-          </div>
-          <div class="energy-chip">
-            <span class="energy-chip-lbl">⬇️ Import</span>
-            <span class="energy-chip-val" id="h-en-import">—</span>
-          </div>
-          <div class="energy-chip">
-            <span class="energy-chip-lbl">⬆️ Export</span>
-            <span class="energy-chip-val" id="h-en-export">—</span>
-          </div>
-          <div class="energy-chip">
-            <span class="energy-chip-lbl">🏠 Conso</span>
-            <span class="energy-chip-val" id="h-en-conso">—</span>
-          </div>
-        </div>
-
         <div class="savings-row" id="h-savings-row" style="display:none">
           <div class="savings-chip">
             <span class="savings-chip-lbl">💰 Économies auj.</span>
@@ -809,20 +805,14 @@ class HeliosCard extends HTMLElement {
     `;
 
     this.shadowRoot.getElementById("h-info-btn").addEventListener("click", () => {
-      const url = this._config?.info_url;
-      if (!url) return;
-      if (url.startsWith("http://") || url.startsWith("https://")) {
-        window.open(url, "_blank");
-      } else {
-        history.pushState(null, "", url);
-        window.dispatchEvent(new Event("location-changed", { bubbles: true, composed: true }));
-      }
+      this._navigate(this._config?.info_url);
     });
 
-    // Batterie — nœud SVG cliquable
-    this.shadowRoot.getElementById("h-node-bat").addEventListener("click", () => {
-      this._openBatModal();
-    });
+    // Nœuds SVG cliquables — navigation configurée ou modal batterie
+    this.shadowRoot.getElementById("h-node-pv").addEventListener("click",    () => this._navigate(this._config?.node_urls?.pv));
+    this.shadowRoot.getElementById("h-node-grid").addEventListener("click",  () => this._navigate(this._config?.node_urls?.grid));
+    this.shadowRoot.getElementById("h-node-house").addEventListener("click", () => this._navigate(this._config?.node_urls?.house));
+    this.shadowRoot.getElementById("h-node-bat").addEventListener("click",   () => this._openBatModal());
 
     // Device row click → open modal (delegation sur l'élément stable #h-devices)
     // Ignore les clics sur les boutons d'action inline (ex. "Prêt !")
@@ -1225,93 +1215,112 @@ class HeliosCard extends HTMLElement {
     const infoBtn = this.shadowRoot.getElementById("h-info-btn");
     if (infoBtn) infoBtn.hidden = !this._config.info_url;
 
-    // Daily energy section
-    const energyRow = this.shadowRoot.getElementById("h-energy-row");
-    if (energyRow && !compact) {
+    // Curseur pointer sur les nœuds navigables
+    const nu = this._config.node_urls ?? {};
+    this._svgAttr("h-node-pv",    "style", nu.pv    ? "cursor:pointer" : "");
+    this._svgAttr("h-node-grid",  "style", nu.grid  ? "cursor:pointer" : "");
+    this._svgAttr("h-node-house", "style", nu.house ? "cursor:pointer" : "");
+
+    // Section visibility helper — false only when explicitly set to false in config
+    const sec = name => !compact && this._config.sections?.[name] !== false;
+
+    // Compact mode styling
+    const cardEl = this.shadowRoot.querySelector(".card");
+    if (cardEl) compact ? cardEl.setAttribute("data-compact", "") : cardEl.removeAttribute("data-compact");
+
+    // Energy labels — toujours affichés dans le SVG (compact inclus)
+    {
       const energyIds = this._resolveEnergyIds();
-      const hasEnergy = Object.values(energyIds).some(Boolean);
-      energyRow.style.display = hasEnergy ? "" : "none";
-      if (hasEnergy) {
-        const fmtE = eid => {
-          if (!eid) return "—";
-          const v = this._num(eid, null);
-          return v !== null ? `${parseFloat(v).toFixed(1)} kWh` : "—";
-        };
-        this._txt("h-en-pv",     fmtE(energyIds.pv));
-        this._txt("h-en-import", fmtE(energyIds.import));
-        this._txt("h-en-export", fmtE(energyIds.export));
-        this._txt("h-en-conso",  fmtE(energyIds.consumption));
-      }
-    } else if (energyRow && compact) {
-      energyRow.style.display = "none";
+      const kwh = eid => {
+        if (!eid) return null;
+        const v = this._num(eid, null);
+        return v !== null ? parseFloat(v) : null;
+      };
+      const pvKwh    = kwh(energyIds.pv);
+      const impKwh   = kwh(energyIds.import);
+      const expKwh   = kwh(energyIds.export);
+      const consoKwh = kwh(energyIds.consumption);
+      this._txt("h-lbl-pv-kwh",     pvKwh    !== null ? `${pvKwh.toFixed(1)} kWh`   : "");
+      this._txt("h-lbl-import-kwh", impKwh   !== null ? `↓ ${impKwh.toFixed(1)} kWh` : "");
+      this._txt("h-lbl-export-kwh", expKwh   !== null ? `↑ ${expKwh.toFixed(1)} kWh` : "");
+      this._txt("h-lbl-house-kwh",  consoKwh !== null ? `${consoKwh.toFixed(1)} kWh` : "");
+      const importEl = this.shadowRoot.getElementById("h-lbl-import-kwh");
+      if (importEl) importEl.setAttribute("fill", tempoStroke);
     }
 
     // Savings section
     const savingsRow = this.shadowRoot.getElementById("h-savings-row");
-    if (savingsRow && !compact) {
-      const savingsIds = this._resolveSavingsIds();
-      const hasSavings = savingsIds.daily || savingsIds.total;
-      savingsRow.style.display = hasSavings ? "" : "none";
-      if (hasSavings) {
-        const fmtEur = eid => {
-          if (!eid) return "—";
-          const v = this._num(eid, null);
-          return v !== null ? `${parseFloat(v).toFixed(2)} €` : "—";
-        };
-        this._txt("h-sav-daily", fmtEur(savingsIds.daily));
-        this._txt("h-sav-total", fmtEur(savingsIds.total));
+    if (savingsRow) {
+      if (!sec("money_saving")) {
+        savingsRow.style.display = "none";
+      } else {
+        const savingsIds = this._resolveSavingsIds();
+        const hasSavings = savingsIds.daily || savingsIds.total;
+        savingsRow.style.display = hasSavings ? "" : "none";
+        if (hasSavings) {
+          const fmtEur = eid => {
+            if (!eid) return "—";
+            const v = this._num(eid, null);
+            return v !== null ? `${parseFloat(v).toFixed(2)} €` : "—";
+          };
+          this._txt("h-sav-daily", fmtEur(savingsIds.daily));
+          this._txt("h-sav-total", fmtEur(savingsIds.total));
+        }
       }
-    } else if (savingsRow && compact) {
-      savingsRow.style.display = "none";
     }
+
+    // Score decomposition
+    const scoreDecomp = this.shadowRoot.getElementById("h-score-decomp");
+    if (scoreDecomp) scoreDecomp.style.display = sec("score_detailed") ? "" : "none";
+
+    // Surplus / budget computation
+    const budgetRow = this.shadowRoot.getElementById("h-budget-row");
+    if (budgetRow) budgetRow.style.display = sec("surplus_computation") ? "" : "none";
 
     // Forecast section
     const forecastEl = this.shadowRoot.getElementById("h-forecast");
-    const forecastEid = (() => {
-      const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
-      if (entryId) {
-        const disc = this._discoverEntities(entryId);
-        if (disc?.["forecast"]) return disc["forecast"];
-      }
-      const fb = "sensor.helios_forecast";
-      return this._hass?.states[fb] ? fb : null;
-    })();
-    const hasForecast = forecastEid && this._hass?.states[forecastEid]?.state !== "unavailable";
-    if (forecastEl) forecastEl.style.display = hasForecast ? "" : "none";
-    if (hasForecast) {
-      const fmtKwh  = v => v !== null ? `${parseFloat(v).toFixed(1)} kWh` : "—";
-      const fmtPct  = v => v !== null ? `${Math.round(v)} %` : "—";
-      const fmtEur  = v => v !== null ? `${parseFloat(v).toFixed(2)} €` : "—";
-      this._txt("h-fc-pv",     fmtKwh(this._attr(forecastEid, "forecast_pv_kwh")));
-      this._txt("h-fc-conso",  fmtKwh(this._attr(forecastEid, "forecast_consumption_kwh")));
-      this._txt("h-fc-import", fmtKwh(this._attr(forecastEid, "forecast_import_kwh")));
-      this._txt("h-fc-export", fmtKwh(this._attr(forecastEid, "forecast_export_kwh")));
-      this._txt("h-fc-sc",     fmtPct(this._attr(forecastEid, "forecast_self_consumption_pct")));
-      this._txt("h-fc-ss",     fmtPct(this._attr(forecastEid, "forecast_self_sufficiency_pct")));
-      this._txt("h-fc-cost",   fmtEur(this._attr(forecastEid, "forecast_cost")));
-      this._txt("h-fc-save",   fmtEur(this._attr(forecastEid, "forecast_savings")));
-      const lastFc = this._attr(forecastEid, "last_forecast");
-      if (lastFc) {
-        const d = new Date(lastFc);
-        const sub = isNaN(d) ? lastFc
-          : `Prévision du ${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
-        this._txt("h-forecast-sub", sub);
+    if (forecastEl) {
+      if (!sec("forecast")) {
+        forecastEl.style.display = "none";
+      } else {
+        const forecastEid = (() => {
+          const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
+          if (entryId) {
+            const disc = this._discoverEntities(entryId);
+            if (disc?.["forecast"]) return disc["forecast"];
+          }
+          const fb = "sensor.helios_forecast";
+          return this._hass?.states[fb] ? fb : null;
+        })();
+        const hasForecast = forecastEid && this._hass?.states[forecastEid]?.state !== "unavailable";
+        forecastEl.style.display = hasForecast ? "" : "none";
+        if (hasForecast) {
+          const fmtKwh = v => v !== null ? `${parseFloat(v).toFixed(1)} kWh` : "—";
+          const fmtPct = v => v !== null ? `${Math.round(v)} %` : "—";
+          const fmtEur = v => v !== null ? `${parseFloat(v).toFixed(2)} €` : "—";
+          this._txt("h-fc-pv",     fmtKwh(this._attr(forecastEid, "forecast_pv_kwh")));
+          this._txt("h-fc-conso",  fmtKwh(this._attr(forecastEid, "forecast_consumption_kwh")));
+          this._txt("h-fc-import", fmtKwh(this._attr(forecastEid, "forecast_import_kwh")));
+          this._txt("h-fc-export", fmtKwh(this._attr(forecastEid, "forecast_export_kwh")));
+          this._txt("h-fc-sc",     fmtPct(this._attr(forecastEid, "forecast_self_consumption_pct")));
+          this._txt("h-fc-ss",     fmtPct(this._attr(forecastEid, "forecast_self_sufficiency_pct")));
+          this._txt("h-fc-cost",   fmtEur(this._attr(forecastEid, "forecast_cost")));
+          this._txt("h-fc-save",   fmtEur(this._attr(forecastEid, "forecast_savings")));
+          const lastFc = this._attr(forecastEid, "last_forecast");
+          if (lastFc) {
+            const d = new Date(lastFc);
+            const sub = isNaN(d) ? lastFc
+              : `Prévision du ${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+            this._txt("h-forecast-sub", sub);
+          }
+        }
       }
     }
 
-    // Compact: marge réduite + masquer footer + devices
-    const cardEl   = this.shadowRoot.querySelector(".card");
-    if (cardEl) compact ? cardEl.setAttribute("data-compact", "") : cardEl.removeAttribute("data-compact");
-    const scoreDecomp = this.shadowRoot.getElementById("h-score-decomp");
-    if (scoreDecomp) scoreDecomp.style.display = compact ? "none" : "";
-    const budgetRow = this.shadowRoot.getElementById("h-budget-row");
-    if (budgetRow) budgetRow.style.display = compact ? "none" : "";
-    if (forecastEl && compact) forecastEl.style.display = "none";
-    const devices = this.shadowRoot.getElementById("h-devices");
-    if (devices && compact) devices.style.display = "none";
-
-    // Devices section (full mode uniquement)
-    if (!compact) this._updateDevices(discoveredDevices, e);
+    // Devices section
+    const devicesEl = this.shadowRoot.getElementById("h-devices");
+    if (devicesEl && !sec("devices")) devicesEl.style.display = "none";
+    if (sec("devices")) this._updateDevices(discoveredDevices, e);
 
     // Rafraîchit les modales si elles sont ouvertes
     if (this._modalSlug) this._refreshModal();
@@ -1984,6 +1993,16 @@ class HeliosCard extends HTMLElement {
     }
     const lbl = this.shadowRoot.getElementById(lblId);
     if (lbl) lbl.textContent = "";
+  }
+
+  _navigate(url) {
+    if (!url) return;
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      window.open(url, "_blank");
+    } else {
+      history.pushState(null, "", url);
+      window.dispatchEvent(new Event("location-changed", { bubbles: true, composed: true }));
+    }
   }
 
   _txt(id, text) {

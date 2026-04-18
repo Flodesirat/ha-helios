@@ -94,6 +94,31 @@
   <helios-card id="card-dark2"></helios-card>
 </div>
 
+<div class="col">
+  <h3>Sections : flux (+ kWh) + économies + appareils — sans score détaillé ni forecast</h3>
+  <helios-card id="card-sec-light"></helios-card>
+</div>
+
+<div class="col">
+  <h3>Sections : flux (+ kWh) + score barre + appareils seulement</h3>
+  <helios-card id="card-sec-devices"></helios-card>
+</div>
+
+<div class="col">
+  <h3>Sections : tout sauf appareils</h3>
+  <helios-card id="card-sec-nodevices"></helios-card>
+</div>
+
+<div class="col dark-col">
+  <h3>Mode sombre — sections minimales (flux + score uniquement)</h3>
+  <helios-card id="card-sec-minimal"></helios-card>
+</div>
+
+<div class="col">
+  <h3>node_urls — cliquer ☀️ / ⚡ / 🏠 (log panel)</h3>
+  <helios-card id="card-node-urls"></helios-card>
+</div>
+
 <div class="log-panel" id="log-panel">
   <p style="color:#aaa">callService log ↓</p>
 </div>
@@ -457,6 +482,10 @@ const hassCompact = makeHass({
     soc: 31, plugged: true,
     daily_on_minutes: 0, allowed_start: "00:00", allowed_end: "24:00",
   }),
+  "sensor.helios_energy_pv":          state(9.4),
+  "sensor.helios_energy_import":      state(0.3),
+  "sensor.helios_energy_export":      state(4.1),
+  "sensor.helios_energy_consumption": state(5.6),
 
   "switch.helios_battery_manual": state("off"),
   "switch.helios_pool_manual":    state("off"),
@@ -468,25 +497,57 @@ const hassCompact = makeHass({
 // ---------------------------------------------------------------------------
 await customElements.whenDefined("helios-card");
 
-const cardFull    = document.getElementById("card-full");
-const cardManual  = document.getElementById("card-manual");
-const cardNight   = document.getElementById("card-night");
-const cardCompact = document.getElementById("card-compact");
-const cardDark    = document.getElementById("card-dark");
-const cardDark2   = document.getElementById("card-dark2");
+const cardFull       = document.getElementById("card-full");
+const cardManual     = document.getElementById("card-manual");
+const cardNight      = document.getElementById("card-night");
+const cardCompact    = document.getElementById("card-compact");
+const cardDark       = document.getElementById("card-dark");
+const cardDark2      = document.getElementById("card-dark2");
+const cardSecLight   = document.getElementById("card-sec-light");
+const cardSecDevices = document.getElementById("card-sec-devices");
+const cardSecNodev   = document.getElementById("card-sec-nodevices");
+const cardSecMin     = document.getElementById("card-sec-minimal");
+const cardNodeUrls   = document.getElementById("card-node-urls");
 
 const cfgBase    = { entry_id: MOCK_ENTRY_ID, info_url: "https://example.com" };
 const cfgCompact = { ...cfgBase, compact: true };
 
-cardFull.setConfig(cfgBase);       cardFull.hass    = hassDay;
-cardManual.setConfig(cfgBase);     cardManual.hass  = hassManual;
-cardNight.setConfig(cfgBase);      cardNight.hass   = hassNight;
-cardCompact.setConfig(cfgCompact); cardCompact.hass = hassCompact;
-cardDark.setConfig(cfgBase);       cardDark.hass    = hassDay;
-cardDark2.setConfig(cfgBase);      cardDark2.hass   = hassManual;
+// Sections : flux (kWh dans SVG) + économies + appareils, sans score détaillé ni forecast
+const cfgSecLight = {
+  ...cfgBase,
+  sections: { score_detailed: false, surplus_computation: false, forecast: false },
+};
+// Sections : flux (kWh dans SVG) + score barre + appareils seulement
+const cfgSecDevices = {
+  ...cfgBase,
+  sections: { money_saving: false, score_detailed: false, surplus_computation: false, forecast: false },
+};
+// Sections : tout sauf appareils
+const cfgSecNodev = {
+  ...cfgBase,
+  sections: { devices: false },
+};
+// Sections minimales : rien sous le flux (score barre reste toujours visible)
+const cfgSecMin = {
+  ...cfgBase,
+  sections: { money_saving: false, score_detailed: false, surplus_computation: false, forecast: false, devices: false },
+};
+
+cardFull.setConfig(cfgBase);          cardFull.hass       = hassDay;
+cardManual.setConfig(cfgBase);        cardManual.hass     = hassManual;
+cardNight.setConfig(cfgBase);         cardNight.hass      = hassNight;
+cardCompact.setConfig(cfgCompact);    cardCompact.hass    = hassCompact;
+cardDark.setConfig(cfgBase);          cardDark.hass       = hassDay;
+cardDark2.setConfig(cfgBase);         cardDark2.hass      = hassManual;
+cardSecLight.setConfig(cfgSecLight);  cardSecLight.hass   = hassDay;
+cardSecDevices.setConfig(cfgSecDevices); cardSecDevices.hass = hassDay;
+cardSecNodev.setConfig(cfgSecNodev);  cardSecNodev.hass   = hassDay;
+cardSecMin.setConfig(cfgSecMin);      cardSecMin.hass     = hassDay;
+cardNodeUrls.setConfig({ ...cfgBase, node_urls: { pv: "#pv-page", grid: "#grid-page", house: "#house-page" } });
+cardNodeUrls.hass = hassDay;
 
 // Enregistre toutes les cartes pour les notifications callService
-cards.push(cardFull, cardManual, cardNight, cardDark, cardDark2);
+cards.push(cardFull, cardManual, cardNight, cardDark, cardDark2, cardSecLight, cardSecDevices, cardSecNodev, cardNodeUrls);
 </script>
 </body>
 </html>
