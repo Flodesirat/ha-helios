@@ -109,6 +109,22 @@ Chaque type a sa propre logique de satisfaction (quand s'arrêter) et d'urgence 
 
 Chaque appareil (y compris la batterie) dispose d'un switch `helios_{slug}_manual`. Quand il est activé, l'appareil est **entièrement ignoré du dispatch** — Helios ne lui alloue pas de budget, ne l'allume pas, ne l'éteint pas. L'utilisateur garde le contrôle total du switch physique associé.
 
+#### Service — lancement immédiat d'un électroménager
+
+Le service `helios.start_appliance` permet de forcer le démarrage immédiat d'un électroménager en état `PREPARING` (bouton "Prêt" pressé mais cycle pas encore lancé).
+
+```yaml
+service: helios.start_appliance
+data:
+  device_entity: sensor.helios_lave_vaisselle
+```
+
+| Champ | Description |
+|-------|-------------|
+| `device_entity` | `entity_id` du sensor Helios de l'électroménager (ex. `sensor.helios_lave_vaisselle`) |
+
+Helios appelle le script de démarrage configuré et passe l'appareil en état `RUNNING`. Ce service est utilisé par le bouton **"Lancer maintenant"** dans la carte Lovelace.
+
 #### Priorité et ordre de dispatch
 
 À chaque cycle, Helios calcule un **score effectif** pour chaque appareil non-manuel, batterie incluse.
@@ -387,6 +403,19 @@ Pour chaque appareil configuré (slug = nom normalisé) :
 |--------|------|-------------|
 | `sensor.helios_{slug}` | Sensor | État de l'appareil — `on` \| `off` \| `satisfied` \| `waiting`. Attributs : `effective_score`, `fit`, `urgency`, `power_w`, `reason` (dernière décision) |
 | `switch.helios_{slug}_manual` | Switch | Passe l'appareil en mode manuel — Helios ne le pilote plus, l'état du switch physique reste sous contrôle de l'utilisateur |
+
+#### Entités énergie et économies
+
+Compteurs journaliers remis à zéro à minuit, et cumul total des économies :
+
+| Entité | Type | Description |
+|--------|------|-------------|
+| `sensor.helios_energy_pv` | Sensor | Énergie PV produite dans la journée (kWh) |
+| `sensor.helios_energy_import` | Sensor | Énergie importée du réseau dans la journée (kWh) |
+| `sensor.helios_energy_export` | Sensor | Énergie exportée vers le réseau dans la journée (kWh) |
+| `sensor.helios_energy_consumption` | Sensor | Consommation totale de la journée (kWh) |
+| `sensor.helios_daily_savings` | Sensor | Économie réalisée dans la journée par rapport à une consommation 100 % réseau (€) — remis à zéro à minuit |
+| `sensor.helios_total_savings` | Sensor | Économie cumulée depuis la création de l'intégration (€) |
 
 #### Entité prévision journalière
 
