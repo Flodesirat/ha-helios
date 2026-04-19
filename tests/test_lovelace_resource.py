@@ -7,7 +7,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.helios import _CARD_URL, _async_do_register_lovelace_resource
+from custom_components.helios import _CARD_URL_BASE, _versioned_card_url, _async_do_register_lovelace_resource
 
 from .test_init import _setup
 
@@ -22,6 +22,7 @@ class _FakeResources:
     def __init__(self, pre_existing: list[dict] | None = None):
         self._items: list[dict] = list(pre_existing or [])
         self.created: list[dict] = []
+        self.updated: list[dict] = []
 
     async def async_load(self) -> None:
         pass
@@ -32,6 +33,12 @@ class _FakeResources:
     async def async_create_item(self, data: dict) -> None:
         self.created.append(data)
         self._items.append(data)
+
+    async def async_update_item(self, item_id: str, data: dict) -> None:
+        self.updated.append({"id": item_id, **data})
+        for item in self._items:
+            if item.get("id") == item_id:
+                item.update(data)
 
 
 # ---------------------------------------------------------------------------
@@ -56,22 +63,35 @@ async def test_resource_registered_in_empty_collection():
     assert len(fake_resources.created) == 1, (
         f"Expected 1 resource created, got {len(fake_resources.created)}"
     )
-    assert fake_resources.created[0]["url"] == _CARD_URL
+    assert fake_resources.created[0]["url"] == _versioned_card_url()
     assert fake_resources.created[0]["res_type"] == "module"
 
 
 async def test_resource_not_duplicated():
-    """Card must not be registered twice if already present."""
-    existing = [{"url": _CARD_URL, "res_type": "module"}]
+    """Card must not be registered again if already present with current version."""
+    existing = [{"id": "abc", "url": _versioned_card_url(), "res_type": "module"}]
     fake_resources = _FakeResources(pre_existing=existing)
     hass = MagicMock()
     hass.data = {"lovelace": _make_lovelace_data(fake_resources)}
 
     await _async_do_register_lovelace_resource(hass)
 
-    assert fake_resources.created == [], (
-        "Resource was duplicated even though it was already registered"
-    )
+    assert fake_resources.created == [], "Resource was duplicated even though it was already registered"
+    assert fake_resources.updated == [], "Resource was updated even though it was already up-to-date"
+
+
+async def test_resource_updated_on_version_change():
+    """Outdated URL (old version) must be updated in place, not duplicated."""
+    existing = [{"id": "abc", "url": f"{_CARD_URL_BASE}?v=0.0.1", "res_type": "module"}]
+    fake_resources = _FakeResources(pre_existing=existing)
+    hass = MagicMock()
+    hass.data = {"lovelace": _make_lovelace_data(fake_resources)}
+
+    await _async_do_register_lovelace_resource(hass)
+
+    assert fake_resources.created == [], "Resource was created instead of updated"
+    assert len(fake_resources.updated) == 1
+    assert fake_resources.updated[0]["url"] == _versioned_card_url()
 
 
 async def test_resource_graceful_without_lovelace_key():

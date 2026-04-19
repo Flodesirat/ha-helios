@@ -1,6 +1,7 @@
 """Energy Optimizer — custom integration for Home Assistant."""
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -23,39 +24,48 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
 
-_CARD_URL = "/helios/helios-card.js"
-_CARD_PATH = Path(__file__).parent / "www" / "helios-card.js"
+_CARD_URL_BASE = "/hacsfiles/helios/helios-card.js"
+
+
+def _versioned_card_url() -> str:
+    try:
+        manifest = Path(__file__).parent / "manifest.json"
+        version = json.loads(manifest.read_text())["version"]
+        return f"{_CARD_URL_BASE}?v={version}"
+    except Exception:  # noqa: BLE001
+        return _CARD_URL_BASE
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register the Helios Lovelace card JS module."""
-    try:
-        hass.http.register_static_path(_CARD_URL, str(_CARD_PATH), cache_headers=False)
-        _LOGGER.debug("Helios card served at %s", _CARD_URL)
-    except Exception:  # noqa: BLE001
-        _LOGGER.debug("Could not register Helios card static path (expected in tests)")
+    """Entry point — HACS serves the card JS automatically via /hacsfiles/."""
     return True
 
 
 async def _async_do_register_lovelace_resource(hass: HomeAssistant) -> None:
-    """Inner: add Helios card to Lovelace resources storage if not already present."""
+    """Add or update the Helios card Lovelace resource, keeping the URL versioned for cache-busting."""
     try:
         lovelace_data = hass.data.get("lovelace")
         if lovelace_data is None:
             _LOGGER.warning("Helios: lovelace not available in hass.data — card resource not auto-registered")
             return
-        # hass.data["lovelace"] is a LovelaceData object (not a dict)
         res_coll = getattr(lovelace_data, "resources", None)
         if res_coll is None:
             _LOGGER.warning("Helios: lovelace resources collection missing — card resource not auto-registered")
             return
         await res_coll.async_load()
+        card_url = _versioned_card_url()
         for item in res_coll.async_items():
-            if item.get("url") == _CARD_URL:
-                _LOGGER.debug("Helios: Lovelace resource already registered (%s)", _CARD_URL)
+            url = item.get("url", "")
+            if url == card_url:
+                _LOGGER.debug("Helios: Lovelace resource already up-to-date (%s)", card_url)
                 return
-        await res_coll.async_create_item({"res_type": "module", "url": _CARD_URL})
-        _LOGGER.info("Helios: Lovelace resource registered (%s)", _CARD_URL)
+            if url.startswith(_CARD_URL_BASE):
+                # Outdated version — update in place
+                await res_coll.async_update_item(item["id"], {"res_type": "module", "url": card_url})
+                _LOGGER.info("Helios: Lovelace resource updated to %s", card_url)
+                return
+        await res_coll.async_create_item({"res_type": "module", "url": card_url})
+        _LOGGER.info("Helios: Lovelace resource registered (%s)", card_url)
     except Exception as err:  # noqa: BLE001
         _LOGGER.warning("Helios: could not auto-register Lovelace resource: %s", err)
 
