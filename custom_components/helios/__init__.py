@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import slugify
 
@@ -41,7 +42,9 @@ def _versioned_card_url() -> str:
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Mount the card JS at a fixed URL so Lovelace can load it."""
     try:
-        hass.http.register_static_path("/helios", str(_CARD_DIR), cache_headers=False)
+        await hass.http.async_register_static_paths([
+            StaticPathConfig("/helios", str(_CARD_DIR), cache_headers=False)
+        ])
         _LOGGER.info("Helios card served at %s", _CARD_URL_BASE)
     except Exception as err:  # noqa: BLE001
         _LOGGER.warning("Could not register Helios card static path: %s", err)
