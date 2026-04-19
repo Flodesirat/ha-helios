@@ -266,7 +266,10 @@ class HeliosCard extends HTMLElement {
         .h-ring {
           transition: stroke-dashoffset 0.8s ease, stroke 0.5s ease;
         }
-        #h-val-house { fill: var(--primary-text-color, #212121); }
+        #h-val-house, #h-lbl-house-kwh { fill: var(--primary-text-color, #212121); }
+        @media (prefers-color-scheme: dark) {
+          #h-val-house, #h-lbl-house-kwh { fill: var(--primary-text-color, #e1e1e1); }
+        }
         .fl-on {
           stroke-dasharray: 8 5;
           animation: flowDash linear infinite;
