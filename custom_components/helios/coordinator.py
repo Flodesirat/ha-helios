@@ -119,6 +119,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.enabled:            bool        = bool(cfg.get(CONF_ENABLED, DEFAULT_ENABLED))
         self.optimizer_last_run: str | None  = None   # ISO timestamp set by daily_optimizer
         self.optimizer_context:          dict              = {}
+        self.optimizer_chosen:           dict              = {}
+        self.optimizer_top20:            list              = []
+        self.optimizer_chosen_schedule:  list              = []
         self.forecast_data:              ForecastResult | None = None  # set by async_run_daily_forecast
 
         # Sampling buffers — rolling window for power signal averaging
