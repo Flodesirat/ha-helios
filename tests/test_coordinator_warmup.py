@@ -1,15 +1,11 @@
-"""Tests for the coordinator startup warmup guard.
+"""Tests for the coordinator startup guard.
 
-During the warmup window (max(5, scan_interval) minutes after load):
-  - Sensors ARE read and state IS updated.
-  - Scoring, battery strategy and device dispatch are NOT executed.
-
-After the warmup window has elapsed, normal dispatch resumes.
+Dispatch is skipped until all mandatory source entities have a valid state.
+Sensors ARE always read and state IS always updated.
 """
 from __future__ import annotations
 
-import time as _time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -20,7 +16,7 @@ from custom_components.helios.coordinator import EnergyOptimizerCoordinator
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_coordinator(enabled: bool = True) -> MagicMock:
+def _make_coordinator(enabled: bool = True, sources_ready: bool = True) -> MagicMock:
     """Build a minimal coordinator mock with _async_update_data bound to it."""
     coord = MagicMock(spec=EnergyOptimizerCoordinator)
 
@@ -65,6 +61,7 @@ def _make_coordinator(enabled: bool = True) -> MagicMock:
     coord._update_state = MagicMock()
     coord._build_score_input = MagicMock(return_value={"surplus_w": 800.0})
     coord._snapshot = MagicMock(return_value={"enabled": enabled})
+    coord._sources_ready = MagicMock(return_value=sources_ready)
 
     # Bind the real method
     coord._async_update_data = (
@@ -74,148 +71,144 @@ def _make_coordinator(enabled: bool = True) -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# During warmup — dispatch must NOT run
+# Sources not ready — dispatch must NOT run
 # ---------------------------------------------------------------------------
 
-class TestWarmupBlocked:
+class TestSourcesNotReady:
 
     @pytest.mark.asyncio
-    async def test_dispatch_not_called_during_warmup(self):
-        """device_manager.async_dispatch must not be called while warming up."""
-        coord = _make_coordinator()
-        # Still in warmup: ready_at is far in the future
-        coord._dispatch_ready_at = _time.monotonic() + 9999
-
+    async def test_dispatch_not_called_when_sources_unavailable(self):
+        """device_manager.async_dispatch must not be called while sources are unavailable."""
+        coord = _make_coordinator(sources_ready=False)
         await coord._async_update_data()
-
         coord.device_manager.async_dispatch.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_scoring_not_called_during_warmup(self):
-        """scoring_engine.compute must not be called during warmup."""
-        coord = _make_coordinator()
-        coord._dispatch_ready_at = _time.monotonic() + 9999
-
+    async def test_scoring_not_called_when_sources_unavailable(self):
+        """scoring_engine.compute must not be called while sources are unavailable."""
+        coord = _make_coordinator(sources_ready=False)
         await coord._async_update_data()
-
         coord.scoring_engine.compute.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_sensors_read_during_warmup(self):
-        """Sensors must still be read during warmup so state reflects reality."""
-        coord = _make_coordinator()
-        coord._dispatch_ready_at = _time.monotonic() + 9999
-
+    async def test_sensors_read_when_sources_unavailable(self):
+        """Sensors must still be read so state reflects reality as soon as possible."""
+        coord = _make_coordinator(sources_ready=False)
         await coord._async_update_data()
-
         coord._read_sensors.assert_called_once()
         coord._update_state.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_snapshot_returned_during_warmup(self):
-        """A snapshot must be returned even during warmup."""
-        coord = _make_coordinator()
-        coord._dispatch_ready_at = _time.monotonic() + 9999
-
+    async def test_snapshot_returned_when_sources_unavailable(self):
+        """A snapshot must be returned even when sources are unavailable."""
+        coord = _make_coordinator(sources_ready=False)
         result = await coord._async_update_data()
-
         assert result == {"enabled": True}
 
 
 # ---------------------------------------------------------------------------
-# After warmup — dispatch MUST run
+# Sources ready — dispatch MUST run
 # ---------------------------------------------------------------------------
 
-class TestWarmupElapsed:
+class TestSourcesReady:
 
     @pytest.mark.asyncio
-    async def test_dispatch_called_after_warmup(self):
-        """device_manager.async_dispatch must be called once warmup has elapsed."""
-        coord = _make_coordinator()
-        # Warmup already elapsed
-        coord._dispatch_ready_at = _time.monotonic() - 1
-
+    async def test_dispatch_called_when_sources_ready(self):
+        """device_manager.async_dispatch must be called when all sources are available."""
+        coord = _make_coordinator(sources_ready=True)
         await coord._async_update_data()
-
         coord.device_manager.async_dispatch.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_scoring_called_after_warmup(self):
-        """scoring_engine.compute must be called once warmup has elapsed."""
-        coord = _make_coordinator()
-        coord._dispatch_ready_at = _time.monotonic() - 1
-
+    async def test_scoring_called_when_sources_ready(self):
+        """scoring_engine.compute must be called when all sources are available."""
+        coord = _make_coordinator(sources_ready=True)
         await coord._async_update_data()
-
         coord.scoring_engine.compute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_sensors_read_after_warmup(self):
-        """Sensors are still read after warmup."""
-        coord = _make_coordinator()
-        coord._dispatch_ready_at = _time.monotonic() - 1
-
+    async def test_sensors_read_when_sources_ready(self):
+        """Sensors are still read after sources become available."""
+        coord = _make_coordinator(sources_ready=True)
         await coord._async_update_data()
-
         coord._read_sensors.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
-# enabled=False — always skips dispatch regardless of warmup state
+# enabled=False — always skips dispatch regardless of source state
 # ---------------------------------------------------------------------------
 
 class TestDisabled:
 
     @pytest.mark.asyncio
-    async def test_dispatch_not_called_when_disabled_during_warmup(self):
-        coord = _make_coordinator(enabled=False)
-        coord._dispatch_ready_at = _time.monotonic() + 9999
-
+    async def test_dispatch_not_called_when_disabled_sources_unavailable(self):
+        coord = _make_coordinator(enabled=False, sources_ready=False)
         await coord._async_update_data()
-
         coord.device_manager.async_dispatch.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_dispatch_not_called_when_disabled_after_warmup(self):
-        """Disabled must skip dispatch even after warmup has elapsed."""
-        coord = _make_coordinator(enabled=False)
-        coord._dispatch_ready_at = _time.monotonic() - 1
-
+    async def test_dispatch_not_called_when_disabled_sources_ready(self):
+        """Disabled must skip dispatch even when sources are available."""
+        coord = _make_coordinator(enabled=False, sources_ready=True)
         await coord._async_update_data()
-
         coord.device_manager.async_dispatch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
-# Warmup duration — max(5, scan_interval)
+# _sources_ready unit tests
 # ---------------------------------------------------------------------------
 
-class TestWarmupDuration:
+class TestSourcesReadyUnit:
 
-    def test_warmup_at_least_5_minutes(self):
-        """Even with a 1-minute scan interval, warmup must be >= 5 minutes."""
-        import time as _time_mod
-        import custom_components.helios.coordinator as coord_mod
+    def _make_hass_state(self, state: str) -> MagicMock:
+        s = MagicMock()
+        s.state = state
+        return s
 
-        now = _time_mod.monotonic()
-        with patch.object(coord_mod, "_time") as mock_time:
-            mock_time.monotonic.return_value = now
+    def _make_real_coordinator(self, entity_states: dict[str, str | None]) -> EnergyOptimizerCoordinator:
+        """Build a real (non-mocked) coordinator to test _sources_ready."""
+        from custom_components.helios.const import (
+            CONF_PV_POWER_ENTITY, CONF_GRID_POWER_ENTITY, CONF_HOUSE_POWER_ENTITY,
+        )
+        coord = MagicMock(spec=EnergyOptimizerCoordinator)
+        coord._cfg = {
+            CONF_PV_POWER_ENTITY:   "sensor.pv",
+            CONF_GRID_POWER_ENTITY: "sensor.grid",
+            CONF_HOUSE_POWER_ENTITY: "sensor.house",
+        }
 
-            coord = MagicMock(spec=EnergyOptimizerCoordinator)
-            # Simulate __init__ warmup calculation with interval=1
-            interval = 1
-            warmup = max(5, interval)
-            coord._dispatch_ready_at = now + warmup * 60
+        def _get(entity_id: str) -> MagicMock | None:
+            state = entity_states.get(entity_id)
+            if state is None:
+                return None
+            return self._make_hass_state(state)
 
-        assert coord._dispatch_ready_at >= now + 5 * 60
+        coord.hass = MagicMock()
+        coord.hass.states.get.side_effect = _get
+        coord._sources_ready = EnergyOptimizerCoordinator._sources_ready.__get__(coord)
+        return coord
 
-    def test_warmup_uses_scan_interval_when_larger(self):
-        """With a 10-minute scan interval, warmup must be 10 minutes."""
-        import time as _time_mod
+    def test_all_valid_returns_true(self):
+        coord = self._make_real_coordinator({
+            "sensor.pv": "500", "sensor.grid": "0", "sensor.house": "200",
+        })
+        assert coord._sources_ready() is True
 
-        now = _time_mod.monotonic()
-        interval = 10
-        warmup = max(5, interval)
-        ready_at = now + warmup * 60
+    def test_one_unavailable_returns_false(self):
+        coord = self._make_real_coordinator({
+            "sensor.pv": "unavailable", "sensor.grid": "0", "sensor.house": "200",
+        })
+        assert coord._sources_ready() is False
 
-        assert ready_at >= now + 10 * 60
+    def test_one_unknown_returns_false(self):
+        coord = self._make_real_coordinator({
+            "sensor.pv": "500", "sensor.grid": "unknown", "sensor.house": "200",
+        })
+        assert coord._sources_ready() is False
+
+    def test_one_missing_returns_false(self):
+        coord = self._make_real_coordinator({
+            "sensor.pv": "500", "sensor.grid": "0",
+            # sensor.house absent → hass.states.get returns None
+        })
+        assert coord._sources_ready() is False
