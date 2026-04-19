@@ -6,7 +6,8 @@ from pathlib import Path
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import slugify
 
@@ -36,27 +37,39 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
-async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
-    """Add the Helios card to Lovelace resources if not already present.
-
-    This makes the resource visible in Settings → Dashboards → Resources
-    and loads it automatically in all Lovelace dashboards.
-    """
+async def _async_do_register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Inner: add Helios card to Lovelace resources storage if not already present."""
     try:
         lovelace_data = hass.data.get("lovelace")
         if lovelace_data is None:
+            _LOGGER.warning("Helios: lovelace not available in hass.data — card resource not auto-registered")
             return
         res_coll = lovelace_data.get("resources")
         if res_coll is None:
+            _LOGGER.warning("Helios: lovelace resources collection missing — card resource not auto-registered")
             return
         await res_coll.async_load()
         for item in res_coll.async_items():
             if item.get("url") == _CARD_URL:
-                return  # Already registered
+                _LOGGER.debug("Helios: Lovelace resource already registered (%s)", _CARD_URL)
+                return
         await res_coll.async_create_item({"res_type": "module", "url": _CARD_URL})
         _LOGGER.info("Helios: Lovelace resource registered (%s)", _CARD_URL)
     except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Helios: could not auto-register Lovelace resource: %s", err)
+        _LOGGER.warning("Helios: could not auto-register Lovelace resource: %s", err)
+
+
+def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Schedule Lovelace resource registration, waiting for HA to be fully started."""
+
+    @callback
+    def _on_ha_started(_event=None) -> None:
+        hass.async_create_task(_async_do_register_lovelace_resource(hass))
+
+    if hass.is_running:
+        hass.async_create_task(_async_do_register_lovelace_resource(hass))
+    else:
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_ha_started)
 
 
 def _load_base_load_fallback():
@@ -72,7 +85,7 @@ def _load_base_load_fallback():
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Energy Optimizer from a config entry."""
-    await _async_register_lovelace_resource(hass)
+    _async_register_lovelace_resource(hass)
     coordinator = EnergyOptimizerCoordinator(hass, entry)
     await coordinator.device_manager.async_setup()
     await coordinator.async_setup()
