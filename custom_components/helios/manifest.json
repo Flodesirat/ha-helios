@@ -1,15 +1,15 @@
 {
   "domain": "helios",
   "name": "Helios Energy Optimizer",
+  "after_dependencies": [
+    "http"
+  ],
   "codeowners": [
     "@Flodesirat"
   ],
   "config_flow": true,
   "dependencies": [
     "lovelace"
-  ],
-  "after_dependencies": [
-    "http"
   ],
   "documentation": "https://github.com/Flodesirat/ha-helios",
   "integration_type": "service",
