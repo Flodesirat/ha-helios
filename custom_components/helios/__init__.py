@@ -42,9 +42,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Mount the card JS at a fixed URL so Lovelace can load it."""
     try:
         hass.http.register_static_path("/helios", str(_CARD_DIR), cache_headers=False)
-        _LOGGER.debug("Helios card served at %s", _CARD_URL_BASE)
-    except Exception:  # noqa: BLE001
-        _LOGGER.debug("Could not register Helios card static path (expected in tests)")
+        _LOGGER.info("Helios card served at %s", _CARD_URL_BASE)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("Could not register Helios card static path: %s", err)
     return True
 
 
