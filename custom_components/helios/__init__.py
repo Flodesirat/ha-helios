@@ -24,7 +24,8 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
 
-_CARD_URL_BASE = "/hacsfiles/helios/helios-card.js"
+_CARD_URL_BASE = "/helios/helios-card.js"
+_CARD_PATH = Path(__file__).parent / "www" / "helios-card.js"
 
 try:
     _manifest_version = json.loads((Path(__file__).parent / "manifest.json").read_text())["version"]
@@ -38,7 +39,12 @@ def _versioned_card_url() -> str:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Entry point — HACS serves the card JS automatically via /hacsfiles/."""
+    """Mount the card JS at a fixed URL so Lovelace can load it."""
+    try:
+        hass.http.register_static_path(_CARD_URL_BASE, str(_CARD_PATH), cache_headers=False)
+        _LOGGER.debug("Helios card served at %s", _CARD_URL_BASE)
+    except Exception:  # noqa: BLE001
+        _LOGGER.warning("Could not register Helios card static path (expected in tests)")
     return True
 
 
