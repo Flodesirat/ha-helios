@@ -26,14 +26,15 @@ _LOGGER = logging.getLogger(__name__)
 
 _CARD_URL_BASE = "/hacsfiles/helios/helios-card.js"
 
+try:
+    _manifest_version = json.loads((Path(__file__).parent / "manifest.json").read_text())["version"]
+    _CARD_URL = f"{_CARD_URL_BASE}?v={_manifest_version}"
+except Exception:  # noqa: BLE001
+    _CARD_URL = _CARD_URL_BASE
+
 
 def _versioned_card_url() -> str:
-    try:
-        manifest = Path(__file__).parent / "manifest.json"
-        version = json.loads(manifest.read_text())["version"]
-        return f"{_CARD_URL_BASE}?v={version}"
-    except Exception:  # noqa: BLE001
-        return _CARD_URL_BASE
+    return _CARD_URL
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
