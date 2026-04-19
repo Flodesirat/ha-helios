@@ -136,6 +136,82 @@ class DeviceManager:
                         device.name, device.pool_inhibit_until - now_ts,
                     )
 
+            # EV-specific: restore is_on and handle stop script if charge ended during downtime.
+            if device.device_type == DEVICE_TYPE_EV and stored.get("is_on", False):
+                switch_state = self._hass.states.get(device.switch_entity) if device.switch_entity else None
+                if switch_state and switch_state.state == "on":
+                    # Charger still on — resume as if nothing happened (reconcile below handles it)
+                    pass
+                else:
+                    # Charger turned off during HA downtime — fire stop script if configured
+                    _LOGGER.info(
+                        "Device '%s': was charging before restart but switch is now OFF — "
+                        "executing stop script (charge ended during downtime)",
+                        device.name,
+                    )
+                    if device.ev_charge_stop_script:
+                        self._hass.async_create_task(
+                            self._hass.services.async_call(
+                                "script", "turn_on",
+                                {"entity_id": device.ev_charge_stop_script},
+                                blocking=False,
+                            )
+                        )
+
+            # Appliance-specific: restore PREPARING/RUNNING state so appliances survive restarts.
+            if device.device_type == DEVICE_TYPE_APPLIANCE:
+                stored_app_state = stored.get("appliance_state")
+                if stored_app_state == APPLIANCE_STATE_PREPARING:
+                    device.appliance_state = APPLIANCE_STATE_PREPARING
+                    deadline_str = stored.get("appliance_deadline_dt")
+                    if deadline_str:
+                        try:
+                            device.appliance_deadline_dt = datetime.fromisoformat(deadline_str)
+                        except ValueError:
+                            pass
+                    _LOGGER.info(
+                        "Appliance '%s': restored PREPARING state (deadline=%s)",
+                        device.name,
+                        device.appliance_deadline_dt.strftime("%H:%M") if device.appliance_deadline_dt else "none",
+                    )
+                elif stored_app_state == APPLIANCE_STATE_RUNNING:
+                    cycle_start = stored.get("appliance_cycle_start")
+                    duration_s = (device.appliance_cycle_duration_minutes or 0) * 60
+                    if cycle_start is not None and duration_s > 0:
+                        elapsed_s = now_ts - float(cycle_start)
+                        if elapsed_s >= duration_s:
+                            # Cycle finished during downtime — mark as done and reset ready entity
+                            device.appliance_state = APPLIANCE_STATE_DONE
+                            _LOGGER.info(
+                                "Appliance '%s': cycle ended during HA downtime (%.0f s ago) — marking DONE",
+                                device.name, elapsed_s - duration_s,
+                            )
+                            if device.appliance_ready_entity:
+                                self._hass.async_create_task(
+                                    self._hass.services.async_call(
+                                        "input_boolean", "turn_off",
+                                        {"entity_id": device.appliance_ready_entity},
+                                        blocking=False,
+                                    )
+                                )
+                        else:
+                            # Cycle still running — resume with original start time
+                            device.appliance_state       = APPLIANCE_STATE_RUNNING
+                            device.appliance_cycle_start = float(cycle_start)
+                            device.is_on                 = True
+                            device.turned_on_at          = float(cycle_start)
+                            _LOGGER.info(
+                                "Appliance '%s': restored RUNNING state (%.0f s / %.0f s elapsed)",
+                                device.name, elapsed_s, duration_s,
+                            )
+                    else:
+                        # No cycle_start or duration — can't safely resume, treat as DONE
+                        device.appliance_state = APPLIANCE_STATE_DONE
+                        _LOGGER.warning(
+                            "Appliance '%s': was RUNNING but cycle_start/duration missing — marking DONE",
+                            device.name,
+                        )
+
             # Reconcile is_on from the actual HA switch state.
             # If the switch is physically ON, Helios resumes control without
             # interrupting it — turned_on_at is set to now so that min_on_minutes
@@ -179,6 +255,7 @@ class DeviceManager:
                     dev.name,
                 )
                 await self._async_appliance_to_preparing(self._hass, dev, ready_entity)
+                await self._async_save_device_data()
                 if self._coordinator is not None:
                     await self._coordinator.async_request_refresh()
             return _on_ready_change
@@ -227,10 +304,20 @@ class DeviceManager:
 
     async def _async_save_device_data(self) -> None:
         """Persist device runtime state (manual_mode, pool counters, force/inhibit)."""
+        if not hasattr(self, "_store"):
+            return
         data: dict = {}
         for device in self.devices:
             entry: dict = {"manual_mode": device.manual_mode}
-            if device.device_type == DEVICE_TYPE_POOL:
+            if device.device_type == DEVICE_TYPE_EV:
+                entry["is_on"] = device.is_on
+            elif device.device_type == DEVICE_TYPE_APPLIANCE:
+                entry["appliance_state"] = device.appliance_state
+                if device.appliance_deadline_dt is not None:
+                    entry["appliance_deadline_dt"] = device.appliance_deadline_dt.isoformat()
+                if device.appliance_cycle_start is not None:
+                    entry["appliance_cycle_start"] = device.appliance_cycle_start
+            elif device.device_type == DEVICE_TYPE_POOL:
                 entry.update({
                     "date":             (device.pool_last_date or date.today()).isoformat(),
                     "minutes":          device.pool_daily_run_minutes,
@@ -696,6 +783,7 @@ class DeviceManager:
                     "reason": "cycle_complete",
                 })
                 device.last_decision_reason = "cycle_complete"
+                await self._async_save_device_data()
                 if device.appliance_ready_entity:
                     await hass.services.async_call(
                         "input_boolean", "turn_off",
@@ -805,3 +893,5 @@ class DeviceManager:
         else:
             device.turned_off_at = time_mod.time()
         _LOGGER.debug("Device '%s' → %s", device.name, "ON" if on else "OFF")
+        if device.device_type == DEVICE_TYPE_EV:
+            await self._async_save_device_data()
