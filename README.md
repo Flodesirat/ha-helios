@@ -908,3 +908,26 @@ python sim.py -v --decisions   # combinable avec la vue horaire
 ```
 
 Utile pour diagnostiquer un **chattering** (cycles ON/OFF rapides), vérifier qu'un appareil se déclenche dans la bonne fenêtre horaire, ou comprendre pourquoi un appareil n'a pas été sélectionné (fit trop bas, budget insuffisant).
+
+---
+
+## Releases
+
+### Beta automatique
+
+À chaque push sur `main` qui passe les tests, le workflow **Auto Beta Release** publie automatiquement une pré-release :
+
+- Si la version courante est `1.2.3b4` → devient `1.2.3b5`
+- Si la version courante est une stable `1.2.3` → devient `1.2.4b1`
+
+La version dans `manifest.json` est mise à jour et commitée par le bot, un tag `v…` est poussé, et une GitHub Release (marquée *pre-release*) est créée avec les notes générées automatiquement.
+
+### Release stable
+
+1. Aller dans **Actions → Release → Run workflow**
+2. Saisir le numéro de version cible (ex. `1.3.0` ou `1.3.0b2` pour forcer un beta nommé)
+3. Le workflow :
+   - Exécute les tests — s'arrête en cas d'échec
+   - Met à jour `manifest.json`
+   - Crée un commit + tag `v1.3.0`
+   - Publie une GitHub Release avec les notes générées automatiquement
