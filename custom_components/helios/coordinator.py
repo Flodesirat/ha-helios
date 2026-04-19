@@ -4,11 +4,11 @@ from __future__ import annotations
 import logging
 from collections import deque
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
+from homeassistant.helpers.event import async_call_later, async_track_time_change, async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -92,6 +92,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             cfg.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W)
         )
 
+        self._startup_check_unsub: Callable | None = None
 
         # Latest computed state — exposed to sensor/switch entities
         self.pv_power_w:      float       = 0.0
@@ -368,8 +369,16 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                 return self._snapshot()
 
             if not self._sources_ready():
+                if self._startup_check_unsub is None:
+                    self._startup_check_unsub = async_call_later(
+                        self.hass, 60, self._async_startup_refresh
+                    )
                 _LOGGER.debug("Helios: source entities not yet available — dispatch skipped")
                 return self._snapshot()
+
+            if self._startup_check_unsub is not None:
+                self._startup_check_unsub()
+                self._startup_check_unsub = None
 
             score_input = self._build_score_input()
             self.virtual_surplus_w = score_input.get("surplus_w", 0.0)
@@ -409,6 +418,16 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     # ------------------------------------------------------------------
     # Sensor reading
     # ------------------------------------------------------------------
+    async def _async_startup_refresh(self, _now: Any = None) -> None:
+        """Called every 60 s after startup until source entities are available."""
+        self._startup_check_unsub = None
+        if self._sources_ready():
+            await self.async_refresh()
+        else:
+            self._startup_check_unsub = async_call_later(
+                self.hass, 60, self._async_startup_refresh
+            )
+
     def _sources_ready(self) -> bool:
         """Return True when the three mandatory source entities have a valid state."""
         for key in (CONF_PV_POWER_ENTITY, CONF_GRID_POWER_ENTITY, CONF_HOUSE_POWER_ENTITY):

@@ -62,6 +62,7 @@ def _make_coordinator(enabled: bool = True, sources_ready: bool = True) -> Magic
     coord._build_score_input = MagicMock(return_value={"surplus_w": 800.0})
     coord._snapshot = MagicMock(return_value={"enabled": enabled})
     coord._sources_ready = MagicMock(return_value=sources_ready)
+    coord._startup_check_unsub = None
 
     # Bind the real method
     coord._async_update_data = (
