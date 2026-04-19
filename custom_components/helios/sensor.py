@@ -349,7 +349,7 @@ class EnergyTotalSavingsSensor(_BaseEOSensor):
     suggested_object_id = "total_savings"
     _unique_suffix = "total_savings"
     _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_state_class = SensorStateClass.TOTAL
     _attr_native_unit_of_measurement = "EUR"
     _attr_suggested_display_precision = 2
 

@@ -38,11 +38,18 @@ class _FakeResources:
 # Unit tests — _async_do_register_lovelace_resource in isolation
 # ---------------------------------------------------------------------------
 
+def _make_lovelace_data(resources=None):
+    """Return a fake LovelaceData object (attribute-based, not a dict)."""
+    obj = MagicMock()
+    obj.resources = resources
+    return obj
+
+
 async def test_resource_registered_in_empty_collection():
     """Card must be added when the resources collection is empty."""
     fake_resources = _FakeResources()
     hass = MagicMock()
-    hass.data = {"lovelace": {"resources": fake_resources}}
+    hass.data = {"lovelace": _make_lovelace_data(fake_resources)}
 
     await _async_do_register_lovelace_resource(hass)
 
@@ -58,7 +65,7 @@ async def test_resource_not_duplicated():
     existing = [{"url": _CARD_URL, "res_type": "module"}]
     fake_resources = _FakeResources(pre_existing=existing)
     hass = MagicMock()
-    hass.data = {"lovelace": {"resources": fake_resources}}
+    hass.data = {"lovelace": _make_lovelace_data(fake_resources)}
 
     await _async_do_register_lovelace_resource(hass)
 
@@ -75,10 +82,11 @@ async def test_resource_graceful_without_lovelace_key():
     await _async_do_register_lovelace_resource(hass)  # must not raise
 
 
-async def test_resource_graceful_without_resources_key():
-    """Function must not raise when lovelace dict has no 'resources' key."""
+async def test_resource_graceful_without_resources_attribute():
+    """Function must not raise when LovelaceData has no resources attribute."""
     hass = MagicMock()
-    hass.data = {"lovelace": {}}
+    lovelace_obj = MagicMock(spec=[])  # no attributes at all
+    hass.data = {"lovelace": lovelace_obj}
 
     await _async_do_register_lovelace_resource(hass)  # must not raise
 

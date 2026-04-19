@@ -44,7 +44,8 @@ async def _async_do_register_lovelace_resource(hass: HomeAssistant) -> None:
         if lovelace_data is None:
             _LOGGER.warning("Helios: lovelace not available in hass.data — card resource not auto-registered")
             return
-        res_coll = lovelace_data.get("resources")
+        # hass.data["lovelace"] is a LovelaceData object (not a dict)
+        res_coll = getattr(lovelace_data, "resources", None)
         if res_coll is None:
             _LOGGER.warning("Helios: lovelace resources collection missing — card resource not auto-registered")
             return
