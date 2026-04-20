@@ -1458,6 +1458,11 @@ class HeliosCard extends HTMLElement {
   }
 
   _deviceIsOn(dev) {
+    const switchEntity = this._attr(dev.entity, "switch_entity");
+    if (switchEntity) {
+      const swState = this._hass?.states[switchEntity]?.state;
+      if (swState !== undefined) return swState === "on";
+    }
     const st = this._str(dev.entity);
     return st === "on" || st === "running";
   }
