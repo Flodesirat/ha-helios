@@ -17,6 +17,7 @@ from custom_components.helios.const import (
     CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY, CONF_DEVICE_MIN_ON_MINUTES,
     CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
+    CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
     CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
     CONF_BATTERY_SOC_RESERVE_ROUGE, CONF_BATTERY_MAX_CHARGE_POWER_W,
     CONF_BATTERY_PRIORITY,
@@ -235,6 +236,34 @@ class TestMinOnMaintained:
 # Phase 2 — hors plage horaire ignoré
 # ---------------------------------------------------------------------------
 
+def _wh_device_with_offpeak(
+    off_peak_start: str = "22:00",
+    off_peak_end: str = "06:00",
+    allowed_start: str = "07:00",
+    allowed_end: str = "22:00",
+    temp_target: float = 55.0,
+    temp_min: float = 45.0,
+) -> ManagedDevice:
+    """Chauffe-eau avec plage heures creuses et plage autorisée configurées séparément."""
+    return ManagedDevice(
+        {
+            CONF_DEVICE_NAME:          "ChauffeEauHC",
+            CONF_DEVICE_TYPE:          DEVICE_TYPE_WATER_HEATER,
+            CONF_DEVICE_SWITCH_ENTITY: _WH_SWITCH,
+            CONF_DEVICE_POWER_W:       2000,
+            CONF_WH_TEMP_ENTITY:       _WH_TEMP_ENTITY,
+            CONF_WH_TEMP_TARGET:       temp_target,
+            CONF_WH_TEMP_MIN:          temp_min,
+            CONF_DEVICE_ALLOWED_START: allowed_start,
+            CONF_DEVICE_ALLOWED_END:   allowed_end,
+        },
+        {
+            CONF_OFF_PEAK_1_START: off_peak_start,
+            CONF_OFF_PEAK_1_END:   off_peak_end,
+        },
+    )
+
+
 class TestOutOfWindowIgnored:
 
     @pytest.mark.asyncio
@@ -258,6 +287,96 @@ class TestOutOfWindowIgnored:
             )
 
         assert device.is_on is False, "Un appareil hors plage ne doit pas être allumé"
+
+
+# ---------------------------------------------------------------------------
+# Plage autorisée vs heures creuses — le chauffe-eau doit chauffer en HC
+# même si l'heure HC est hors de la plage autorisée configurée
+# ---------------------------------------------------------------------------
+
+class TestOffPeakBypassesAllowedWindow:
+
+    @pytest.mark.asyncio
+    async def test_wh_activates_during_offpeak_outside_allowed_window(self):
+        """HC à 02:00, plage autorisée 07:00–22:00 (hors HC), temp < off_peak_min.
+
+        Le chauffe-eau doit être activé : les heures creuses priment sur la plage
+        horaire configurée pour bloquer le chauffage en journée hors solaire.
+        """
+        # HC 22:00–06:00, plage 07:00–22:00 → 02:00 est en HC mais hors plage
+        device = _wh_device_with_offpeak(
+            temp_target=55.0, temp_min=45.0,  # temp_min = légionelle
+        )
+        device.is_on = False
+
+        mgr = _make_manager([device])
+        # temp=48 > temp_min=45 (pas légionelle) mais < off_peak_min (50 par défaut dans l'entité)
+        # Ici sans entité min, wh_temp_min=45 est aussi off_peak_min ; temp=44 < 45 → urgency=1.0
+        hass = _make_hass({_WH_TEMP_ENTITY: "44.0"})  # en dessous du minimum
+
+        with patch("custom_components.helios.device_manager.datetime", _mock_datetime(2, 0)):
+            await mgr.async_dispatch(
+                hass,
+                _score_input(surplus_w=5000.0),
+            )
+
+        assert device.is_on is True, (
+            "Le chauffe-eau doit chauffer en HC même si 02:00 est hors de la plage autorisée"
+        )
+
+    @pytest.mark.asyncio
+    async def test_wh_activates_during_offpeak_with_surplus_outside_window(self):
+        """HC à 23:30, plage 07:00–22:00 ; temp au-dessus du minimum légionelle mais
+        en dessous de la cible HC (off_peak_min = temp_min) : eligible en greedy."""
+        # temp_min=45, temp_target=55. Pendant HC, satisfied = temp >= temp_min = 45.
+        # temp=47 > 45 → satisfied pendant HC → le chauffe-eau est éteint (satisfait).
+        # On teste donc temp < temp_min (non satisfait) pour vérifier l'activation greedy.
+        device = _wh_device_with_offpeak(
+            temp_target=55.0, temp_min=45.0,
+        )
+        device.is_on = False
+
+        mgr = _make_manager([device])
+        # temp=44 < temp_min=45 → urgency=1.0 → allumage forcé Phase 2
+        hass = _make_hass({_WH_TEMP_ENTITY: "44.0"})
+
+        with patch("custom_components.helios.device_manager.datetime", _mock_datetime(23, 30)):
+            await mgr.async_dispatch(
+                hass,
+                _score_input(surplus_w=3000.0),
+            )
+
+        assert device.is_on is True, (
+            "Le chauffe-eau doit chauffer à 23:30 (HC) même hors de la plage autorisée"
+        )
+
+    @pytest.mark.asyncio
+    async def test_wh_blocked_outside_window_and_outside_offpeak(self):
+        """Hors HC (14:00) et hors plage (plage = 07:00–10:00) → ne doit PAS chauffer.
+
+        Vérifie que l'exception HC ne s'applique pas hors des heures creuses.
+        """
+        # HC 22:00–06:00, plage 07:00–10:00 ; 14:00 est ni en HC ni dans la plage
+        device = _wh_device_with_offpeak(
+            off_peak_start="22:00", off_peak_end="06:00",
+            allowed_start="07:00", allowed_end="10:00",
+            temp_target=55.0, temp_min=45.0,
+        )
+        device.is_on = False
+
+        mgr = _make_manager([device])
+        # temp=46 > temp_min=45 → pas urgency=1.0 ; hors plage et hors HC → ignoré
+        hass = _make_hass({_WH_TEMP_ENTITY: "46.0"})
+
+        with patch("custom_components.helios.device_manager.datetime", _mock_datetime(14, 0)):
+            await mgr.async_dispatch(
+                hass,
+                _score_input(surplus_w=5000.0),
+            )
+
+        assert device.is_on is False, (
+            "Hors HC et hors plage, le chauffe-eau ne doit pas être activé"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -578,8 +578,13 @@ class DeviceManager:
                         obligatoire.add(device)
                     continue
 
-                # Hors plage horaire : ignoré (Phase 4 éteint si allumé et interruptible)
-                if not device.is_in_allowed_window(now):
+                # Hors plage horaire : ignoré sauf chauffe-eau en heures creuses
+                # (les heures creuses doivent pouvoir chauffer même hors de la plage configurée)
+                _in_off_peak_wh = (
+                    device.device_type == DEVICE_TYPE_WATER_HEATER
+                    and device._is_off_peak(now)  # noqa: SLF001
+                )
+                if not device.is_in_allowed_window(now) and not _in_off_peak_wh:
                     continue
 
                 # Satisfait : éteindre si possible
@@ -626,7 +631,11 @@ class DeviceManager:
             if isinstance(_d, BatteryDevice):
                 greedy_candidates.append(_d)
             else:
-                if not _d.is_in_allowed_window(now):
+                _in_off_peak_wh_p3 = (
+                    _d.device_type == DEVICE_TYPE_WATER_HEATER
+                    and _d._is_off_peak(now)  # noqa: SLF001
+                )
+                if not _d.is_in_allowed_window(now) and not _in_off_peak_wh_p3:
                     continue
                 if _d.is_satisfied(reader, now=_now_dt):
                     continue
