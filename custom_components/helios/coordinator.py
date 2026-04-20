@@ -131,6 +131,10 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._energy_consumption_kwh: float = 0.0
         # Daily savings accumulator — €, reset at midnight
         self._savings_eur: float = 0.0
+        # Monthly savings accumulator — €, reset on the 1st of each month
+        _month_start = dt_util.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        self._savings_month_last_reset: datetime = _month_start
+        self._savings_month_eur: float = 0.0
         # Lifetime savings accumulator — €, never reset
         self._savings_total_eur: float = 0.0
 
@@ -220,6 +224,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self_consumed_w = max(0.0, house_w - max(0.0, grid_w))
         _savings_increment = self_consumed_w * dt_kwh * self._current_price_eur_kwh()
         self._savings_eur       += _savings_increment
+        self._savings_month_eur += _savings_increment
         self._savings_total_eur += _savings_increment
 
     @staticmethod
@@ -267,8 +272,14 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._energy_export_kwh      = 0.0
         self._energy_consumption_kwh = 0.0
         self._savings_eur       = 0.0
+        # Monthly counter — reset only on the 1st of each month
+        now = dt_util.now()
+        if now.day == 1:
+            self._savings_month_eur = 0.0
+            self._savings_month_last_reset = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            _LOGGER.debug("Helios: monthly savings counter reset")
         # _savings_total_eur intentionally NOT reset here
-        self._energy_last_reset = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        self._energy_last_reset = now.replace(hour=0, minute=0, second=0, microsecond=0)
         _LOGGER.debug("Helios: daily energy counters reset at midnight")
         await self._async_save_energy()
         self.async_set_updated_data(self._snapshot())
@@ -328,6 +339,10 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             return
         # Lifetime total — always restored
         self._savings_total_eur = float(data.get("savings_total_eur", 0.0))
+        # Monthly counter — restored if same month
+        current_month = dt_util.now().strftime("%Y-%m")
+        if data.get("month") == current_month:
+            self._savings_month_eur = float(data.get("savings_month_eur", 0.0))
         # Daily counters — only if the store is from today
         today = dt_util.now().date().isoformat()
         if data.get("date") != today:
@@ -347,13 +362,15 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     async def _async_save_energy(self) -> None:
         """Persist current daily energy accumulators to storage."""
         await self._energy_store.async_save({
-            "date":              dt_util.now().date().isoformat(),
-            "pv_kwh":            round(self._energy_pv_kwh,          3),
-            "import_kwh":        round(self._energy_import_kwh,      3),
-            "export_kwh":        round(self._energy_export_kwh,      3),
-            "consumption_kwh":   round(self._energy_consumption_kwh, 3),
-            "savings_eur":       round(self._savings_eur,            4),
-            "savings_total_eur": round(self._savings_total_eur,      4),
+            "date":                    dt_util.now().date().isoformat(),
+            "month":                   dt_util.now().strftime("%Y-%m"),
+            "pv_kwh":                  round(self._energy_pv_kwh,          3),
+            "import_kwh":              round(self._energy_import_kwh,      3),
+            "export_kwh":              round(self._energy_export_kwh,      3),
+            "consumption_kwh":         round(self._energy_consumption_kwh, 3),
+            "savings_eur":             round(self._savings_eur,            4),
+            "savings_month_eur":       round(self._savings_month_eur,      4),
+            "savings_total_eur":       round(self._savings_total_eur,      4),
         })
 
     # ------------------------------------------------------------------

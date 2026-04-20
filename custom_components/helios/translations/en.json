@@ -377,6 +377,9 @@
       "eo_daily_savings": {
         "name": "Savings today"
       },
+      "eo_monthly_savings": {
+        "name": "Savings this month"
+      },
       "eo_total_savings": {
         "name": "Total savings"
       },

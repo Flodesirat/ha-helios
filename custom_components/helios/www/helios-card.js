@@ -722,11 +722,15 @@ class HeliosCard extends HTMLElement {
 
         <div class="savings-row" id="h-savings-row" style="display:none">
           <div class="savings-chip">
-            <span class="savings-chip-lbl">💰 Économies auj.</span>
+            <span class="savings-chip-lbl">💰 Aujourd'hui</span>
             <span class="savings-chip-val" id="h-sav-daily">—</span>
           </div>
           <div class="savings-chip">
-            <span class="savings-chip-lbl">💰 Économies totales</span>
+            <span class="savings-chip-lbl">💰 Ce mois</span>
+            <span class="savings-chip-val" id="h-sav-monthly">—</span>
+          </div>
+          <div class="savings-chip">
+            <span class="savings-chip-lbl">💰 Total</span>
             <span class="savings-chip-val" id="h-sav-total">—</span>
           </div>
         </div>
@@ -1013,23 +1017,25 @@ class HeliosCard extends HTMLElement {
     };
   }
 
-  // Résout les entity_id des capteurs d'économies (journalier + total).
+  // Résout les entity_id des capteurs d'économies (journalier + mensuel + total).
   _resolveSavingsIds() {
     const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
     if (entryId) {
       const disc = this._discoverEntities(entryId);
       if (disc) {
         return {
-          daily: disc["daily_savings"] ?? null,
-          total: disc["total_savings"] ?? null,
+          daily:   disc["daily_savings"]   ?? null,
+          monthly: disc["monthly_savings"] ?? null,
+          total:   disc["total_savings"]   ?? null,
         };
       }
     }
     const states = this._hass?.states;
     const fb = key => states?.[`sensor.helios_${key}`] ? `sensor.helios_${key}` : null;
     return {
-      daily: fb("daily_savings"),
-      total: fb("total_savings"),
+      daily:   fb("daily_savings"),
+      monthly: fb("monthly_savings"),
+      total:   fb("total_savings"),
     };
   }
 
@@ -1269,7 +1275,7 @@ class HeliosCard extends HTMLElement {
         savingsRow.style.display = "none";
       } else {
         const savingsIds = this._resolveSavingsIds();
-        const hasSavings = savingsIds.daily || savingsIds.total;
+        const hasSavings = savingsIds.daily || savingsIds.monthly || savingsIds.total;
         savingsRow.style.display = hasSavings ? "" : "none";
         if (hasSavings) {
           const fmtEur = eid => {
@@ -1277,8 +1283,9 @@ class HeliosCard extends HTMLElement {
             const v = this._num(eid, null);
             return v !== null ? `${parseFloat(v).toFixed(2)} €` : "—";
           };
-          this._txt("h-sav-daily", fmtEur(savingsIds.daily));
-          this._txt("h-sav-total", fmtEur(savingsIds.total));
+          this._txt("h-sav-daily",   fmtEur(savingsIds.daily));
+          this._txt("h-sav-monthly", fmtEur(savingsIds.monthly));
+          this._txt("h-sav-total",   fmtEur(savingsIds.total));
         }
       }
     }

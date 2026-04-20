@@ -34,6 +34,7 @@ async def async_setup_entry(
         EnergyOptimizerSurplusSensor(coordinator, entry),
         EnergyOptimizerScoreSensor(coordinator, entry),
         EnergyDailySavingsSensor(coordinator, entry),
+        EnergyMonthlySavingsSensor(coordinator, entry),
         EnergyTotalSavingsSensor(coordinator, entry),
         EnergyOptimizerBatterySensor(coordinator, entry),
         EnergyOptimizerTempoNextColorSensor(coordinator, entry),
@@ -336,6 +337,27 @@ class EnergyDailySavingsSensor(_BaseEOSensor):
             "red_hp":        float(cfg.get(CONF_PRICE_RED_HP,   DEFAULT_PRICE_RED_HP)),
             "current_price": round(self.coordinator._current_price_eur_kwh(), 4),
         }
+
+
+class EnergyMonthlySavingsSensor(_BaseEOSensor):
+    """Money saved this month by solar self-consumption (€). Resets on the 1st of each month."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_monthly_savings"
+    suggested_object_id = "monthly_savings"
+    _unique_suffix = "monthly_savings"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+
+    @property
+    def last_reset(self) -> datetime:
+        return self.coordinator._savings_month_last_reset
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator._savings_month_eur, 4)
 
 
 class EnergyTotalSavingsSensor(_BaseEOSensor):
