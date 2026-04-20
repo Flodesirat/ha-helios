@@ -839,7 +839,13 @@ class HeliosCard extends HTMLElement {
       if (action === "toggle-manual" && this._modalSlug) {
         const { devices } = this._resolveAll();
         const dev = devices.find(d => this._devSlug(d) === this._modalSlug);
-        if (dev) this._toggleManual(dev);
+        if (dev) {
+          const wasManual = this._attr(dev.entity, "manual_mode") === true;
+          this._toggleManual(dev);
+          btn.textContent = wasManual ? "Forcer manuel" : "Repasser en auto";
+          btn.classList.toggle("hm-manual-on", !wasManual);
+          btn.classList.toggle("hm-manual-off", wasManual);
+        }
       }
       if (action === "ready") {
         const readyEntity = btn.dataset.readyEntity;

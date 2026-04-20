@@ -197,11 +197,13 @@ class DeviceManualSwitch(_BaseDeviceSwitch):
         self._device.manual_mode = True
         await self.coordinator.device_manager.async_persist_device_state()
         self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs) -> None:
         self._device.manual_mode = False
         await self.coordinator.device_manager.async_persist_device_state()
         self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
 
 class EVPluggedSwitch(_BaseDeviceSwitch):
