@@ -860,8 +860,13 @@ class HeliosCard extends HTMLElement {
       if (action === "device-power") {
         const sw = btn.dataset.switchEntity;
         const power = btn.dataset.power;
-        if (sw && this._hass)
+        if (sw && this._hass) {
           this._hass.callService("homeassistant", power === "on" ? "turn_on" : "turn_off", { entity_id: sw });
+          btn.parentElement.querySelectorAll('[data-action="device-power"]').forEach(b => {
+            b.classList.toggle("hm-manual-on", b === btn);
+            b.classList.toggle("hm-manual-off", b !== btn);
+          });
+        }
       }
       if (action === "pool-force-toggle") {
         const forceEntity = btn.dataset.forceEntity;
