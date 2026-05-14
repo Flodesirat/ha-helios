@@ -374,10 +374,12 @@ class ManagedDevice:
                 return 1.0
             _now_t = (now or datetime.now()).time()
             if self._is_off_peak(_now_t):
-                # Off-peak: urgency is based on distance to the off-peak minimum.
                 off_peak_min = self._wh_off_peak_min(reader)
-                temp_range   = max(self.wh_temp_target - off_peak_min, 1.0)
-                deficit      = max(0.0, off_peak_min - temp)
+                # Below hysteresis threshold → force ON immediately.
+                if temp < off_peak_min - self.wh_off_peak_hysteresis_k:
+                    return 1.0
+                temp_range = max(self.wh_temp_target - off_peak_min, 1.0)
+                deficit    = max(0.0, off_peak_min - temp)
                 return min(1.0, deficit / temp_range)
             # On-peak: urgency rises as temperature drops toward the minimum.
             temp_range = max(self.wh_temp_target - self.wh_temp_min, 1.0)

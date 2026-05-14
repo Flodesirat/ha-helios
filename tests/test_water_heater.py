@@ -280,12 +280,13 @@ class TestMustRunNow:
     def test_off_peak_too_close_to_end_no_force(self):
         """HC ends at 06:00, min_on_minutes=60 → urgency < 1.0 so must_run_now returns False.
 
-        temp=46 is above the legionella floor (45°C): urgency = (50-46)/(55-50) = 0.8 < 1.0.
+        temp=48 is above hysteresis threshold (50-3=47°C): urgency = (50-48)/(55-50) = 0.4 < 1.0.
+        At temp=46 (< 47) the hysteresis now forces ON immediately, which is correct behavior.
         """
         device_cfg, global_cfg = _wh_config()
         device_cfg[CONF_DEVICE_MIN_ON_MINUTES] = 60
         device = ManagedDevice(device_cfg, global_cfg)
-        reader = _reader(temp=46.0, off_peak_min=50.0)
+        reader = _reader(temp=48.0, off_peak_min=50.0)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
