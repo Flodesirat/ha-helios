@@ -54,6 +54,7 @@ from .const import (
     # Strategy
     CONF_SCAN_INTERVAL_MINUTES, CONF_ENABLED, DEFAULT_ENABLED,
     CONF_GRID_ALLOWANCE_W,
+    CONF_HYSTERESIS_W, CONF_HYSTERESIS_DURATION_MINUTES,
     CONF_BASE_LOAD_NOISE, CONF_RISK_LAMBDA, CONF_EMA_ALPHA, CONF_EMA_ENABLED,
     CONF_SAMPLE_INTERVAL_SECONDS,
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END, CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
@@ -69,6 +70,7 @@ from .const import (
     DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
     DEFAULT_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_CAPACITY_KWH,
     DEFAULT_SCAN_INTERVAL, DEFAULT_GRID_ALLOWANCE_W,
+    DEFAULT_HYSTERESIS_W, DEFAULT_HYSTERESIS_DURATION_MINUTES,
     DEFAULT_BASE_LOAD_NOISE, DEFAULT_RISK_LAMBDA, DEFAULT_EMA_ALPHA, DEFAULT_EMA_ENABLED,
     DEFAULT_SAMPLE_INTERVAL_SECONDS,
     DEFAULT_DEVICE_PRIORITY, DEFAULT_DEVICE_MIN_ON_MINUTES,
@@ -954,6 +956,18 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
             default=d.get(CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W),
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=2000, step=50, unit_of_measurement="W")
+        ),
+        vol.Optional(
+            CONF_HYSTERESIS_W,
+            default=d.get(CONF_HYSTERESIS_W, DEFAULT_HYSTERESIS_W),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=1000, step=50, unit_of_measurement="W")
+        ),
+        vol.Optional(
+            CONF_HYSTERESIS_DURATION_MINUTES,
+            default=d.get(CONF_HYSTERESIS_DURATION_MINUTES, DEFAULT_HYSTERESIS_DURATION_MINUTES),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=60, step=1, unit_of_measurement="min")
         ),
         vol.Optional(
             CONF_ENABLED,

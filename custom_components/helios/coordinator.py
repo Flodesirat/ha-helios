@@ -27,6 +27,8 @@ from .const import (
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     CONF_DEVICES, CONF_ENABLED, DEFAULT_ENABLED,
     CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W,
+    CONF_HYSTERESIS_W, DEFAULT_HYSTERESIS_W,
+    CONF_HYSTERESIS_DURATION_MINUTES, DEFAULT_HYSTERESIS_DURATION_MINUTES,
     CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA,
     CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS,
     BATTERY_ACTION_AUTOCONSOMMATION,
@@ -413,6 +415,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
                     "real_surplus_w":     self.surplus_w,
                     "bat_available_w":    self.bat_available_w,
                     "grid_allowance_w":   self.grid_allowance_w,
+                    "hysteresis_w":       float(self._cfg.get(CONF_HYSTERESIS_W, DEFAULT_HYSTERESIS_W)),
+                    "hysteresis_duration_minutes": float(self._cfg.get(CONF_HYSTERESIS_DURATION_MINUTES, DEFAULT_HYSTERESIS_DURATION_MINUTES)),
                     "house_power_w":      self.house_power_w,
                     "soc_reserve_rouge":  float(self._cfg.get(
                         CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE

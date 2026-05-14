@@ -143,6 +143,8 @@ CONF_RISK_LAMBDA           = "risk_lambda"         # coefficient de pénalité s
 CONF_EMA_ALPHA             = "ema_alpha"           # facteur d'apprentissage EMA de la charge de fond
 CONF_EMA_ENABLED           = "ema_enabled"         # activer/désactiver l'apprentissage EMA
 CONF_SAMPLE_INTERVAL_SECONDS = "sample_interval_seconds"  # intervalle d'échantillonnage des capteurs (s)
+CONF_HYSTERESIS_W                = "hysteresis_w"                 # bonus budget (W) accordé aux appareils déjà allumés
+CONF_HYSTERESIS_DURATION_MINUTES = "hysteresis_duration_minutes"  # durée de décroissance du bonus (min)
 
 # ---------------------------------------------------------------------------
 # Device types
@@ -216,6 +218,9 @@ DEFAULT_BATTERY_SOC_MIN            = 10     # %
 DEFAULT_BATTERY_SOC_MAX            = 95     # %
 DEFAULT_BATTERY_SOC_RESERVE_ROUGE  = 80     # %
 DEFAULT_BATTERY_CAPACITY_KWH       = 5.0
+
+DEFAULT_HYSTERESIS_W                = 200    # W — bonus accordé aux appareils déjà allumés
+DEFAULT_HYSTERESIS_DURATION_MINUTES = 10    # min — durée avant que le bonus soit épuisé
 
 DEFAULT_DEVICE_PRIORITY            = 5
 DEFAULT_DEVICE_MIN_ON_MINUTES      = 30

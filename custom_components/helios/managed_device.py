@@ -188,6 +188,7 @@ class ManagedDevice:
         self.turned_on_at: float | None       = None  # epoch seconds
         self.turned_off_at: float | None      = None
         self.manual_mode: bool                = False  # True → Helios hands off entirely
+        self.hysteresis_since: float | None   = None   # epoch when device entered "bonus zone"
 
         # Diagnostics — updated every dispatch cycle, exposed via switch extra_state_attributes
         self.last_effective_score: float      = 0.0

@@ -22,6 +22,7 @@ from .const import (
     APPLIANCE_STATE_IDLE, APPLIANCE_STATE_PREPARING, APPLIANCE_STATE_RUNNING,
     APPLIANCE_STATE_DONE,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_HYSTERESIS_W, DEFAULT_HYSTERESIS_DURATION_MINUTES,
     STORAGE_KEY, STORAGE_VERSION,
 )
 
@@ -377,6 +378,8 @@ class DeviceManager:
         soc_reserve_rouge:  float       = float(score_input.get("soc_reserve_rouge", DEFAULT_BATTERY_SOC_RESERVE_ROUGE))
         soc_max:            float       = float(score_input.get("soc_max", 95.0))
         soc_min:            float       = float(score_input.get("soc_min", 20.0))
+        hysteresis_w:       float       = float(score_input.get("hysteresis_w", DEFAULT_HYSTERESIS_W))
+        hysteresis_duration_s: float    = float(score_input.get("hysteresis_duration_minutes", DEFAULT_HYSTERESIS_DURATION_MINUTES)) * 60
 
         # Red-day strict mode: when SOC is below the battery reserve, do not
         # activate NEW devices unless they fit within the PV surplus alone.
@@ -649,7 +652,25 @@ class DeviceManager:
                     d.fit = 1.0
                 else:
                     _pow = d.actual_power_w(reader) if d.is_on else d.power_w
-                    _fit = compute_fit(_pow, remaining, bat_available_w, grid_allowance_w)
+                    _fit_real = compute_fit(_pow, remaining, bat_available_w, grid_allowance_w)
+                    if d.is_on and _fit_real <= 0.0 and hysteresis_w > 0:
+                        # Device needs budget bonus to stay on — compute decaying bonus
+                        if d.hysteresis_since is None:
+                            d.hysteresis_since = now_ts
+                        elapsed_s = now_ts - d.hysteresis_since
+                        if elapsed_s < hysteresis_duration_s:
+                            bonus = hysteresis_w * (1.0 - elapsed_s / hysteresis_duration_s)
+                            _fit = compute_fit(_pow, remaining + bonus, bat_available_w, grid_allowance_w)
+                            if _fit > 0.0:
+                                _LOGGER.debug(
+                                    "Device '%s': hysteresis bonus %.0fW (%.0fs/%.0fs elapsed)",
+                                    d.name, bonus, elapsed_s, hysteresis_duration_s,
+                                )
+                        else:
+                            _fit = 0.0  # Bonus épuisé — sera éteint en Phase 4
+                    else:
+                        d.hysteresis_since = None  # Dans le budget réel — reset du timer
+                        _fit = _fit_real
                     _urg = d.urgency_modifier(reader, now=_now_dt)
                     _pri = d.priority / 10.0
                     if d.device_type not in (
@@ -900,7 +921,8 @@ class DeviceManager:
         if on:
             device.turned_on_at  = time_mod.time()
         else:
-            device.turned_off_at = time_mod.time()
+            device.turned_off_at    = time_mod.time()
+            device.hysteresis_since = None
         _LOGGER.debug("Device '%s' → %s", device.name, "ON" if on else "OFF")
         if device.device_type == DEVICE_TYPE_EV:
             await self._async_save_device_data()

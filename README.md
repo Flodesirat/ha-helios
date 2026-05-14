@@ -272,9 +272,21 @@ Avec le `remaining` après la phase obligatoire, les appareils restants concoure
 3. L'appareil au meilleur score est sélectionné, `remaining` est décrémenté de sa `power_w`
 4. On recommence jusqu'à épuisement du budget ou des candidats
 
+**Étape 3bis — Hystérèse de maintien**
+
+Pendant la phase greedy, un appareil déjà allumé dont le fit tombe à 0 (surplus insuffisant) reçoit un bonus de budget décroissant plutôt que d'être éteint immédiatement :
+
+```
+bonus(t) = hysteresis_w × (1 − t / hysteresis_duration)
+```
+
+où `t` est le temps écoulé depuis l'entrée dans la zone de déficit. Le bonus permet à l'appareil de rester dans le budget pendant la durée configurée — utile lors d'une baisse momentanée du surplus (passage d'un nuage, pic de consommation domestique). Une fois le bonus épuisé, l'appareil passe en extinction normale à l'étape 4.
+
+Le timer est remis à zéro dès que l'appareil repasse dans le budget réel, ou dès qu'il est éteint.
+
 **Étape 4 — Extinction**
 
-Tout appareil actuellement allumé qui n'a pas été sélectionné aux étapes 2 ou 3 est éteint.
+Tout appareil actuellement allumé qui n'a pas été sélectionné aux étapes 2, 3 ou 3bis est éteint.
 
 > **Conséquence clé** : un lave-vaisselle à urgence élevée peut naturellement "déloger" une pompe de piscine à urgence basse si le budget est limité — non par une règle d'overcommit, mais parce que la piscine n'est simplement pas sélectionnée à l'étape 3.
 
@@ -286,6 +298,8 @@ Tout appareil actuellement allumé qui n'a pas été sélectionné aux étapes 2
 |-----------|--------|-------------|
 | Intervalle de scan | 5 min | Fréquence de la boucle de pilotage |
 | Mode | `auto` | `auto` \| `manual` \| `off` |
+| Bonus hystérèse (`hysteresis_w`) | 200 W | Budget supplémentaire accordé aux appareils déjà allumés quand le surplus baisse momentanément. Décroît linéairement jusqu'à zéro. Mettre à 0 pour désactiver. |
+| Durée hystérèse (`hysteresis_duration_minutes`) | 10 min | Durée sur laquelle le bonus décroît jusqu'à zéro avant extinction de l'appareil. |
 
 ---
 

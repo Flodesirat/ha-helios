@@ -138,6 +138,8 @@
           "scan_interval_minutes": "Update interval (min)",
           "sample_interval_seconds": "Sampling interval (s)",
           "enabled": "Helios active",
+          "hysteresis_w": "Hysteresis bonus (W)",
+          "hysteresis_duration_minutes": "Hysteresis duration (min)",
           "off_peak_1_start": "Off-peak slot 1 — start (HH:MM)",
           "off_peak_1_end": "Off-peak slot 1 — end (HH:MM)",
           "off_peak_2_start": "Off-peak slot 2 — start (HH:MM)",
@@ -148,7 +150,9 @@
           "sample_interval_seconds": "How often PV, grid, house and device power sensors are sampled. Must be ≥ 10 s and ≤ update interval.",
           "off_peak_1_start": "E.g. 22:00 for a 22h–6h off-peak contract. Leave empty if unused.",
           "off_peak_2_start": "Second off-peak slot (e.g. 12:00–14:00). Leave empty if unused.",
-          "ema_enabled": "If disabled, the base load profile is frozen and no longer adapts to new measurements."
+          "ema_enabled": "If disabled, the base load profile is frozen and no longer adapts to new measurements.",
+          "hysteresis_w": "Budget bonus granted to already-on devices when surplus drops (cloud, momentary overload). Decays to zero over the configured duration.",
+          "hysteresis_duration_minutes": "Duration over which the bonus decays linearly to zero. Set to 0 to disable hysteresis."
         }
       }
     },
@@ -217,6 +221,8 @@
           "scan_interval_minutes": "Update interval (min)",
           "sample_interval_seconds": "Sampling interval (s)",
           "enabled": "Helios active",
+          "hysteresis_w": "Hysteresis bonus (W)",
+          "hysteresis_duration_minutes": "Hysteresis duration (min)",
           "off_peak_1_start": "Off-peak slot 1 — start (HH:MM)",
           "off_peak_1_end": "Off-peak slot 1 — end (HH:MM)",
           "off_peak_2_start": "Off-peak slot 2 — start (HH:MM)",

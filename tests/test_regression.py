@@ -66,7 +66,7 @@ def _make_manager(devices, init_threshold=0.3, scan_interval=5):
     return mgr
 
 
-def _score(global_score=0.8, surplus_w=400.0, bat_w=0.0, dispatch_threshold=None, real_surplus_w=None):
+def _score(global_score=0.8, surplus_w=400.0, bat_w=0.0, dispatch_threshold=None, real_surplus_w=None, hysteresis_w=None):
     d = {
         "global_score":    global_score,
         "surplus_w":       surplus_w,
@@ -76,6 +76,8 @@ def _score(global_score=0.8, surplus_w=400.0, bat_w=0.0, dispatch_threshold=None
         d["dispatch_threshold"] = dispatch_threshold
     if real_surplus_w is not None:
         d["real_surplus_w"] = real_surplus_w
+    if hysteresis_w is not None:
+        d["hysteresis_w"] = hysteresis_w
     return d
 
 
@@ -484,7 +486,10 @@ class TestHeliosOnW_NotDoubleCountedInBudget:
 
     @pytest.mark.asyncio
     async def test_total_on_power_does_not_exceed_virtual_surplus(self):
-        """After dispatch, the sum of ON device powers must not exceed virtual_surplus."""
+        """Without hysteresis, ON power must not exceed virtual_surplus (double-counting guard).
+
+        hysteresis_w=0 disables the individual bonus so only real-budget devices run.
+        """
         VIRTUAL_SURPLUS = 600
 
         # device1: 400 W, already ON, temp=58 (slightly unsatisfied, low urgency)
@@ -499,11 +504,11 @@ class TestHeliosOnW_NotDoubleCountedInBudget:
         mgr  = _make_manager([device1, device2])
         hass = _two_wh_hass(temp1=58.0, temp2=20.0)
 
-        # real_surplus_w = virtual_surplus - device1.power_w (already consuming 400 W)
+        # Disable hysteresis so the bonus cannot let device1 exceed the shared budget
         await mgr.async_dispatch(
             hass,
             _score(global_score=0.8, surplus_w=VIRTUAL_SURPLUS, bat_w=0.0,
-                   real_surplus_w=VIRTUAL_SURPLUS - 400),
+                   real_surplus_w=VIRTUAL_SURPLUS - 400, hysteresis_w=0),
         )
 
         on_power = (400 if device1.is_on else 0) + (300 if device2.is_on else 0)
