@@ -10,6 +10,7 @@ from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
@@ -569,4 +570,12 @@ class DeviceStateSensor(_BaseEOSensor):
             attrs["filtration_required_min"] = round(d.pool_required_minutes_today or 0.0, 1)
             fu = d.pool_force_until
             attrs["force_remaining_min"]     = round(max(0.0, (fu - _time.time()) / 60), 1) if fu else 0.0
+            slug = slugify(d.name)
+            reg = er.async_get(self.coordinator.hass)
+            attrs["pool_force_switch_entity"] = reg.async_get_entity_id(
+                "switch", DOMAIN, f"{self._entry.entry_id}_pool_{slug}_force"
+            )
+            attrs["pool_force_duration_entity"] = reg.async_get_entity_id(
+                "select", DOMAIN, f"{self._entry.entry_id}_pool_{slug}_force_duration"
+            )
         return attrs

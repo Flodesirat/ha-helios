@@ -881,7 +881,7 @@ class HeliosCard extends HTMLElement {
       if (action === "pool-duration") {
         const durEntity = btn.dataset.durEntity;
         const option    = btn.dataset.option;
-        if (durEntity && option && this._hass)
+        if (durEntity && durEntity !== "null" && option && this._hass)
           this._hass.callService("select", "select_option", { entity_id: durEntity, option });
       }
     });
@@ -1586,6 +1586,8 @@ class HeliosCard extends HTMLElement {
   }
 
   _poolForceEntity(dev) {
+    const fromAttr = this._hass?.states[dev.entity]?.attributes?.pool_force_switch_entity;
+    if (fromAttr) return fromAttr;
     const slug = this._devSlug(dev);
     const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
     if (entryId) {
@@ -1597,6 +1599,8 @@ class HeliosCard extends HTMLElement {
   }
 
   _poolDurationEntity(dev) {
+    const fromAttr = this._hass?.states[dev.entity]?.attributes?.pool_force_duration_entity;
+    if (fromAttr) return fromAttr;
     const slug = this._devSlug(dev);
     const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
     if (entryId) {
@@ -1778,7 +1782,7 @@ class HeliosCard extends HTMLElement {
         const curDuration = durEid ? (this._hass?.states[durEid]?.state ?? "2h") : "2h";
         const durOptions  = durEid ? (this._hass?.states[durEid]?.attributes?.options ?? ["1h","2h","4h","12h","24h"]) : ["1h","2h","4h","12h","24h"];
 
-        const durChips = forceEid ? durOptions.map(opt => `
+        const durChips = (forceEid && durEid) ? durOptions.map(opt => `
           <button class="hm-manual-btn ${opt === curDuration ? "hm-manual-on" : "hm-manual-off"}"
             data-action="pool-duration" data-dur-entity="${durEid}" data-option="${opt}"
             style="padding:3px 8px;font-size:11px">${opt}</button>`
