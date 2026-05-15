@@ -1083,9 +1083,10 @@ class HeliosCard extends HTMLElement {
     const house      = this._num(e.house_power);
     const score      = this._num(e.score);
     // Battery data — all from sensor.helios_battery attributes
-    const battAction   = this._str(e.battery) ?? "idle";
-    const soc          = this._attr(e.battery, "soc") ?? this._attr(e.score, "battery_soc");
-    const batPowerRaw  = this._attr(e.battery, "power_w");
+    const battAction     = this._str(e.battery) ?? "idle";
+    const soc            = this._attr(e.battery, "soc") ?? this._attr(e.score, "battery_soc");
+    const batPowerRaw    = this._attr(e.battery, "power_w");
+    const batAvailable   = this._attr(e.battery, "battery_available") !== false;
     const tempo      = this._attr(e.score, "tempo_color");
     // Node values
     this._txt("h-val-house", this._fmt(house));
@@ -1103,16 +1104,30 @@ class HeliosCard extends HTMLElement {
     this._svgAttr("h-node-house", "stroke", isDark ? "#66BB6A" : "#388E3C");
 
     const L = this._layout;
-    this._txt("h-val-bat-soc", soc !== null ? `${Math.round(soc)}%` : "—");
-    const batColor = soc !== null
-      ? (soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336")
-      : "#1565C0";
-    this._svgAttr("h-bat-body",     "stroke", batColor);
-    this._svgAttr("h-bat-terminal", "fill",   batColor);
-    this._svgAttr("h-bat-fill",     "fill",   batColor);
-    this._svgAttr("h-bat-fill",     "width",  soc !== null ? Math.max(1, 14 * soc / 100).toFixed(1) : "0");
-    this._svgAttr("h-val-bat-soc",  "fill",   batColor);
-    this._svgAttr("h-node-bat", "stroke", battAction === "discharge" ? "#0288D1" : "#1565C0");
+    // Battery icon — greyed out when unavailable
+    if (!batAvailable) {
+      const greyColor = "#9E9E9E";
+      this._txt("h-val-bat-soc", "N/A");
+      this._svgAttr("h-bat-body",     "stroke", greyColor);
+      this._svgAttr("h-bat-terminal", "fill",   greyColor);
+      this._svgAttr("h-bat-fill",     "fill",   greyColor);
+      this._svgAttr("h-bat-fill",     "width",  "0");
+      this._svgAttr("h-val-bat-soc",  "fill",   greyColor);
+      this._svgAttr("h-node-bat",     "fill",   "#F5F5F5");
+      this._svgAttr("h-node-bat",     "stroke", greyColor);
+    } else {
+      this._txt("h-val-bat-soc", soc !== null ? `${Math.round(soc)}%` : "—");
+      const batColor = soc !== null
+        ? (soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336")
+        : "#1565C0";
+      this._svgAttr("h-bat-body",     "stroke", batColor);
+      this._svgAttr("h-bat-terminal", "fill",   batColor);
+      this._svgAttr("h-bat-fill",     "fill",   batColor);
+      this._svgAttr("h-bat-fill",     "width",  soc !== null ? Math.max(1, 14 * soc / 100).toFixed(1) : "0");
+      this._svgAttr("h-val-bat-soc",  "fill",   batColor);
+      this._svgAttr("h-node-bat",     "fill",   "#E3F2FD");
+      this._svgAttr("h-node-bat",     "stroke", battAction === "discharge" ? "#0288D1" : "#1565C0");
+    }
 
     // PV → House
     const lp = L.linePv;
@@ -1143,15 +1158,17 @@ class HeliosCard extends HTMLElement {
 
     // Battery flow — négatif = charge, positif = décharge
     const lb = L.lineBat;
-    let batIsCharge, batIsDischarge, batPow;
-    if (batPowerRaw !== null && batPowerRaw !== undefined) {
-      batPow         = Math.abs(batPowerRaw);
-      batIsCharge    = batPowerRaw < -10;
-      batIsDischarge = batPowerRaw > 10;
-    } else {
-      batPow         = Math.abs(pv - house - grid);
-      batIsCharge    = battAction === "charge"    && batPow > 10;
-      batIsDischarge = battAction === "discharge" && batPow > 10;
+    let batIsCharge = false, batIsDischarge = false, batPow = 0;
+    if (batAvailable) {
+      if (batPowerRaw !== null && batPowerRaw !== undefined) {
+        batPow         = Math.abs(batPowerRaw);
+        batIsCharge    = batPowerRaw < -10;
+        batIsDischarge = batPowerRaw > 10;
+      } else {
+        batPow         = Math.abs(pv - house - grid);
+        batIsCharge    = battAction === "charge"    && batPow > 10;
+        batIsDischarge = battAction === "discharge" && batPow > 10;
+      }
     }
     if (batIsCharge) {
       this._flow("h-line-bat", "h-lbl-bat", {
@@ -1197,7 +1214,7 @@ class HeliosCard extends HTMLElement {
     const remainingW = this._attr(e.score, "remaining_w");
     this._txt("h-bud-surplus",  surplusW  !== null ? this._fmt(surplusW)  : "—");
     this._txt("h-bud-vsurplus", vSurplusW !== null ? this._fmt(vSurplusW) : "—");
-    this._txt("h-bud-bat",      batAvailW !== null ? this._fmt(batAvailW) : "—");
+    this._txt("h-bud-bat",      !batAvailable ? "N/A" : batAvailW !== null ? this._fmt(batAvailW) : "—");
     this._txt("h-bud-rem",      remainingW !== null ? this._fmt(remainingW) : "—");
 
     // Score bar — couleur dynamique selon niveau

@@ -700,6 +700,7 @@ class BatteryDevice:
         # Runtime state — updated each dispatch cycle via update()
         self._soc: float            = 0.0
         self._tempo_red: bool       = False
+        self._available: bool       = True
 
         # Interface fields (shared with ManagedDevice)
         self.fit: float             = 1.0
@@ -712,10 +713,11 @@ class BatteryDevice:
         # _min_on_elapsed() returns True immediately (no constraint to enforce).
         self.turned_on_at: float | None = None
 
-    def update(self, soc: float | None, tempo_red: bool) -> None:
+    def update(self, soc: float | None, tempo_red: bool, available: bool = True) -> None:
         """Update runtime state before each dispatch cycle."""
         self._soc        = soc if soc is not None else 0.0
         self._tempo_red  = tempo_red
+        self._available  = available
 
     @property
     def soc_min_jour(self) -> float:
@@ -724,7 +726,9 @@ class BatteryDevice:
 
     @property
     def urgency(self) -> float:
-        """[0..1] — 1.0 when SOC < soc_min_jour, 0.0 when SOC ≥ soc_max."""
+        """[0..1] — 1.0 when SOC < soc_min_jour, 0.0 when SOC ≥ soc_max or battery unavailable."""
+        if not self._available:
+            return 0.0
         soc_min = self.soc_min_jour
         soc_max = self._soc_max
         if self._soc < soc_min:
@@ -736,7 +740,9 @@ class BatteryDevice:
 
     @property
     def power_w(self) -> float:
-        """Charge power demand (W) — proportional to urgency."""
+        """Charge power demand (W) — 0 when battery unavailable, proportional to urgency otherwise."""
+        if not self._available:
+            return 0.0
         soc_min = self.soc_min_jour
         soc_max = self._soc_max
         if self._soc <= soc_min:
@@ -748,7 +754,9 @@ class BatteryDevice:
 
     @property
     def satisfied(self) -> bool:
-        """True when SOC has reached soc_max."""
+        """True when SOC has reached soc_max, or battery is unavailable (exclude from dispatch)."""
+        if not self._available:
+            return True
         return self._soc >= self._soc_max
 
     @property

@@ -18,7 +18,7 @@ from custom_components.helios.coordinator import EnergyOptimizerCoordinator
 from custom_components.helios.managed_device import ManagedDevice
 from custom_components.helios.const import (
     CONF_PV_POWER_ENTITY, CONF_GRID_POWER_ENTITY, CONF_HOUSE_POWER_ENTITY,
-    CONF_BATTERY_ENABLED, CONF_BATTERY_POWER_ENTITY,
+    CONF_BATTERY_ENABLED, CONF_BATTERY_POWER_ENTITY, CONF_BATTERY_SOC_ENTITY,
     CONF_SCAN_INTERVAL_MINUTES, CONF_SAMPLE_INTERVAL_SECONDS,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
     CONF_DEVICE_POWER_W, CONF_DEVICE_PRIORITY, CONF_DEVICE_POWER_ENTITY,
@@ -224,12 +224,13 @@ class TestAsyncSampleSensors:
             CONF_HOUSE_POWER_ENTITY:   "sensor.house",
             CONF_BATTERY_ENABLED:      True,
             CONF_BATTERY_POWER_ENTITY: "sensor.bat",
+            CONF_BATTERY_SOC_ENTITY:   "sensor.bat_soc",
             CONF_SCAN_INTERVAL_MINUTES:   5,
             CONF_SAMPLE_INTERVAL_SECONDS: 30,
         })
         coord.hass = _hass_with_states({
             "sensor.pv": 1000.0, "sensor.grid": 0.0,
-            "sensor.house": 300.0, "sensor.bat": -500.0,
+            "sensor.house": 300.0, "sensor.bat": -500.0, "sensor.bat_soc": 60.0,
         })
         coord.device_manager.devices = []
 

@@ -152,11 +152,12 @@ class EnergyOptimizerBatterySensor(_BaseEOSensor):
         soc = c.battery_soc
         bat = c.device_manager.battery_device
         attrs: dict = {
-            "battery_enabled": bool(c.config.get(CONF_BATTERY_ENABLED, False)),
-            "soc":             soc,
-            "soc_level":       _soc_level_label(soc),
-            "power_w":         c.battery_power_w,
-            "available_w":     c.bat_available_w,
+            "battery_enabled":    bool(c.config.get(CONF_BATTERY_ENABLED, False)),
+            "battery_available":  c.battery_available,
+            "soc":                soc,
+            "soc_level":          _soc_level_label(soc),
+            "power_w":            c.battery_power_w,
+            "available_w":        c.bat_available_w,
         }
         if bat is not None:
             attrs["urgency"]         = round(bat.urgency, 3)

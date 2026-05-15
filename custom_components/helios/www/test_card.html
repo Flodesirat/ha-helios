@@ -119,6 +119,16 @@
   <helios-card id="card-node-urls"></helios-card>
 </div>
 
+<div class="col">
+  <h3>⚠️ Batterie plantée — icône grisée, N/A</h3>
+  <helios-card id="card-bat-unavailable"></helios-card>
+</div>
+
+<div class="col">
+  <h3>⚠️ Batterie plantée — compact</h3>
+  <helios-card id="card-bat-unavailable-compact"></helios-card>
+</div>
+
 <div class="log-panel" id="log-panel">
   <p style="color:#aaa">callService log ↓</p>
 </div>
@@ -493,21 +503,74 @@ const hassCompact = makeHass({
 });
 
 // ---------------------------------------------------------------------------
+// Scénario 5 — Batterie plantée (battery_available: false, soc: null)
+// ---------------------------------------------------------------------------
+const hasBatUnavailable = makeHass({
+  "sensor.helios_pv_power":    state(2200),
+  "sensor.helios_grid_power":  state(-100),
+  "sensor.helios_house_power": state(900),
+  "sensor.helios_global_score": state(0.61, {
+    tempo_color: "blue", mode: "auto", peak_pv_w: 3500, grid_subscription_w: 6000,
+    surplus_w: 1300, virtual_surplus_w: 2100, bat_available_w: 0, remaining_w: 850,
+    f_surplus: 0.80, w_surplus: 0.5,
+    f_tempo:   0.70, w_tempo:   0.3,
+    f_solar:   0.38, w_solar:   0.2,
+  }),
+  // battery_available: false → entité SOC est "unknown" côté HA
+  "sensor.helios_battery": state("autoconsommation", {
+    battery_enabled: true, battery_available: false,
+    soc: null, power_w: null, available_w: 0,
+    urgency: 0, effective_score: 0, fit: 0, priority: 7, demand_w: 0,
+  }),
+  "sensor.helios_energy_pv":          state(7.1),
+  "sensor.helios_energy_import":      state(0.1),
+  "sensor.helios_energy_export":      state(3.2),
+  "sensor.helios_energy_consumption": state(4.0),
+  "sensor.helios_daily_savings":      state(0.92),
+  "sensor.helios_total_savings":      state(312.47),
+
+  "sensor.helios_pool": state("running", {
+    device_name: "Piscine", device_type: "pool", device_priority: 7,
+    manual_mode: false, power_w: 750, switch_entity: "switch.helios_pool",
+    last_effective_score: 0.75, last_priority_score: 0.7, last_fit: 0.90, last_urgency: 0.5,
+    reason: "greedy",
+    filtration_done_min: 100, filtration_required_min: 240, force_remaining_min: 0,
+    daily_on_minutes: 100, allowed_start: "08:00", allowed_end: "20:00",
+  }),
+  "sensor.helios_water_heater": state("off", {
+    device_name: "Chauffe-eau", device_type: "water_heater", device_priority: 6,
+    manual_mode: false, power_w: 0, switch_entity: "switch.helios_water_heater",
+    last_effective_score: 0.38, last_priority_score: 0.6, last_fit: 0.44, last_urgency: 0.15,
+    reason: "budget",
+    temperature: 56.0, wh_temp_target: 61,
+    daily_on_minutes: 45, allowed_start: "06:00", allowed_end: "22:00",
+  }),
+
+  "switch.helios_battery_manual":      state("off"),
+  "switch.helios_pool_manual":          state("off"),
+  "switch.helios_water_heater_manual":  state("off"),
+  "switch.helios_pool_force":           state("off"),
+  "select.helios_pool_force_duration":  state("2h", { options: ["1h", "2h", "4h", "12h", "24h"] }),
+});
+
+// ---------------------------------------------------------------------------
 // Injection dans les cartes
 // ---------------------------------------------------------------------------
 await customElements.whenDefined("helios-card");
 
-const cardFull       = document.getElementById("card-full");
-const cardManual     = document.getElementById("card-manual");
-const cardNight      = document.getElementById("card-night");
-const cardCompact    = document.getElementById("card-compact");
-const cardDark       = document.getElementById("card-dark");
-const cardDark2      = document.getElementById("card-dark2");
-const cardSecLight   = document.getElementById("card-sec-light");
-const cardSecDevices = document.getElementById("card-sec-devices");
-const cardSecNodev   = document.getElementById("card-sec-nodevices");
-const cardSecMin     = document.getElementById("card-sec-minimal");
-const cardNodeUrls   = document.getElementById("card-node-urls");
+const cardFull            = document.getElementById("card-full");
+const cardManual          = document.getElementById("card-manual");
+const cardNight           = document.getElementById("card-night");
+const cardCompact         = document.getElementById("card-compact");
+const cardDark            = document.getElementById("card-dark");
+const cardDark2           = document.getElementById("card-dark2");
+const cardSecLight        = document.getElementById("card-sec-light");
+const cardSecDevices      = document.getElementById("card-sec-devices");
+const cardSecNodev        = document.getElementById("card-sec-nodevices");
+const cardSecMin          = document.getElementById("card-sec-minimal");
+const cardNodeUrls        = document.getElementById("card-node-urls");
+const cardBatUnavailable  = document.getElementById("card-bat-unavailable");
+const cardBatUnavCompact  = document.getElementById("card-bat-unavailable-compact");
 
 const cfgBase    = { entry_id: MOCK_ENTRY_ID, info_url: "https://example.com" };
 const cfgCompact = { ...cfgBase, compact: true };
@@ -546,8 +609,11 @@ cardSecMin.setConfig(cfgSecMin);      cardSecMin.hass     = hassDay;
 cardNodeUrls.setConfig({ ...cfgBase, node_urls: { pv: "#pv-page", grid: "#grid-page", house: "#house-page" } });
 cardNodeUrls.hass = hassDay;
 
+cardBatUnavailable.setConfig(cfgBase);         cardBatUnavailable.hass  = hasBatUnavailable;
+cardBatUnavCompact.setConfig(cfgCompact);      cardBatUnavCompact.hass  = hasBatUnavailable;
+
 // Enregistre toutes les cartes pour les notifications callService
-cards.push(cardFull, cardManual, cardNight, cardDark, cardDark2, cardSecLight, cardSecDevices, cardSecNodev, cardNodeUrls);
+cards.push(cardFull, cardManual, cardNight, cardDark, cardDark2, cardSecLight, cardSecDevices, cardSecNodev, cardNodeUrls, cardBatUnavailable, cardBatUnavCompact);
 </script>
 </body>
 </html>

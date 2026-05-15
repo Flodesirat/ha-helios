@@ -54,6 +54,19 @@ from .daily_optimizer import async_run_daily_forecast, ForecastResult
 _LOGGER = logging.getLogger(__name__)
 
 
+def _float_or_none(hass, entity_id: str | None) -> float | None:
+    """Return the numeric state of an entity, or None if unavailable/unknown/non-numeric."""
+    if not entity_id:
+        return None
+    s = hass.states.get(entity_id)
+    if s is None or s.state in ("unavailable", "unknown"):
+        return None
+    try:
+        return float(s.state)
+    except ValueError:
+        return None
+
+
 class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     """Central coordinator: reads sensors → scores → decisions → actions."""
 
@@ -103,8 +116,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.surplus_w:         float       = 0.0
         self.virtual_surplus_w: float       = 0.0
         self.bat_available_w:   float       = 0.0
-        self.battery_soc:     float | None = None
-        self.battery_power_w: float | None = None  # negative=charge, positive=discharge
+        self.battery_soc:       float | None = None
+        self.battery_power_w:  float | None = None  # negative=charge, positive=discharge
+        self.battery_available: bool         = True  # False when SOC entity is non-numeric
         self.tempo_color:      str | None  = None
         self.tempo_next_color: str | None  = None
         self.global_score:    float       = 0.0
@@ -206,7 +220,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._buf_house.append(house_w)
         self._buf_grid.append(grid_w)
         if cfg.get(CONF_BATTERY_ENABLED):
-            self._buf_battery.append(_float(cfg.get(CONF_BATTERY_POWER_ENTITY)))
+            if _float_or_none(self.hass, cfg.get(CONF_BATTERY_SOC_ENTITY)) is not None:
+                self._buf_battery.append(_float(cfg.get(CONF_BATTERY_POWER_ENTITY)))
 
         reader = ManagedDevice._make_ha_reader(self.hass)
         for device in self.device_manager.devices:
@@ -406,7 +421,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
 
             if self._cfg.get(CONF_BATTERY_ENABLED):
                 self.battery_action = self.battery_strategy.decide(score_input)
-                await self.battery_strategy.async_apply(self.hass, self.battery_action)
+                if self.battery_available:
+                    await self.battery_strategy.async_apply(self.hass, self.battery_action)
 
             if self.enabled:
                 dispatch_input = {
@@ -487,13 +503,15 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
 
         cfg = self._cfg
         battery_enabled = cfg.get(CONF_BATTERY_ENABLED, False)
+        battery_soc = _float_or_none(self.hass, cfg.get(CONF_BATTERY_SOC_ENTITY)) if battery_enabled else None
 
         return {
-            "pv_power_w":      _mean(self._buf_pv,    cfg.get(CONF_PV_POWER_ENTITY)),
-            "grid_power_w":    _mean(self._buf_grid,   cfg.get(CONF_GRID_POWER_ENTITY)),
-            "house_power_w":   _mean(self._buf_house,  cfg.get(CONF_HOUSE_POWER_ENTITY)),
-            "battery_soc":     _float(cfg.get(CONF_BATTERY_SOC_ENTITY)) if battery_enabled else None,
-            "battery_power_w": _mean(self._buf_battery, cfg.get(CONF_BATTERY_POWER_ENTITY)) if battery_enabled else None,
+            "pv_power_w":        _mean(self._buf_pv,    cfg.get(CONF_PV_POWER_ENTITY)),
+            "grid_power_w":      _mean(self._buf_grid,   cfg.get(CONF_GRID_POWER_ENTITY)),
+            "house_power_w":     _mean(self._buf_house,  cfg.get(CONF_HOUSE_POWER_ENTITY)),
+            "battery_soc":       battery_soc,
+            "battery_available": battery_soc is not None if battery_enabled else False,
+            "battery_power_w":   _mean(self._buf_battery, cfg.get(CONF_BATTERY_POWER_ENTITY)) if (battery_enabled and battery_soc is not None) else None,
             "tempo_color":      normalize_tempo_color(_str(cfg.get(CONF_TEMPO_COLOR_ENTITY))),
             "tempo_next_color": normalize_tempo_color(_str(cfg.get(CONF_TEMPO_NEXT_COLOR_ENTITY))),
             "forecast_kwh": _float(entity) if (entity := cfg.get(CONF_FORECAST_ENTITY)) else None,
@@ -505,8 +523,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.pv_power_w    = raw["pv_power_w"]
         self.grid_power_w  = raw["grid_power_w"]
         self.house_power_w = raw["house_power_w"]
-        self.battery_soc     = raw["battery_soc"]
-        self.battery_power_w = raw["battery_power_w"]
+        self.battery_soc       = raw["battery_soc"]
+        self.battery_power_w  = raw["battery_power_w"]
+        self.battery_available = raw.get("battery_available", False)
         self.tempo_color      = raw["tempo_color"]
         self.tempo_next_color = raw["tempo_next_color"]
         self.forecast_kwh      = raw["forecast_kwh"]
@@ -589,14 +608,15 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         # Correct formula: max(0, PV − base_house) where base_house = house − helios_on_w.
         virtual_surplus_w = max(0.0, self.pv_power_w - self.house_power_w + helios_on_w)
         return {
-            "pv_power_w":       self.pv_power_w,
-            "surplus_w":        virtual_surplus_w,
-            "grid_power_w":     self.grid_power_w,
-            "battery_soc":      self.battery_soc,
-            "tempo_color":      self.tempo_color,
-            "tempo_next_color": self.tempo_next_color,
-            "hour":             dt_util.now().hour,
-            "solar_elevation":  self.solar_elevation,
+            "pv_power_w":         self.pv_power_w,
+            "surplus_w":          virtual_surplus_w,
+            "grid_power_w":       self.grid_power_w,
+            "battery_soc":        self.battery_soc,
+            "battery_available":  self.battery_available,
+            "tempo_color":        self.tempo_color,
+            "tempo_next_color":   self.tempo_next_color,
+            "hour":               dt_util.now().hour,
+            "solar_elevation":    self.solar_elevation,
         }
 
     def _snapshot(self) -> dict[str, Any]:

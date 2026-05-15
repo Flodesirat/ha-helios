@@ -104,6 +104,7 @@ def _score_input(
     surplus_w: float = 1000.0,
     bat_available_w: float = 0.0,
     battery_soc: float | None = None,
+    battery_available: bool = True,
     tempo_color: str = "blue",
     soc_max: float = 95.0,
     soc_min: float = 20.0,
@@ -111,15 +112,16 @@ def _score_input(
     grid_allowance_w: float = 250.0,
 ) -> dict:
     return {
-        "global_score":    global_score,
-        "surplus_w":       surplus_w,
-        "bat_available_w": bat_available_w,
-        "battery_soc":     battery_soc,
-        "tempo_color":     tempo_color,
-        "soc_max":         soc_max,
-        "soc_min":         soc_min,
+        "global_score":      global_score,
+        "surplus_w":         surplus_w,
+        "bat_available_w":   bat_available_w,
+        "battery_soc":       battery_soc,
+        "battery_available": battery_available,
+        "tempo_color":       tempo_color,
+        "soc_max":           soc_max,
+        "soc_min":           soc_min,
         "soc_reserve_rouge": soc_reserve_rouge,
-        "grid_allowance_w": grid_allowance_w,
+        "grid_allowance_w":  grid_allowance_w,
     }
 
 

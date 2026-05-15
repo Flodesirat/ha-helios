@@ -371,6 +371,7 @@ class DeviceManager:
         surplus_w:          float       = score_input.get("surplus_w",          0.0)
         bat_available_w:    float       = score_input.get("bat_available_w",    0.0)
         battery_soc:        float | None = score_input.get("battery_soc")
+        battery_available:  bool         = score_input.get("battery_available", False)
         configured_allowance_w: float   = float(score_input.get("grid_allowance_w", 250.0))
         pv_power_w:         float       = score_input.get("pv_power_w",         0.0)
         house_power_w:      float       = score_input.get("house_power_w",      0.0)
@@ -471,7 +472,7 @@ class DeviceManager:
 
         # ---- Update BatteryDevice runtime state ----
         if self.battery_device is not None:
-            self.battery_device.update(battery_soc, tempo_color == TEMPO_RED)
+            self.battery_device.update(battery_soc, tempo_color == TEMPO_RED, battery_available)
 
         # ---- Priority preemption for PREPARING appliances ----
         # If a high-priority appliance is ready to start (score+fit or urgency)

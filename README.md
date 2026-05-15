@@ -42,6 +42,21 @@ Copier le dossier `custom_components/helios/` dans le répertoire `custom_compon
 | Script charge forcée | Script HA appelé **une seule fois** quand Helios décide de charger la batterie depuis le réseau (la nuit précédant un jour Tempo rouge, pendant les heures creuses). Le script doit mettre l'onduleur en mode "charge forcée réseau" — Helios ne contrôle pas la puissance ni la durée, c'est le BMS/onduleur qui gère. |
 | Script autoconsommation | Script HA appelé **une seule fois** quand Helios revient en mode normal (fin des HC, jour non rouge, etc.). Le script doit remettre l'onduleur en mode "autoconsommation" — la batterie absorbe le surplus PV et décharge sur déficit maison selon sa propre logique. |
 
+#### Détection d'une batterie indisponible
+
+Helios surveille en permanence l'entité SOC configurée. Dès que son état cesse d'être numérique (`unavailable`, `unknown`, ou toute valeur non parseable comme un nombre), Helios considère la batterie comme **indisponible** et applique automatiquement le comportement suivant :
+
+| Grandeur | Comportement normal | Batterie indisponible |
+|----------|--------------------|-----------------------|
+| `bat_available_w` | Calculé selon le SOC | **0 W** — aucune décharge allouée aux appareils |
+| Demande de charge (`demand_w`) | Proportionnelle au déficit SOC | **0 W** — la batterie n'est plus candidate au dispatch |
+| Buffer de puissance batterie | Alimenté à chaque cycle | **Non alimenté** — les échantillons indisponibles ne polluent pas la moyenne |
+| Scripts charge forcée / autoconso | Appelés sur changement d'état | **Suspendus** — aucun script envoyé à l'onduleur hors ligne |
+
+> Dès que l'entité SOC retrouve une valeur numérique, Helios reprend le comportement normal et rappelle le script de mode approprié (charge forcée ou autoconsommation) pour remettre l'onduleur dans le bon état.
+
+La carte Lovelace reflète également cet état : l'icône 🔋 passe en grisé et le SOC affiche **N/A** à la place du pourcentage.
+
 ### Configuration — étape Appareils
 
 Chaque appareil configuré est piloté par Helios via un interrupteur HA. Les paramètres communs :
@@ -153,7 +168,7 @@ Ces valeurs sont calculées à chaque cycle et pilotent l'ensemble de la logique
 |----------|-----------------|------|
 | **Surplus** (`surplus_w`) | `max(0, PV − maison)` soit `max(0, −réseau − décharge + charge)` | Bilan électrique instantané : positif quand le PV excède la consommation maison. La charge/décharge batterie y est implicitement incluse via `house_power_w` — Helios ne pilote pas le BMS directement. Sert de base au budget `remaining`. |
 | **Surplus virtuel** (`virtual_surplus_w`) | `max(0, PV − maison + Σ appareils Helios actifs)` | Surplus corrigé en réajoutant la consommation des appareils que Helios a allumés. La batterie n'est **pas** dans ce Σ — sa charge/décharge est gérée par le BMS et déjà reflétée dans `house_power_w`. Sans cette correction, les appareils actifs gonflent `house_power_w` → surplus chute → fit s'effondre → extinction → rallumage → oscillation. Utilisé pour le calcul de `f_surplus` et de `fit`. |
-| **Batterie disponible** (`bat_available_w`) | courbe pivot sur `[soc_min_jour … soc_max]`, plafonnée à `max_discharge_w` | Puissance de décharge supplémentaire estimée que la batterie peut fournir aux appareils. Vaut **0** si SOC < `soc_min` du jour (bleu/blanc) ou `soc_min_rouge` (jour rouge). Au-dessus, monte selon la courbe pivot : rampe plate jusqu'au pivot (0 → 0.3 × max), rampe forte ensuite (0.3 → 1.0 × max). Indépendant de la charge — `bat_available_w` représente la décharge possible, pas la charge en cours. |
+| **Batterie disponible** (`bat_available_w`) | courbe pivot sur `[soc_min_jour … soc_max]`, plafonnée à `max_discharge_w` | Puissance de décharge supplémentaire estimée que la batterie peut fournir aux appareils. Vaut **0** si SOC < `soc_min` du jour (bleu/blanc) ou `soc_min_rouge` (jour rouge). Au-dessus, monte selon la courbe pivot : rampe plate jusqu'au pivot (0 → 0.3 × max), rampe forte ensuite (0.3 → 1.0 × max). Indépendant de la charge — `bat_available_w` représente la décharge possible, pas la charge en cours. Vaut également **0** si la batterie est indisponible (entité SOC non numérique). |
 | **Remaining** (`remaining_w`) | `surplus_virtuel + bat_available_w` (initial) | Budget de dispatch résiduel. Initialisé en début de cycle, puis décrémenté à chaque appareil sélectionné dans l'ordre du score effectif — la `power_w` calculée du `BatteryDevice` est déduite comme n'importe quel appareil. Les appareils déjà actifs ne le réduisent pas — leur puissance est déjà absente de `virtual_surplus`. `grid_allowance_w` n'est **pas** dans `remaining` — il définit une tolérance d'import réseau utilisée uniquement dans la zone 3 du calcul de fit. |
 
 > **Surplus réel vs surplus virtuel** : les deux valeurs divergent dès qu'au moins un appareil Helios est allumé. Le surplus virtuel (`virtual_surplus_w`) est utilisé pour `f_surplus` et le calcul de fit — il reflète ce que serait le surplus si ces appareils n'existaient pas. Le surplus réel (`surplus_w`) sert de base au budget `remaining` — il reflète la réalité mesurée. La batterie (gérée par le BMS) n'intervient pas dans cette correction.
@@ -406,7 +421,7 @@ La prévision est disponible en attributs du sensor `helios_forecast` (voir auss
 
 | Entité | Type | Description |
 |--------|------|-------------|
-| `sensor.helios_battery` | Sensor | État du BatteryDevice — `on` (en charge) \| `off`. Attributs : `soc` (%), `power_w` (demande calculée), `urgency` [0–1], `effective_score` [0–1] |
+| `sensor.helios_battery` | Sensor | État courant de la batterie (`charge`, `autoconsommation`, `forced_charge`…). Attributs : `soc` (%), `power_w` (W mesurés, négatif = charge), `available_w` (W de décharge disponibles pour le dispatch), `demand_w` (W demandés en charge), `battery_available` (bool — `false` si l'entité SOC est `unavailable`/`unknown`), `urgency` [0–1], `effective_score` [0–1] |
 | `switch.helios_battery_manual` | Switch | Exclut la batterie du dispatch automatique — Helios ne lui alloue plus de budget, le BMS garde le contrôle total |
 
 #### Entités par appareil
