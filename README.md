@@ -423,7 +423,7 @@ La prévision est disponible en attributs du sensor `helios_forecast` (voir auss
 |--------|------|-------------|
 | `sensor.helios_battery` | Sensor | État courant de la batterie (`charge`, `autoconsommation`, `forced_charge`…). Attributs : `soc` (%), `power_w` (W mesurés, négatif = charge), `available_w` (W de décharge disponibles pour le dispatch), `demand_w` (W demandés en charge), `battery_available` (bool — `false` si l'entité SOC est `unavailable`/`unknown`), `urgency` [0–1], `effective_score` [0–1] |
 | `switch.helios_battery_manual` | Switch | Exclut la batterie du dispatch automatique — Helios ne lui alloue plus de budget, le BMS garde le contrôle total |
-
+ 
 #### Entités par appareil
 
 Pour chaque appareil configuré (slug = nom normalisé) :
