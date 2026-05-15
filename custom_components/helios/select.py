@@ -53,6 +53,7 @@ class PoolForceDurationSelect(CoordinatorEntity, SelectEntity):
         slug = slugify(device.name)
         self._attr_translation_placeholders = {"name": device.name}
         self._attr_unique_id = f"{entry.entry_id}_pool_{slug}_force_duration"
+        self._attr_suggested_object_id = f"{slug}_force_duration"
 
     @property
     def device_info(self) -> DeviceInfo:
