@@ -1046,6 +1046,7 @@ class HeliosCard extends HTMLElement {
     if (entryId) {
       const disc = this._discoverEntities(entryId);
       if (disc?.["global_score"]) {
+        const devices = this._discoverDevices(disc);
         return {
           entityRefs: {
             pv_power:       disc["pv_power"],
@@ -1055,7 +1056,7 @@ class HeliosCard extends HTMLElement {
             battery:        disc["battery"],
             _soc_from_attr: true,
           },
-          devices: this._discoverDevices(disc),
+          devices: devices.length > 0 ? devices : (this._discoverFromStates()?.devices ?? []),
         };
       }
     }
