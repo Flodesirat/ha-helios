@@ -1106,6 +1106,9 @@ class HeliosCard extends HTMLElement {
 
     const L = this._layout;
     // Battery icon — greyed out when unavailable
+    const batColor = soc !== null
+      ? (soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336")
+      : "#1565C0";
     if (!batAvailable) {
       const greyColor = "#9E9E9E";
       this._txt("h-val-bat-soc", "N/A");
@@ -1118,9 +1121,6 @@ class HeliosCard extends HTMLElement {
       this._svgAttr("h-node-bat",     "stroke", greyColor);
     } else {
       this._txt("h-val-bat-soc", soc !== null ? `${Math.round(soc)}%` : "—");
-      const batColor = soc !== null
-        ? (soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336")
-        : "#1565C0";
       this._svgAttr("h-bat-body",     "stroke", batColor);
       this._svgAttr("h-bat-terminal", "fill",   batColor);
       this._svgAttr("h-bat-fill",     "fill",   batColor);
