@@ -17,7 +17,7 @@ from homeassistant.util import slugify
 from .const import (
     DOMAIN,
     DEVICE_TYPE_APPLIANCE, APPLIANCE_STATE_RUNNING, APPLIANCE_STATE_PREPARING,
-    DEVICE_TYPE_POOL, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER,
+    DEVICE_TYPE_POOL, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_GENERIC,
     CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W,
     CONF_GRID_SUBSCRIPTION_W, DEFAULT_GRID_SUBSCRIPTION_W,
     CONF_BATTERY_ENABLED,
@@ -551,6 +551,16 @@ class DeviceStateSensor(_BaseEOSensor):
                         attrs["temperature"] = float(s.state)
                     except ValueError:
                         pass
+            fu = d.force_until
+            attrs["force_remaining_min"] = round(max(0.0, (fu - _time.time()) / 60), 1) if fu else 0.0
+            slug = slugify(d.name)
+            reg = er.async_get(self.coordinator.hass)
+            attrs["force_switch_entity"]   = reg.async_get_entity_id(
+                "switch", DOMAIN, f"{self._entry.entry_id}_{d.device_type}_{slug}_force"
+            )
+            attrs["force_duration_entity"] = reg.async_get_entity_id(
+                "select", DOMAIN, f"{self._entry.entry_id}_{d.device_type}_{slug}_force_duration"
+            )
         elif d.device_type == DEVICE_TYPE_EV:
             attrs["ev_soc_entity"]     = d.ev_soc_entity
             attrs["ev_plugged_entity"] = d.ev_plugged_entity
@@ -565,6 +575,27 @@ class DeviceStateSensor(_BaseEOSensor):
                 s = self.coordinator.hass.states.get(d.ev_plugged_entity)
                 if s:
                     attrs["plugged"] = s.state == "on"
+            fu = d.force_until
+            attrs["force_remaining_min"] = round(max(0.0, (fu - _time.time()) / 60), 1) if fu else 0.0
+            slug = slugify(d.name)
+            reg = er.async_get(self.coordinator.hass)
+            attrs["force_switch_entity"]   = reg.async_get_entity_id(
+                "switch", DOMAIN, f"{self._entry.entry_id}_{d.device_type}_{slug}_force"
+            )
+            attrs["force_duration_entity"] = reg.async_get_entity_id(
+                "select", DOMAIN, f"{self._entry.entry_id}_{d.device_type}_{slug}_force_duration"
+            )
+        elif d.device_type == DEVICE_TYPE_GENERIC:
+            fu = d.force_until
+            attrs["force_remaining_min"] = round(max(0.0, (fu - _time.time()) / 60), 1) if fu else 0.0
+            slug = slugify(d.name)
+            reg = er.async_get(self.coordinator.hass)
+            attrs["force_switch_entity"]   = reg.async_get_entity_id(
+                "switch", DOMAIN, f"{self._entry.entry_id}_{d.device_type}_{slug}_force"
+            )
+            attrs["force_duration_entity"] = reg.async_get_entity_id(
+                "select", DOMAIN, f"{self._entry.entry_id}_{d.device_type}_{slug}_force_duration"
+            )
         elif d.device_type == DEVICE_TYPE_POOL:
             attrs["filtration_done_min"]     = round(d.pool_daily_run_minutes, 1)
             attrs["filtration_required_min"] = round(d.pool_required_minutes_today or 0.0, 1)

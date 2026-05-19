@@ -14,7 +14,7 @@ from homeassistant.util import slugify
 from .const import (
     DOMAIN,
     CONF_BATTERY_ENABLED,
-    DEVICE_TYPE_POOL, DEVICE_TYPE_EV,
+    DEVICE_TYPE_POOL, DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_GENERIC,
 )
 from .coordinator import EnergyOptimizerCoordinator
 from .managed_device import ManagedDevice
@@ -69,6 +69,11 @@ async def async_setup_entry(
         PoolForceSwitch(coordinator, entry, device)
         for device in coordinator.device_manager.devices
         if device.device_type == DEVICE_TYPE_POOL
+    ]
+    entities += [
+        DeviceForceSwitch(coordinator, entry, device)
+        for device in coordinator.device_manager.devices
+        if device.device_type in {DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_EV, DEVICE_TYPE_GENERIC}
     ]
     entities += [
         DeviceManualSwitch(coordinator, entry, device)
@@ -160,6 +165,58 @@ class PoolForceSwitch(_BaseDeviceSwitch):
     async def async_turn_off(self, **kwargs) -> None:
         self._device.pool_force_until = None
         self._device.pool_inhibit_until = time.time() + self._device.pool_force_duration_h * 3600
+        if self._device.switch_entity:
+            await self.hass.services.async_call(
+                "homeassistant", "turn_off",
+                {"entity_id": self._device.switch_entity},
+                blocking=False,
+            )
+        self._device.is_on = False
+        await self.coordinator.device_manager.async_persist_device_state()
+        self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
+
+
+class DeviceForceSwitch(_BaseDeviceSwitch):
+    """Force a device (water_heater, ev_charger, appliance) ON for the selected duration."""
+
+    _attr_translation_key = "eo_device_force"
+
+    def __init__(
+        self,
+        coordinator: EnergyOptimizerCoordinator,
+        entry: ConfigEntry,
+        device: ManagedDevice,
+    ) -> None:
+        super().__init__(coordinator, entry, device)
+        slug = slugify(device.name)
+        self._attr_translation_placeholders = {"name": device.name}
+        self._attr_unique_id = f"{entry.entry_id}_{device.device_type}_{slug}_force"
+        self._attr_suggested_object_id = f"{slug}_force"
+
+    @property
+    def is_on(self) -> bool:
+        fu = self._device.force_until
+        return fu is not None and time.time() < fu
+
+    async def async_turn_on(self, **kwargs) -> None:
+        duration_s = self._device.force_duration_h * 3600
+        self._device.force_until = time.time() + duration_s
+        self._device.inhibit_until = None
+        if self._device.switch_entity:
+            await self.hass.services.async_call(
+                "homeassistant", "turn_on",
+                {"entity_id": self._device.switch_entity},
+                blocking=False,
+            )
+        self._device.is_on = True
+        await self.coordinator.device_manager.async_persist_device_state()
+        self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self._device.force_until = None
+        self._device.inhibit_until = time.time() + self._device.force_duration_h * 3600
         if self._device.switch_entity:
             await self.hass.services.async_call(
                 "homeassistant", "turn_off",

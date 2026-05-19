@@ -216,6 +216,11 @@ class ManagedDevice:
         self.pool_inhibit_until: float | None  = None   # epoch seconds — forced OFF (optimizer blocked)
         self.pool_force_duration_h: float      = 2.0    # currently selected duration
 
+        # Generic force mode (water_heater, ev_charger, appliance)
+        self.force_until: float | None         = None   # epoch seconds — forced ON
+        self.inhibit_until: float | None       = None   # epoch seconds — forced OFF (optimizer blocked)
+        self.force_duration_h: float           = 2.0    # currently selected duration
+
         # Appliance state machine
         self.appliance_state: str             = APPLIANCE_STATE_IDLE
         self.appliance_cycle_start: float | None = None

@@ -1612,6 +1612,50 @@ class HeliosCard extends HTMLElement {
     return this._hass?.states[candidate] !== undefined ? candidate : null;
   }
 
+  _forceEntity(dev) {
+    const fromAttr = this._hass?.states[dev.entity]?.attributes?.force_switch_entity;
+    if (fromAttr) return fromAttr;
+    const slug = this._devSlug(dev);
+    const candidate = `switch.helios_${slug}_force`;
+    return this._hass?.states[candidate] !== undefined ? candidate : null;
+  }
+
+  _forceDurationEntity(dev) {
+    const fromAttr = this._hass?.states[dev.entity]?.attributes?.force_duration_entity;
+    if (fromAttr) return fromAttr;
+    const slug = this._devSlug(dev);
+    const candidate = `select.helios_${slug}_force_duration`;
+    return this._hass?.states[candidate] !== undefined ? candidate : null;
+  }
+
+  _buildForceSection(dev, forceEntityFn, durationEntityFn) {
+    const forceEid    = forceEntityFn(dev);
+    const durEid      = durationEntityFn(dev);
+    if (!forceEid) return "";
+    const forceRem    = this._attr(dev.entity, "force_remaining_min") ?? 0;
+    const forceIsOn   = this._hass?.states[forceEid]?.state === "on";
+    const curDuration = durEid ? (this._hass?.states[durEid]?.state ?? "2h") : "2h";
+    const durOptions  = durEid ? (this._hass?.states[durEid]?.attributes?.options ?? ["15min","30min","1h","2h","4h","8h","12h","24h"]) : [];
+
+    const durChips = durEid ? durOptions.map(opt => `
+      <button class="hm-manual-btn ${opt === curDuration ? "hm-manual-on" : "hm-manual-off"}"
+        data-action="pool-duration" data-dur-entity="${durEid}" data-option="${opt}"
+        style="padding:3px 8px;font-size:11px">${opt}</button>`
+    ).join("") : "";
+
+    const forceToggleBtn = `
+      <button class="hm-manual-btn ${forceIsOn ? "hm-manual-on" : "hm-manual-off"}"
+        data-action="pool-force-toggle" data-force-entity="${forceEid}" data-force-on="${forceIsOn}">
+        ${forceIsOn ? "🔒 Arrêter le forçage" : "🔒 Forcer maintenant"}
+      </button>`;
+
+    return `
+      <div class="hm-section-title" style="margin-top:8px">Forçage</div>
+      ${forceIsOn ? `<span class="hm-force-lbl">🔒 Forcé — ${Math.round(forceRem)} min restantes</span>` : ""}
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0">${durChips}</div>
+      <div>${forceToggleBtn}</div>`;
+  }
+
   _manualSwitchEntity(dev) {
     const slug = this._devSlug(dev);
     const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
@@ -1776,30 +1820,7 @@ class HeliosCard extends HTMLElement {
         const pct      = Math.min(100, reqMin > 0 ? Math.round(doneMin / reqMin * 100) : 100);
         const barColor = pct >= 100 ? "#4CAF50" : "#2196F3";
 
-        // Forçage — entités découvertes dynamiquement
-        const forceEid    = this._poolForceEntity(dev);
-        const durEid      = this._poolDurationEntity(dev);
-        const forceIsOn   = forceEid ? this._hass?.states[forceEid]?.state === "on" : false;
-        const curDuration = durEid ? (this._hass?.states[durEid]?.state ?? "2h") : "2h";
-        const durOptions  = durEid ? (this._hass?.states[durEid]?.attributes?.options ?? ["1h","2h","4h","12h","24h"]) : ["1h","2h","4h","12h","24h"];
-
-        const durChips = (forceEid && durEid) ? durOptions.map(opt => `
-          <button class="hm-manual-btn ${opt === curDuration ? "hm-manual-on" : "hm-manual-off"}"
-            data-action="pool-duration" data-dur-entity="${durEid}" data-option="${opt}"
-            style="padding:3px 8px;font-size:11px">${opt}</button>`
-        ).join("") : "";
-
-        const forceToggleBtn = forceEid ? `
-          <button class="hm-manual-btn ${forceIsOn ? "hm-manual-on" : "hm-manual-off"}"
-            data-action="pool-force-toggle" data-force-entity="${forceEid}" data-force-on="${forceIsOn}">
-            ${forceIsOn ? "🔒 Arrêter le forçage" : "🔒 Forcer maintenant"}
-          </button>` : "";
-
-        const forceHtml = forceEid ? `
-          <div class="hm-section-title" style="margin-top:8px">Forçage</div>
-          ${forceIsOn ? `<span class="hm-force-lbl">🔒 Forcé — ${Math.round(forceRem)} min restantes</span>` : ""}
-          <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0">${durChips}</div>
-          <div>${forceToggleBtn}</div>` : "";
+        const forceHtml = this._buildForceSection(dev, d => this._poolForceEntity(d), d => this._poolDurationEntity(d));
 
         return `
           <div class="hm-progress-wrap">
@@ -1816,11 +1837,13 @@ class HeliosCard extends HTMLElement {
         const barColor = target
           ? (temp >= target ? "#4CAF50" : temp > target * 0.8 ? "#FF9800" : "#F44336")
           : "#2196F3";
+        const forceHtml = this._buildForceSection(dev, d => this._forceEntity(d), d => this._forceDurationEntity(d));
         return `
           <div class="hm-progress-wrap">
             ${pct !== null ? `<div class="hm-bar-bg"><div class="hm-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>` : ""}
             <span class="hm-bar-text">Température : ${temp.toFixed(1)} °C${target !== null ? ` / ${target} °C` : ""}</span>
-          </div>`;
+          </div>
+          ${forceHtml}`;
       }
       case "ev":
       case "ev_charger": {
@@ -1832,7 +1855,13 @@ class HeliosCard extends HTMLElement {
           const sc = soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336";
           parts.push(`<span style="color:${sc}">SOC : ${Math.round(soc)} %</span>`);
         }
-        return parts.length ? `<div class="hm-stat">${parts.join(" · ")}</div>` : "";
+        const forceHtml = this._buildForceSection(dev, d => this._forceEntity(d), d => this._forceDurationEntity(d));
+        const statHtml = parts.length ? `<div class="hm-stat">${parts.join(" · ")}</div>` : "";
+        return statHtml + forceHtml;
+      }
+      case "generic": {
+        const forceHtml = this._buildForceSection(dev, d => this._forceEntity(d), d => this._forceDurationEntity(d));
+        return forceHtml;
       }
       case "appliance": {
         const appState  = this._attr(dev.entity, "appliance_state");

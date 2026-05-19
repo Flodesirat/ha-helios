@@ -438,6 +438,9 @@
       "eo_pool_force": {
         "name": "Forçage filtration {name}"
       },
+      "eo_device_force": {
+        "name": "Forçage {name}"
+      },
       "eo_device_manual": {
         "name": "Mode manuel {name}"
       },
@@ -449,9 +452,25 @@
       "eo_pool_force_duration": {
         "name": "Durée forçage {name}",
         "state": {
+          "15min": "15 minutes",
+          "30min": "30 minutes",
           "1h": "1 heure",
           "2h": "2 heures",
           "4h": "4 heures",
+          "8h": "8 heures",
+          "12h": "12 heures",
+          "24h": "24 heures"
+        }
+      },
+      "eo_device_force_duration": {
+        "name": "Durée forçage {name}",
+        "state": {
+          "15min": "15 minutes",
+          "30min": "30 minutes",
+          "1h": "1 heure",
+          "2h": "2 heures",
+          "4h": "4 heures",
+          "8h": "8 heures",
           "12h": "12 heures",
           "24h": "24 heures"
         }

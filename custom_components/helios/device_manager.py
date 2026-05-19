@@ -14,7 +14,7 @@ from homeassistant.helpers.storage import Store
 from .managed_device import ManagedDevice, BatteryDevice
 
 from .const import (
-    DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_HVAC, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE,
+    DEVICE_TYPE_EV, DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_HVAC, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE, DEVICE_TYPE_GENERIC,
     CONF_SCAN_INTERVAL_MINUTES,
     CONF_BATTERY_ENABLED, CONF_BATTERY_MAX_CHARGE_POWER_W,
     DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
@@ -135,6 +135,23 @@ class DeviceManager:
                     _LOGGER.debug(
                         "Pool '%s': restored inhibit mode (%.0f s remaining)",
                         device.name, device.pool_inhibit_until - now_ts,
+                    )
+
+            # Generic force/inhibit restoration (water_heater, ev, generic)
+            if device.device_type in {DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_EV, DEVICE_TYPE_GENERIC}:
+                force_until = stored.get("force_until")
+                if force_until and float(force_until) > now_ts:
+                    device.force_until = float(force_until)
+                    _LOGGER.debug(
+                        "Device '%s': restored force mode (%.0f s remaining)",
+                        device.name, device.force_until - now_ts,
+                    )
+                inhibit_until = stored.get("inhibit_until")
+                if inhibit_until and float(inhibit_until) > now_ts:
+                    device.inhibit_until = float(inhibit_until)
+                    _LOGGER.debug(
+                        "Device '%s': restored inhibit mode (%.0f s remaining)",
+                        device.name, device.inhibit_until - now_ts,
                     )
 
             # EV-specific: restore is_on and handle stop script if charge ended during downtime.
@@ -312,6 +329,14 @@ class DeviceManager:
             entry: dict = {"manual_mode": device.manual_mode}
             if device.device_type == DEVICE_TYPE_EV:
                 entry["is_on"] = device.is_on
+                entry["force_until"]   = device.force_until
+                entry["inhibit_until"] = device.inhibit_until
+            elif device.device_type == DEVICE_TYPE_WATER_HEATER:
+                entry["force_until"]   = device.force_until
+                entry["inhibit_until"] = device.inhibit_until
+            elif device.device_type == DEVICE_TYPE_GENERIC:
+                entry["force_until"]   = device.force_until
+                entry["inhibit_until"] = device.inhibit_until
             elif device.device_type == DEVICE_TYPE_APPLIANCE:
                 entry["appliance_state"] = device.appliance_state
                 if device.appliance_deadline_dt is not None:
@@ -459,14 +484,42 @@ class DeviceManager:
                 device.pool_inhibit_until = None
                 _LOGGER.info("Pool '%s': inhibit mode expired", device.name)
 
+        # ---- Generic device force ON: maintain / expire (water_heater, ev, generic) ----
+        _GENERIC_FORCEABLE = {DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_EV, DEVICE_TYPE_GENERIC}
+        for device in self.devices:
+            if device.device_type not in _GENERIC_FORCEABLE or device.force_until is None or device.manual_mode:
+                continue
+            if now_ts < device.force_until:
+                if not device.is_on:
+                    await self._async_set_switch(hass, device, True, reason="force_mode", context=_base_ctx)
+            else:
+                device.force_until = None
+                _LOGGER.info("Device '%s': force mode expired", device.name)
+
+        # ---- Generic device inhibit: ensure off / expire ----
+        for device in self.devices:
+            if device.device_type not in _GENERIC_FORCEABLE or device.inhibit_until is None or device.manual_mode:
+                continue
+            if now_ts < device.inhibit_until:
+                if device.is_on:
+                    await self._async_set_switch(hass, device, False, reason="inhibit_mode", context=_base_ctx)
+            else:
+                device.inhibit_until = None
+                _LOGGER.info("Device '%s': inhibit mode expired", device.name)
+
         def _helios_manages(device: ManagedDevice) -> bool:
-            """False if Helios must not touch this device (manual mode, or pool locked)."""
+            """False if Helios must not touch this device (manual mode, or device locked by force/inhibit)."""
             if device.manual_mode:
                 return False
             if device.device_type == DEVICE_TYPE_POOL:
                 if device.pool_force_until is not None and now_ts < device.pool_force_until:
                     return False
                 if device.pool_inhibit_until is not None and now_ts < device.pool_inhibit_until:
+                    return False
+            elif device.device_type in {DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_EV, DEVICE_TYPE_GENERIC}:
+                if device.force_until is not None and now_ts < device.force_until:
+                    return False
+                if device.inhibit_until is not None and now_ts < device.inhibit_until:
                     return False
             return True
 
