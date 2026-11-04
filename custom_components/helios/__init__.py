@@ -21,6 +21,17 @@ _SERVICE_SCHEMA_START_APPLIANCE = vol.Schema({
     vol.Required("device_entity"): cv.entity_id,
 })
 
+SERVICE_SET_SAVINGS = "set_savings"
+_SERVICE_SCHEMA_SET_SAVINGS = vol.All(
+    vol.Schema({
+        vol.Optional("daily"):   vol.All(vol.Coerce(float), vol.Range(min=0)),
+        vol.Optional("monthly"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+        vol.Optional("total"):   vol.All(vol.Coerce(float), vol.Range(min=0)),
+        vol.Optional("config_entry_id"): cv.string,
+    }),
+    cv.has_at_least_one_key("daily", "monthly", "total"),
+)
+
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
@@ -127,6 +138,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 def _async_register_services(hass: HomeAssistant) -> None:
     """Register Helios services (idempotent — skipped if already registered)."""
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_SAVINGS):
+        async def _handle_set_savings(call: ServiceCall) -> None:
+            entry_id = call.data.get("config_entry_id")
+            for eid, coordinator in hass.data.get(DOMAIN, {}).items():
+                if entry_id and eid != entry_id:
+                    continue
+                await coordinator.async_set_savings(
+                    daily=call.data.get("daily"),
+                    monthly=call.data.get("monthly"),
+                    total=call.data.get("total"),
+                )
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_SAVINGS,
+            _handle_set_savings,
+            schema=_SERVICE_SCHEMA_SET_SAVINGS,
+        )
+
     if hass.services.has_service(DOMAIN, SERVICE_START_APPLIANCE):
         return
 

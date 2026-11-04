@@ -12,3 +12,51 @@ start_appliance:
         entity:
           domain: sensor
           integration: helios
+
+set_savings:
+  name: Corriger les économies
+  description: >
+    Corrige manuellement les compteurs d'économies (€), par exemple après une valeur de
+    puissance aberrante. Un compteur corrigé reporte son écart sur les compteurs plus larges
+    non renseignés : jour → mois → total.
+  fields:
+    daily:
+      name: Économie du jour (€)
+      description: Nouvelle valeur de l'économie journalière.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: 0.01
+          unit_of_measurement: "€"
+          mode: box
+    monthly:
+      name: Économie du mois (€)
+      description: Nouvelle valeur de l'économie mensuelle. Si absent, reçoit l'écart appliqué au jour.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: 0.01
+          unit_of_measurement: "€"
+          mode: box
+    total:
+      name: Économie totale (€)
+      description: Nouvelle valeur de l'économie cumulée. Si absent, reçoit l'écart appliqué au mois (ou au jour).
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 0.01
+          unit_of_measurement: "€"
+          mode: box
+    config_entry_id:
+      name: Instance Helios
+      description: Limite la correction à une instance (toutes par défaut).
+      required: false
+      selector:
+        config_entry:
+          integration: helios

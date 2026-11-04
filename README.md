@@ -140,6 +140,25 @@ data:
 
 Helios appelle le script de démarrage configuré et passe l'appareil en état `RUNNING`. Ce service est utilisé par le bouton **"Lancer maintenant"** dans la carte Lovelace.
 
+#### Service — correction des économies
+
+Le service `helios.set_savings` permet de corriger manuellement les compteurs d'économies, par exemple après une valeur de puissance aberrante qui a faussé le calcul.
+
+```yaml
+service: helios.set_savings
+data:
+  daily: 1.25
+```
+
+| Champ | Description |
+|-------|-------------|
+| `daily` | Nouvelle économie du jour (€) |
+| `monthly` | Nouvelle économie du mois (€) |
+| `total` | Nouvelle économie totale (€) |
+| `config_entry_id` | Optionnel — limite la correction à une instance Helios |
+
+Au moins un champ est requis. Un compteur corrigé reporte son écart sur les compteurs plus larges **non renseignés** (jour → mois → total) : dans l'exemple ci-dessus, si l'économie du jour valait 49,25 €, le mois et le total sont aussi diminués de 48 €. Les valeurs sont persistées immédiatement.
+
 #### Priorité et ordre de dispatch
 
 À chaque cycle, Helios calcule un **score effectif** pour chaque appareil non-manuel, batterie incluse.

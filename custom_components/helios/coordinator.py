@@ -376,6 +376,37 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             self._energy_export_kwh, self._energy_consumption_kwh,
         )
 
+    async def async_set_savings(
+        self,
+        daily: float | None = None,
+        monthly: float | None = None,
+        total: float | None = None,
+    ) -> None:
+        """Manually correct the savings accumulators (€).
+
+        A corrected counter propagates its delta to the wider counters that were
+        not explicitly given: daily → monthly → total.
+        """
+        delta = 0.0
+        if daily is not None:
+            delta = daily - self._savings_eur
+            self._savings_eur = daily
+        if monthly is not None:
+            delta = monthly - self._savings_month_eur
+            self._savings_month_eur = monthly
+        else:
+            self._savings_month_eur += delta
+        if total is not None:
+            self._savings_total_eur = total
+        else:
+            self._savings_total_eur += delta
+        _LOGGER.info(
+            "Helios: savings corrected — daily %.2f €, monthly %.2f €, total %.2f €",
+            self._savings_eur, self._savings_month_eur, self._savings_total_eur,
+        )
+        await self._async_save_energy()
+        self.async_set_updated_data(self._snapshot())
+
     async def _async_save_energy(self) -> None:
         """Persist current daily energy accumulators to storage."""
         await self._energy_store.async_save({
