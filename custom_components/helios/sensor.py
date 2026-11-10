@@ -143,22 +143,35 @@ class EnergyOptimizerBatterySensor(_BaseEOSensor):
     suggested_object_id = "battery"
     _unique_suffix = "battery"
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # The regulation runs on every grid reading, between coordinator cycles
+        self.async_on_remove(self.coordinator.battery_drive.add_listener(self.async_write_ha_state))
+
     @property
     def native_value(self) -> str:
-        return self.coordinator.battery_action
+        return self.coordinator.battery_drive.state
 
     @property
     def extra_state_attributes(self) -> dict:
         c = self.coordinator
         soc = c.battery_soc
         bat = c.device_manager.battery_device
+        drive = c.battery_drive
         attrs: dict = {
             "battery_enabled":    bool(c.config.get(CONF_BATTERY_ENABLED, False)),
             "battery_available":  c.battery_available,
+            "driving":            c.battery_driving,
             "soc":                soc,
             "soc_level":          _soc_level_label(soc),
             "power_w":            c.battery_power_w,
             "available_w":        c.bat_available_w,
+            # Drive regulation — setpoint computed on the last grid reading
+            # (+ = discharge, − = charge) and what was written to each battery
+            "setpoint_w":         round(drive.setpoint_w),
+            "target_w":           round(drive.target_w),
+            "last_grid_w":        round(drive.regulator.last_grid),
+            "batteries":          drive.as_dict()["batteries"],
         }
         if bat is not None:
             attrs["urgency"]         = round(bat.urgency, 3)

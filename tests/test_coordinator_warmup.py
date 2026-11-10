@@ -39,7 +39,7 @@ def _make_coordinator(enabled: bool = True, sources_ready: bool = True) -> Magic
     coord.tempo_color        = None
     coord.tempo_next_color   = None
     coord.forecast_kwh       = None
-    coord.battery_action     = "autoconsommation"
+    coord.battery_action     = "off"
 
     # Scoring & dispatch mocks
     coord.scoring_engine = MagicMock()
@@ -47,9 +47,9 @@ def _make_coordinator(enabled: bool = True, sources_ready: bool = True) -> Magic
     coord.scoring_engine.compute_components.return_value = (0.5, 0.3, 0.2)
     coord.device_manager = MagicMock()
     coord.device_manager.async_dispatch = AsyncMock()
-    coord.battery_strategy = MagicMock()
-    coord.battery_strategy.decide.return_value = "idle"
-    coord.battery_strategy.async_apply = AsyncMock()
+    coord.battery_drive = MagicMock()
+    coord.battery_drive.async_sync = AsyncMock()
+    coord.battery_drive.state = "off"
 
     # Sensor / state helpers
     _raw = {

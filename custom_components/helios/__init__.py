@@ -13,7 +13,8 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import slugify
 
-from .const import DOMAIN, PLATFORMS
+from .battery_config import migrate_v1_to_v2
+from .const import CONF_BATTERIES, DOMAIN, PLATFORMS
 from .coordinator import EnergyOptimizerCoordinator
 
 SERVICE_START_APPLIANCE = "start_appliance"
@@ -132,6 +133,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
+    # Battery regulation: listens to every grid reading, beside the coordinator cycle
+    await coordinator.battery_drive.async_start()
+
     _async_register_services(hass)
     return True
 
@@ -180,6 +184,22 @@ def _async_register_services(hass: HomeAssistant) -> None:
         _handle_start_appliance,
         schema=_SERVICE_SCHEMA_START_APPLIANCE,
     )
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate an old config entry.
+
+    v1 → v2: the single battery (flat keys) becomes a list of one battery; the
+    charge / self-consumption scripts are dropped (Drive and neutral scripts
+    replace them, to be set per battery).
+    """
+    if entry.version > 2:
+        return False  # downgrade: unknown future format
+    if entry.version == 1:
+        data, options = migrate_v1_to_v2(dict(entry.data), dict(entry.options))
+        hass.config_entries.async_update_entry(entry, data=data, options=options, version=2)
+        _LOGGER.info("Helios: config entry migrated to v2 (%d battery(ies))", len(data[CONF_BATTERIES]))
+    return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

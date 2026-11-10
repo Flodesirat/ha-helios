@@ -16,25 +16,47 @@ CONF_PEAK_PV_W               = "peak_pv_w"               # puissance crête PV (
 CONF_GRID_SUBSCRIPTION_W     = "grid_subscription_w"     # puissance souscrite au réseau (W)
 
 # ---------------------------------------------------------------------------
-# Config entry keys — battery
+# Config entry keys — battery (global)
 # ---------------------------------------------------------------------------
 CONF_BATTERY_ENABLED              = "battery_enabled"
 CONF_BATTERY_PRIORITY             = "battery_priority"
-CONF_BATTERY_SOC_ENTITY           = "battery_soc_entity"
-CONF_BATTERY_CHARGE_SCRIPT        = "battery_charge_script"
-CONF_BATTERY_AUTOCONSUM_SCRIPT    = "battery_autoconsum_script"
-CONF_BATTERY_CAPACITY_KWH         = "battery_capacity_kwh"
 CONF_BATTERY_SOC_MIN              = "battery_soc_min"
 CONF_BATTERY_SOC_MAX              = "battery_soc_max"
 CONF_BATTERY_SOC_RESERVE_ROUGE    = "battery_soc_reserve_rouge"
+CONF_BATTERY_GRID_TARGET_BLUE_W   = "battery_grid_target_blue_w"   # cible réseau de la régulation (W, + = import)
+CONF_BATTERY_GRID_TARGET_WHITE_W  = "battery_grid_target_white_w"
+CONF_BATTERY_GRID_TARGET_RED_W    = "battery_grid_target_red_w"
+
+# Battery list — one dict per battery, keys below
+CONF_BATTERIES = "batteries"
+
+# ---------------------------------------------------------------------------
+# Per-battery keys
+# ---------------------------------------------------------------------------
+CONF_BATTERY_NAME                 = "battery_name"
+CONF_BATTERY_SOC_ENTITY           = "battery_soc_entity"
+CONF_BATTERY_POWER_ENTITY         = "battery_power_entity"
+CONF_BATTERY_DRIVE_POWER_ENTITY   = "battery_drive_power_entity"   # number : consigne Drive (+ = décharge)
+CONF_BATTERY_DRIVE_SCRIPT         = "battery_drive_script"         # script : passe la batterie en Drive
+CONF_BATTERY_NEUTRAL_SCRIPT       = "battery_neutral_script"       # script : rend la batterie à son mode neutre
+CONF_BATTERY_CAPACITY_KWH         = "battery_capacity_kwh"
 CONF_BATTERY_MAX_CHARGE_POWER_W   = "battery_max_charge_power_w"
 CONF_BATTERY_MAX_DISCHARGE_POWER_W = "battery_max_discharge_power_w"
-CONF_BATTERY_POWER_ENTITY         = "battery_power_entity"
 
-# Battery actions
-BATTERY_ACTION_FORCED_CHARGE   = "forced_charge"
-BATTERY_ACTION_AUTOCONSOMMATION = "autoconsommation"
-BATTERY_ACTIONS = [BATTERY_ACTION_FORCED_CHARGE, BATTERY_ACTION_AUTOCONSOMMATION]
+# Legacy keys (config entry v1) — removed by async_migrate_entry
+CONF_BATTERY_CHARGE_SCRIPT        = "battery_charge_script"
+CONF_BATTERY_AUTOCONSUM_SCRIPT    = "battery_autoconsum_script"
+
+# Battery regulation states (sensor.helios_battery state)
+BATTERY_STATE_OFF          = "off"           # pilotage désactivé (switch, Helios coupé ou rien à piloter)
+BATTERY_STATE_STARTUP_WAIT = "startup_wait"  # passage en Drive : relevés ignorés le temps que la batterie suive
+BATTERY_STATE_REGULATING   = "regulating"    # régulation du réseau vers la cible
+BATTERY_STATE_PRECHARGE    = "precharge"     # charge maximale avant un jour rouge
+BATTERY_STATE_MODE_LOST    = "mode_lost"     # consigne perdue par l'intégration : reprise depuis 0 W
+BATTERY_STATES = [
+    BATTERY_STATE_OFF, BATTERY_STATE_STARTUP_WAIT, BATTERY_STATE_REGULATING,
+    BATTERY_STATE_PRECHARGE, BATTERY_STATE_MODE_LOST,
+]
 
 # ---------------------------------------------------------------------------
 # Config entry keys — device list
@@ -218,6 +240,18 @@ DEFAULT_BATTERY_SOC_MIN            = 10     # %
 DEFAULT_BATTERY_SOC_MAX            = 95     # %
 DEFAULT_BATTERY_SOC_RESERVE_ROUGE  = 80     # %
 DEFAULT_BATTERY_CAPACITY_KWH       = 5.0
+DEFAULT_BATTERY_GRID_TARGET_W      = 30     # W — léger import plutôt que risquer d'exporter
+DEFAULT_BATTERY_NAME               = "Batterie"
+
+# Battery regulation (Drive) — fixed, not configurable
+BATTERY_DRIVE_SETTLE_S        = 3.0     # s — une consigne compte comme appliquée 3 s après l'écriture
+BATTERY_DRIVE_STARTUP_HOLD_S  = 15.0    # s — relevés ignorés après la première consigne non nulle
+BATTERY_DRIVE_STATUS_S        = 60      # s — lecture des entités number (consigne perdue)
+BATTERY_DRIVE_SCRIPT_REFRESH_S = 3600   # s — rappel périodique du script Drive
+BATTERY_DRIVE_SCRIPT_TIMEOUT_S = 45.0   # s — un changement de mode peut prendre ~26 s
+BATTERY_DRIVE_MAX_SOC         = 100.0   # % — la régulation et la pré-charge chargent jusqu'à 100 %
+BATTERY_DRIVE_LOST_READS      = 2       # lectures discordantes de suite avant de conclure à une consigne perdue
+BATTERY_DRIVE_TOLERANCE_W     = 1.0     # W — écart toléré entre la valeur écrite et celle relue
 
 DEFAULT_HYSTERESIS_W                = 200    # W — bonus accordé aux appareils déjà allumés
 DEFAULT_HYSTERESIS_DURATION_MINUTES = 10    # min — durée avant que le bonus soit épuisé

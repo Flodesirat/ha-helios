@@ -894,8 +894,8 @@ class HeliosCard extends HTMLElement {
       if (!btn) return;
       const action = btn.dataset.action;
       if (action === "close-bat") { this._closeBatModal(); return; }
-      if (action === "toggle-bat-manual") {
-        const sw = this._batManualSwitchEntity();
+      if (action === "toggle-bat-driving") {
+        const sw = this._batDrivingSwitchEntity();
         if (sw && this._hass) {
           const isOn = this._hass.states[sw]?.state === "on";
           this._hass.callService("homeassistant", isOn ? "turn_off" : "turn_on", { entity_id: sw });
@@ -1084,9 +1084,9 @@ class HeliosCard extends HTMLElement {
     const house      = this._num(e.house_power);
     const score      = this._num(e.score);
     // Battery data — all from sensor.helios_battery attributes
-    const battAction     = this._str(e.battery) ?? "idle";
     const soc            = this._attr(e.battery, "soc") ?? this._attr(e.score, "battery_soc");
     const batPowerRaw    = this._attr(e.battery, "power_w");
+    const batSetpoint    = this._attr(e.battery, "setpoint_w");
     const batAvailable   = this._attr(e.battery, "battery_available") !== false;
     const tempo      = this._attr(e.score, "tempo_color");
     // Node values
@@ -1127,7 +1127,7 @@ class HeliosCard extends HTMLElement {
       this._svgAttr("h-bat-fill",     "width",  soc !== null ? Math.max(1, 14 * soc / 100).toFixed(1) : "0");
       this._svgAttr("h-val-bat-soc",  "fill",   batColor);
       this._svgAttr("h-node-bat",     "fill",   "#E3F2FD");
-      this._svgAttr("h-node-bat",     "stroke", battAction === "discharge" ? "#0288D1" : "#1565C0");
+      this._svgAttr("h-node-bat",     "stroke", (batPowerRaw ?? batSetpoint ?? 0) > 10 ? "#0288D1" : "#1565C0");
     }
 
     // PV → House
@@ -1165,10 +1165,11 @@ class HeliosCard extends HTMLElement {
         batPow         = Math.abs(batPowerRaw);
         batIsCharge    = batPowerRaw < -10;
         batIsDischarge = batPowerRaw > 10;
-      } else {
-        batPow         = Math.abs(pv - house - grid);
-        batIsCharge    = battAction === "charge"    && batPow > 10;
-        batIsDischarge = battAction === "discharge" && batPow > 10;
+      } else if (batSetpoint !== null && batSetpoint !== undefined) {
+        // No power sensor: the Drive setpoint (+ = discharge, − = charge)
+        batPow         = Math.abs(batSetpoint);
+        batIsCharge    = batSetpoint < -10;
+        batIsDischarge = batSetpoint > 10;
       }
     }
     if (batIsCharge) {
@@ -1389,25 +1390,43 @@ class HeliosCard extends HTMLElement {
     });
   }
 
+  // Regulation states of sensor.helios_battery (BATTERY_STATE_* in const.py)
+  _batStateLabel(state) {
+    return {
+      off:          "Non pilotée",
+      startup_wait: "Passage en Drive",
+      regulating:   "Régulation",
+      precharge:    "Pré-charge rouge",
+      mode_lost:    "Consigne perdue",
+    }[state] ?? state;
+  }
+
+  _batStateColor(state) {
+    return {
+      off:          "#9E9E9E",
+      startup_wait: "#FF9800",
+      regulating:   "#1565C0",
+      precharge:    "#C62828",
+      mode_lost:    "#F44336",
+    }[state] ?? "#9E9E9E";
+  }
+
   _renderBatteryRow(entityRefs) {
     const batEid = entityRefs?.battery;
     if (!batEid) return null;
     const enabled = this._attr(batEid, "battery_enabled");
     if (enabled === false) return null;
 
-    const action  = this._str(batEid) ?? "idle";
-    const soc     = this._attr(batEid, "soc");
-    const powerW  = this._attr(batEid, "power_w");
-    const manual  = this._hass?.states[this._batManualSwitchEntity()]?.state === "on";
+    const state    = this._str(batEid) ?? "off";
+    const soc      = this._attr(batEid, "soc");
+    const powerW   = this._attr(batEid, "power_w") ?? this._attr(batEid, "setpoint_w");
 
-    const actionLabel = { charge: "En charge", discharge: "Décharge", reserve: "Réserve", idle: "Veille" }[action] ?? action;
-    const dotColor    = manual ? "#FF9800"
-      : { charge: "#1565C0", discharge: "#0288D1", reserve: "#FF9800", idle: "#9E9E9E" }[action] ?? "#9E9E9E";
-    const statusText  = manual ? "Manuel" : actionLabel;
+    const dotColor   = this._batStateColor(state);
+    const statusText = this._batStateLabel(state);
 
     const socColor = soc === null ? "#9E9E9E" : soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336";
     const detail   = soc !== null ? `SOC : <span style="color:${socColor};font-weight:700">${Math.round(soc)} %</span>` : "";
-    const powerHtml = (action === "charge" || action === "discharge") && powerW !== null && Math.abs(powerW) > 5
+    const powerHtml = state !== "off" && powerW !== null && powerW !== undefined && Math.abs(powerW) > 5
       ? `<span class="dev-power">${this._fmt(Math.abs(powerW))}</span>` : "";
 
     return `
@@ -1901,13 +1920,13 @@ class HeliosCard extends HTMLElement {
   }
 
   // ------------------------------------------------------------------ Bat modal
-  _batManualSwitchEntity() {
+  _batDrivingSwitchEntity() {
     const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
     if (entryId) {
       const disc = this._discoverEntities(entryId);
-      if (disc?.["battery_manual"]) return disc["battery_manual"];
+      if (disc?.["battery_driving"]) return disc["battery_driving"];
     }
-    const candidate = "switch.helios_battery_manual";
+    const candidate = "switch.helios_battery_driving";
     return this._hass?.states[candidate] !== undefined ? candidate : null;
   }
 
@@ -1934,31 +1953,21 @@ class HeliosCard extends HTMLElement {
 
   _buildBatModalContent() {
     const { entityRefs: e } = this._resolveAll();
-    const battAction = this._str(e.battery) ?? "idle";
+    const state      = this._str(e.battery) ?? "off";
     const soc        = this._attr(e.battery, "soc");
     const powerW     = this._attr(e.battery, "demand_w");
+    const setpointW  = this._attr(e.battery, "setpoint_w");
+    const targetW    = this._attr(e.battery, "target_w");
+    const lastGridW  = this._attr(e.battery, "last_grid_w");
+    const batteries  = this._attr(e.battery, "batteries") ?? [];
     const availW     = this._attr(e.battery, "available_w");
     const urgency    = this._attr(e.battery, "urgency");
     const fit        = this._attr(e.battery, "fit");
     const priority   = this._attr(e.battery, "priority");
     const effScore   = this._attr(e.battery, "effective_score");
 
-    const sw     = this._batManualSwitchEntity();
-    const manual = sw ? this._hass?.states[sw]?.state === "on" : false;
-
-    const actionDotColor = {
-      charge:    "#1565C0",
-      discharge: "#0288D1",
-      reserve:   "#FF9800",
-      idle:      "#9E9E9E",
-    }[battAction] ?? "#9E9E9E";
-
-    const actionLabel = {
-      charge:    "En charge",
-      discharge: "Décharge",
-      reserve:   "Réserve",
-      idle:      "Veille",
-    }[battAction] ?? battAction;
+    const sw      = this._batDrivingSwitchEntity();
+    const driving = sw ? this._hass?.states[sw]?.state === "on" : false;
 
     // SOC bar
     const socColor = soc === null ? "#9E9E9E" : soc > 60 ? "#4CAF50" : soc > 20 ? "#FF9800" : "#F44336";
@@ -1971,14 +1980,28 @@ class HeliosCard extends HTMLElement {
 
     const controlHtml = sw ? `
       <div class="hm-section">
-        <div class="hm-section-title">Contrôle</div>
+        <div class="hm-section-title">Pilotage</div>
         <div class="hm-manual-row">
-          <span class="hm-manual-label">${manual ? "Mode manuel actif" : "Mode automatique"}</span>
-          <button class="hm-manual-btn ${manual ? "hm-manual-on" : "hm-manual-off"}" data-action="toggle-bat-manual">
-            ${manual ? "Repasser en auto" : "Forcer manuel"}
+          <span class="hm-manual-label">${driving ? "Helios pilote la batterie" : "Batterie non pilotée"}</span>
+          <button class="hm-manual-btn ${driving ? "hm-manual-off" : "hm-manual-on"}" data-action="toggle-bat-driving">
+            ${driving ? "Arrêter le pilotage" : "Piloter la batterie"}
           </button>
         </div>
       </div>` : "";
+
+    // Régulation Drive — consigne calculée (+ = décharge, − = charge) et valeur écrite par batterie
+    const fmtSigned = (w) => (w === null || w === undefined) ? "—"
+      : `${w > 0 ? "+" : ""}${Math.round(w)} W`;
+    const perBattery = batteries.length > 1 ? batteries.map((b) => `
+        <div class="hm-stat">${b.name} : ${fmtSigned(b.written_w)}</div>`).join("") : "";
+    const regulationHtml = `
+      <div class="hm-section">
+        <div class="hm-section-title">Régulation</div>
+        <div class="hm-stat">État : <span style="color:${this._batStateColor(state)};font-weight:600">${this._batStateLabel(state)}</span></div>
+        <div class="hm-stat">Consigne : ${state === "off" ? "—" : fmtSigned(setpointW)} <span style="opacity:.6">(+ décharge, − charge)</span></div>
+        <div class="hm-stat">Cible réseau : ${fmtSigned(targetW)} — dernier relevé : ${fmtSigned(lastGridW)}</div>
+        ${perBattery}
+      </div>`;
 
     // État — SOC + puissances
     const stateHtml = `
@@ -2023,11 +2046,12 @@ class HeliosCard extends HTMLElement {
       <div class="hm-header">
         <span class="hm-icon">🔋</span>
         <span class="hm-title">Batterie</span>
-        <div class="hm-hdr-dot" style="background:${actionDotColor}"></div>
-        <span class="hm-hdr-status">${actionLabel}</span>
+        <div class="hm-hdr-dot" style="background:${this._batStateColor(state)}"></div>
+        <span class="hm-hdr-status">${this._batStateLabel(state)}</span>
         <button class="hm-close" data-action="close-bat">✕</button>
       </div>
       ${controlHtml}
+      ${regulationHtml}
       ${stateHtml}
       ${scoreHtml}`;
   }

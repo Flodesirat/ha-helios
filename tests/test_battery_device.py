@@ -23,7 +23,6 @@ def _bat(
     soc_min_rouge: float = 80.0,
     charge_max_w: float = 3000.0,
     priority: int = 7,
-    manual_entity: str | None = None,
 ) -> BatteryDevice:
     cfg = {
         CONF_BATTERY_SOC_MIN:            soc_min,
@@ -32,7 +31,7 @@ def _bat(
         CONF_BATTERY_MAX_CHARGE_POWER_W: charge_max_w,
         CONF_BATTERY_PRIORITY:           priority,
     }
-    return BatteryDevice(cfg, manual_entity=manual_entity)
+    return BatteryDevice(cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -202,38 +201,27 @@ class TestEffectiveScore:
 
 
 # ---------------------------------------------------------------------------
-# Mode manuel
+# Pilotage (switch.helios_battery_driving)
 # ---------------------------------------------------------------------------
 
-class TestManualMode:
+class TestDriving:
 
-    def test_not_manual_by_default(self):
-        """is_manual=False par défaut (manual_mode=False, pas d'entité)."""
+    def test_driving_by_default(self):
+        """Pilotée par défaut → prise en compte par le dispatch."""
         bat = _bat()
-        reader = lambda entity: None
-        assert bat.is_manual(reader) is False
+        assert bat.driving is True
+        assert bat.is_manual(lambda entity: None) is False
 
-    def test_manual_mode_flag(self):
-        """manual_mode=True → is_manual=True quel que soit le reader."""
+    def test_not_driving_is_manual(self):
+        """Pilotage désactivé → is_manual=True : exclue du dispatch."""
+        bat = _bat()
+        bat.driving = False
+        assert bat.is_manual(lambda entity: None) is True
+
+    def test_manual_mode_alias(self):
+        """manual_mode reste l'inverse de driving (utilisé par la simulation)."""
         bat = _bat()
         bat.manual_mode = True
-        reader = lambda entity: None
-        assert bat.is_manual(reader) is True
-
-    def test_manual_entity_on(self):
-        """Switch manuel à 'on' → is_manual=True."""
-        bat = _bat(manual_entity="switch.bat_manual")
-        reader = lambda entity: "on"
-        assert bat.is_manual(reader) is True
-
-    def test_manual_entity_off(self):
-        """Switch manuel à 'off' → is_manual=False."""
-        bat = _bat(manual_entity="switch.bat_manual")
-        reader = lambda entity: "off"
-        assert bat.is_manual(reader) is False
-
-    def test_manual_entity_unavailable(self):
-        """Switch manuel indisponible → is_manual=False (fail-safe)."""
-        bat = _bat(manual_entity="switch.bat_manual")
-        reader = lambda entity: "unavailable"
-        assert bat.is_manual(reader) is False
+        assert bat.driving is False
+        bat.manual_mode = False
+        assert bat.driving is True

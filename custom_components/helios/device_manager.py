@@ -244,12 +244,14 @@ class DeviceManager:
                         device.name, device.switch_entity,
                     )
 
-        # Restore battery manual_mode
+        # Restore the battery driving switch (stores before 1.1 kept manual_mode)
         if self.battery_device is not None:
             bat_stored = data.get("__battery__", {})
-            if bat_stored.get("manual_mode", False):
-                self.battery_device.manual_mode = True
-                _LOGGER.debug("BatteryDevice: restored manual_mode=True")
+            if "driving" in bat_stored:
+                self.battery_device.driving = bool(bat_stored["driving"])
+            elif bat_stored.get("manual_mode", False):
+                self.battery_device.driving = False
+            _LOGGER.debug("BatteryDevice: restored driving=%s", self.battery_device.driving)
 
         # Register immediate listeners on appliance ready entities.
         # This allows the prepare script to be triggered as soon as the user
@@ -353,7 +355,7 @@ class DeviceManager:
                 })
             data[device.name] = entry
         if self.battery_device is not None:
-            data["__battery__"] = {"manual_mode": self.battery_device.manual_mode}
+            data["__battery__"] = {"driving": self.battery_device.driving}
         await self._store.async_save(data)
 
     async def async_persist_device_state(self) -> None:

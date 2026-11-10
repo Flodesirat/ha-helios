@@ -224,3 +224,20 @@ def test_no_battery_power_sensor_unchanged():
                               battery_power_w=None)
     expected = _pivot_capacity(soc=85.0, soc_floor=10.0, max_discharge_w=3000.0)
     assert coord._compute_bat_available_w() == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------------------
+# Battery driving switch — not driven → nothing available for the devices
+# ---------------------------------------------------------------------------
+
+def test_not_driving_returns_zero():
+    """switch.helios_battery_driving OFF → bat_available_w = 0."""
+    coord = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE)
+    coord.battery_driving = False
+    assert coord._compute_bat_available_w() == 0.0
+
+
+def test_driving_returns_capacity():
+    coord = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE)
+    coord.battery_driving = True
+    assert coord._compute_bat_available_w() > 0.0

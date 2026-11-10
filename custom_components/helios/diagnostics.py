@@ -18,8 +18,8 @@ from .const import (
     CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
     # Battery
     CONF_BATTERY_ENABLED,
-    CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_POWER_ENTITY,
-    CONF_BATTERY_CHARGE_SCRIPT, CONF_BATTERY_AUTOCONSUM_SCRIPT,
+    CONF_BATTERY_GRID_TARGET_BLUE_W, CONF_BATTERY_GRID_TARGET_WHITE_W, CONF_BATTERY_GRID_TARGET_RED_W,
+    DEFAULT_BATTERY_GRID_TARGET_W,
     CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN,
     CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX,
@@ -33,6 +33,7 @@ from .const import (
     CONF_BASE_LOAD_NOISE, DEFAULT_BASE_LOAD_NOISE,
     CONF_RISK_LAMBDA, DEFAULT_RISK_LAMBDA,
 )
+from .battery_config import get_batteries
 from .coordinator import EnergyOptimizerCoordinator
 from .managed_device import ManagedDevice
 
@@ -139,6 +140,8 @@ async def async_get_config_entry_diagnostics(
         "battery_soc":        coordinator.battery_soc,
         "battery_power_w":    coordinator.battery_power_w,
         "battery_action":     coordinator.battery_action,
+        "battery_driving":    coordinator.battery_driving,
+        "battery_drive":      coordinator.battery_drive.as_dict(),
         "tempo_color":        coordinator.tempo_color,
         "tempo_next_color":   coordinator.tempo_next_color,
         "forecast_kwh":       coordinator.forecast_kwh,
@@ -188,10 +191,11 @@ async def async_get_config_entry_diagnostics(
         },
         "battery": {
             "enabled":             cfg.get(CONF_BATTERY_ENABLED, False),
-            "soc_entity":          cfg.get(CONF_BATTERY_SOC_ENTITY),
-            "power_entity":        cfg.get(CONF_BATTERY_POWER_ENTITY),
-            "charge_script":       cfg.get(CONF_BATTERY_CHARGE_SCRIPT),
-            "autoconsum_script":   cfg.get(CONF_BATTERY_AUTOCONSUM_SCRIPT),
+            "batteries":           get_batteries(cfg),
+            "grid_target_blue_w":  cfg.get(CONF_BATTERY_GRID_TARGET_BLUE_W, DEFAULT_BATTERY_GRID_TARGET_W),
+            "grid_target_white_w": cfg.get(CONF_BATTERY_GRID_TARGET_WHITE_W, DEFAULT_BATTERY_GRID_TARGET_W),
+            "grid_target_red_w":   cfg.get(CONF_BATTERY_GRID_TARGET_RED_W, DEFAULT_BATTERY_GRID_TARGET_W),
+            # Totals over all batteries
             "capacity_kwh":        cfg.get(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH),
             "soc_min":             cfg.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN),
             "soc_max":             cfg.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX),

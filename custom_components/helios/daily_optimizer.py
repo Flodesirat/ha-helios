@@ -13,10 +13,11 @@ from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant
 
+from .battery_config import read_battery_soc, with_battery_totals
 from .const import (
     CONF_DEVICES,
     CONF_EMA_ENABLED, DEFAULT_EMA_ENABLED,
-    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY,
+    CONF_BATTERY_ENABLED,
     CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
@@ -264,7 +265,8 @@ async def async_run_daily_forecast(
     """
     _LOGGER.info("Helios daily forecast: starting morning simulation")
 
-    cfg = {**coordinator.entry.data, **coordinator.entry.options}
+    # Battery list → capacity/power totals in the flat keys read below
+    cfg = with_battery_totals({**coordinator.entry.data, **coordinator.entry.options})
     peak_pv_w = float(cfg.get(CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W))
 
     # ---- Season from today's date ----
@@ -315,13 +317,11 @@ async def async_run_daily_forecast(
     # ---- Battery parameters ----
     battery_enabled = cfg.get(CONF_BATTERY_ENABLED, False)
     bat_soc_start = 50.0
-    if battery_enabled and cfg.get(CONF_BATTERY_SOC_ENTITY):
-        state = hass.states.get(cfg[CONF_BATTERY_SOC_ENTITY])
-        if state and state.state not in ("unavailable", "unknown"):
-            try:
-                bat_soc_start = float(state.state)
-            except ValueError:
-                pass
+    if battery_enabled:
+        # SOC of all batteries, weighted by capacity (None when none is known)
+        soc = read_battery_soc(hass, cfg)
+        if soc is not None:
+            bat_soc_start = soc
 
     bat_capacity_kwh    = float(cfg.get(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH))
     bat_max_charge_w    = float(cfg.get(CONF_BATTERY_MAX_CHARGE_POWER_W, 2000.0))

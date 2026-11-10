@@ -1,0 +1,86 @@
+# Historique — batterie
+
+## Régulation en mode Drive, multi-batteries, pré-charge avant jour rouge (#2, 2026-11-10)
+
+### Contexte
+
+Jusqu'à 1.0, Helios basculait entre deux scripts utilisateur (`forced_charge` /
+`autoconsommation`) et laissait le BMS gérer la puissance. Le script
+`tools/ha_drive.py` du projet marstek-smartmeter régulait déjà une Venus A en
+mode Drive via ha-marstek-local-api. Ce lot intègre cette régulation dans
+Helios, pour une ou plusieurs batteries, sans dépendre de la marque.
+
+### Décisions
+
+- **Boucle séparée** du cycle du coordinator (minute) : déclenchée à chaque
+  relevé du capteur réseau. Écoute de `state_changed` **et** `state_reported`,
+  car un relevé de même valeur ne change que `last_reported`.
+- **`PassiveRegulator` repris tel quel** (`battery_regulator.py`) :
+  correction immédiate et complète, base = consigne appliquée au moment du
+  relevé. **Settle fixé à 3 s.**
+- **Pas de modèle `_Sent`** : le seuil de 30 W et le rafraîchissement de 60 s
+  restent dans l'intégration de la batterie ; Helios compte la valeur écrite
+  comme appliquée. Validé par le rejeu du 16/10 (voir Tests).
+- **Changement de mode par scripts** (Drive / neutre, par batterie) : Helios
+  n'écrit que l'entité `number` de consigne → compatible d'autres batteries.
+  Script Drive rappelé toutes les heures, suivi d'une réécriture de la consigne.
+- **Consigne perdue** : relecture des `number` toutes les 60 s, deux lectures
+  discordantes de suite → reprise depuis 0 W et nouvelle attente de 15 s.
+- **Cibles réseau par couleur Tempo du jour** (30 W par défaut).
+- **Pas de décharge en heures creuses** (première version).
+- **SOC** : décharge interdite à `battery_soc_min` ; charge jusqu'à 100 %. Le
+  SOC de réserve jour rouge reste réservé au dispatch des appareils.
+- **Pré-charge** : `tempo_next_color == red` et heures creuses → charge à
+  pleine puissance jusqu'à 100 %, plafonnée pour que l'import ne dépasse pas
+  `grid_subscription_w`. On reste en Drive.
+- **Plusieurs batteries** : consigne / N, chaque part bornée ; la part qu'une
+  batterie ne peut pas prendre est redistribuée aux autres. *Écart avec le
+  ticket* : une division simple par N ne converge pas (une batterie vide fige
+  la base à la part de l'autre) — d'où la redistribution, identique à / N
+  quand toutes les batteries suivent.
+- **`switch.helios_battery_driving`** remplace `battery_manual` : persisté
+  (`__battery__.driving`), un ancien `manual_mode = True` devient OFF. OFF ou
+  Helios coupé → script neutre, `bat_available_w = 0`, batterie hors dispatch.
+- **Migration** config entry v1 → v2 : la batterie à plat devient une liste
+  d'une batterie ; `battery_charge_script` / `battery_autoconsum_script`
+  supprimés. `coordinator.config` expose les totaux (capacité, puissances) dans
+  les clés à plat pour le dispatch, le scoring et l'optimiseur ; le SOC global
+  est pondéré par les capacités.
+
+### Paramètres et entités ajoutés
+
+- Communs : `battery_grid_target_blue_w`, `battery_grid_target_white_w`,
+  `battery_grid_target_red_w`.
+- Par batterie (`batteries`) : `battery_name`, `battery_soc_entity`,
+  `battery_power_entity`, `battery_drive_power_entity`, `battery_drive_script`,
+  `battery_neutral_script`, `battery_capacity_kwh`,
+  `battery_max_charge_power_w`, `battery_max_discharge_power_w`.
+- `switch.helios_battery_driving` ; `sensor.helios_battery` : état = état de la
+  régulation, attributs `setpoint_w`, `target_w`, `last_grid_w`, `batteries`.
+- Carte : modale batterie avec bouton de pilotage et section Régulation.
+
+### Tests ajoutés
+
+- `test_battery_regulator.py` : formule, settle, bornes, répartition et
+  convergence avec une batterie vide, pré-charge plafonnée.
+- `test_battery_config.py` : liste, totaux, SOC pondéré, migration v1 → v2.
+- `test_battery_drive.py` : activation / désactivation, relevé de même valeur,
+  attente de 15 s, cibles Tempo, deux batteries, pas de décharge en HC,
+  pré-charge, consigne perdue (une lecture ne suffit pas, deux oui), rappel
+  horaire.
+- `test_battery_setup.py` : de bout en bout dans HA (migration au chargement,
+  cycle Drive, Helios coupé, retrait de l'ancien switch).
+- `test_battery_driving_persistence.py`, `test_config_flow_battery.py`.
+- `test_battery_replay.py` : rejeu du 16/10 à travers le contrôleur, batterie
+  simulée appliquant la règle de l'intégration (30 W / 60 s). Résultat :
+  **539 Wh d'import, 120 Wh d'export**, contre 540 / 119 pour la référence qui
+  connaît exactement ce qui est envoyé. Seuil : import ≤ référence + 5 %,
+  export ≤ référence + 10 %. Un régulateur dégradé (gain 0,5) donne
+  638 / 222 Wh et fait échouer le test.
+
+### Remarques
+
+- Le formulaire Stratégie utilise `step=0.0001` pour les prix, refusé par HA
+  2025.1 (minimum 0,001) : défaut antérieur, non traité ici.
+- `async_unload` n'annule pas la relance de démarrage du coordinator
+  (`_startup_check_unsub`) : défaut antérieur, non traité ici.

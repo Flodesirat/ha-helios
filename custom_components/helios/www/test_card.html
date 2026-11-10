@@ -165,7 +165,7 @@ const MOCK_ENTITIES = {
   "sensor.helios_washing_machine":       mockEntity("device_state_washing_machine"),
   "sensor.helios_ev":                    mockEntity("device_state_ev"),
   // Switches manuels — suffix "device_{slug}_manual" (C7)
-  "switch.helios_battery_manual":              mockEntity("battery_manual"),
+  "switch.helios_battery_driving":              mockEntity("battery_driving"),
   "switch.helios_pool_manual":                 mockEntity("device_pool_manual"),
   "switch.helios_water_heater_manual":         mockEntity("device_water_heater_manual"),
   "switch.helios_dishwasher_manual":           mockEntity("device_dishwasher_manual"),
@@ -274,7 +274,7 @@ const hassDay = makeHass({
     f_tempo:   0.70, w_tempo:   0.3,
     f_solar:   0.42, w_solar:   0.2,
   }),
-  "sensor.helios_battery": state("charge", {
+  "sensor.helios_battery": state("regulating", { setpoint_w: -850, target_w: 30, last_grid_w: 42, batteries: [{ name: "Batterie", entity: "number.venus_drive", written_w: -850 }],
     battery_enabled: true, soc: 58, power_w: 650, available_w: 1200,
     urgency: 0.35, effective_score: 0.61, fit: 0.75, priority: 8,
   }),
@@ -333,7 +333,7 @@ const hassDay = makeHass({
     daily_on_minutes: 90, allowed_start: "00:00", allowed_end: "24:00",
   }),
 
-  "switch.helios_battery_manual":        state("off"),
+  "switch.helios_battery_driving":        state("on"),
   "switch.helios_pool_manual":           state("off"),
   "switch.helios_water_heater_manual":   state("off"),
   "switch.helios_dishwasher_manual":     state("off"),
@@ -357,7 +357,7 @@ const hassManual = makeHass({
     f_tempo:   0.50, w_tempo:   0.3,
     f_solar:   0.55, w_solar:   0.2,
   }),
-  "sensor.helios_battery": state("idle", {
+  "sensor.helios_battery": state("off", { setpoint_w: 0, target_w: 30, last_grid_w: 0, batteries: [],
     battery_enabled: true, soc: 72, power_w: 0, available_w: 800,
     urgency: 0.12, effective_score: 0.22, fit: 0.45, priority: 6,
   }),
@@ -400,7 +400,7 @@ const hassManual = makeHass({
     daily_on_minutes: 0, allowed_start: "09:00", allowed_end: "12:00",
   }),
 
-  "switch.helios_battery_manual":              state("off"),
+  "switch.helios_battery_driving":              state("on"),
   "switch.helios_pool_manual":                 state("off"),
   "switch.helios_water_heater_manual":         state("on"),  // manuel actif
   "switch.helios_ev_manual":                   state("off"),
@@ -471,7 +471,7 @@ const hassCompact = makeHass({
     f_tempo:   0.10, w_tempo:  0.3,
     f_solar:   0.8,  w_solar:  0.2,
   }),
-  "sensor.helios_battery": state("reserve", {
+  "sensor.helios_battery": state("precharge", { setpoint_w: -2600, target_w: 30, last_grid_w: 2950, batteries: [{ name: "Venus A", entity: "number.a_drive", written_w: -1300 }, { name: "Venus B", entity: "number.b_drive", written_w: -1300 }],
     battery_enabled: true, soc: 18, power_w: 0, available_w: 0,
     urgency: 0.82, effective_score: 0.11, fit: 0.15, priority: 8,
   }),
@@ -497,7 +497,7 @@ const hassCompact = makeHass({
   "sensor.helios_energy_export":      state(4.1),
   "sensor.helios_energy_consumption": state(5.6),
 
-  "switch.helios_battery_manual": state("off"),
+  "switch.helios_battery_driving": state("on"),
   "switch.helios_pool_manual":    state("off"),
   "switch.helios_ev_manual":      state("off"),
 });
@@ -517,7 +517,7 @@ const hasBatUnavailable = makeHass({
     f_solar:   0.38, w_solar:   0.2,
   }),
   // battery_available: false → entité SOC est "unknown" côté HA
-  "sensor.helios_battery": state("autoconsommation", {
+  "sensor.helios_battery": state("regulating", { setpoint_w: 620, target_w: 30, last_grid_w: 28, batteries: [{ name: "Batterie", entity: "number.venus_drive", written_w: 620 }],
     battery_enabled: true, battery_available: false,
     soc: null, power_w: null, available_w: 0,
     urgency: 0, effective_score: 0, fit: 0, priority: 7, demand_w: 0,
@@ -546,7 +546,7 @@ const hasBatUnavailable = makeHass({
     daily_on_minutes: 45, allowed_start: "06:00", allowed_end: "22:00",
   }),
 
-  "switch.helios_battery_manual":      state("off"),
+  "switch.helios_battery_driving":      state("on"),
   "switch.helios_pool_manual":          state("off"),
   "switch.helios_water_heater_manual":  state("off"),
   "switch.helios_pool_force":           state("off"),

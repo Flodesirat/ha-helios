@@ -20,10 +20,9 @@ from .const import (
     CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL,
     CONF_PV_POWER_ENTITY, CONF_GRID_POWER_ENTITY, CONF_HOUSE_POWER_ENTITY,
     CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY, CONF_FORECAST_ENTITY,
-    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_POWER_ENTITY,
+    CONF_BATTERY_ENABLED,
     CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
     CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX,
-    CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     CONF_DEVICES, CONF_ENABLED, DEFAULT_ENABLED,
     CONF_GRID_ALLOWANCE_W, DEFAULT_GRID_ALLOWANCE_W,
@@ -31,7 +30,7 @@ from .const import (
     CONF_HYSTERESIS_DURATION_MINUTES, DEFAULT_HYSTERESIS_DURATION_MINUTES,
     CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA,
     CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS,
-    BATTERY_ACTION_AUTOCONSOMMATION,
+    BATTERY_STATE_OFF,
     normalize_tempo_color,
     CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN,
     TEMPO_BLUE, TEMPO_WHITE, TEMPO_RED,
@@ -45,7 +44,8 @@ from .const import (
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END, CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
 )
 from .scoring_engine import ScoringEngine
-from .battery_strategy import BatteryStrategy
+from .battery_config import read_battery_power, read_battery_soc, with_battery_totals
+from .battery_drive import BatteryDriveController
 from .consumption_learner import ConsumptionLearner
 from .device_manager import DeviceManager
 from .managed_device import ManagedDevice
@@ -77,8 +77,11 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         The initial config flow writes to entry.data; the options flow writes to
         entry.options.  Always reading the merged dict ensures reconfigured values
         are picked up without requiring a full reinstall.
+
+        With a battery list, the flat capacity/power keys hold the totals over
+        all batteries (see battery_config.with_battery_totals).
         """
-        return {**self.entry.data, **self.entry.options}
+        return with_battery_totals({**self.entry.data, **self.entry.options})
 
     @property
     def _cfg(self) -> dict:
@@ -95,10 +98,10 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(minutes=interval),
         )
         self.scoring_engine    = ScoringEngine(cfg)
-        self.battery_strategy  = BatteryStrategy(cfg)
         devices = cfg.get(CONF_DEVICES, [])
         self.device_manager    = DeviceManager(hass, devices, cfg)
         self.device_manager._coordinator = self
+        self.battery_drive     = BatteryDriveController(hass, self)
         ema_alpha = float(cfg.get(CONF_EMA_ALPHA, DEFAULT_EMA_ALPHA))
         self.consumption_learner = ConsumptionLearner(hass, entry.entry_id, alpha=ema_alpha)
         self._optimizer_store  = Store(hass, STORAGE_VERSION, STORAGE_KEY_OPTIMIZER)
@@ -125,7 +128,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self.f_surplus:       float       = 0.0
         self.f_tempo:         float       = 0.0
         self.f_solar:         float       = 0.0
-        self.battery_action:  str         = BATTERY_ACTION_AUTOCONSOMMATION
+        self.battery_action:  str         = BATTERY_STATE_OFF  # regulation state of battery_drive
         self.forecast_kwh:       float | None = None
         self.enabled:            bool        = bool(cfg.get(CONF_ENABLED, DEFAULT_ENABLED))
         self.optimizer_last_run: str | None  = None   # ISO timestamp set by daily_optimizer
@@ -219,9 +222,10 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._buf_pv.append(pv_w)
         self._buf_house.append(house_w)
         self._buf_grid.append(grid_w)
-        if cfg.get(CONF_BATTERY_ENABLED):
-            if _float_or_none(self.hass, cfg.get(CONF_BATTERY_SOC_ENTITY)) is not None:
-                self._buf_battery.append(_float(cfg.get(CONF_BATTERY_POWER_ENTITY)))
+        if cfg.get(CONF_BATTERY_ENABLED) and read_battery_soc(self.hass, cfg) is not None:
+            # Only when a SOC is known: an offline battery must not pollute
+            # the buffer with a 0 W reading.
+            self._buf_battery.append(read_battery_power(self.hass, cfg))
 
         reader = ManagedDevice._make_ha_reader(self.hass)
         for device in self.device_manager.devices:
@@ -252,6 +256,16 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     # ------------------------------------------------------------------
     # Electricity price helpers
     # ------------------------------------------------------------------
+    def is_off_peak_now(self) -> bool:
+        """Public alias, used by the battery Drive controller."""
+        return self._is_off_peak_now()
+
+    @property
+    def battery_driving(self) -> bool:
+        """switch.helios_battery_driving — Helios drives the batteries."""
+        bat = self.device_manager.battery_device
+        return bat.driving if bat is not None else False
+
     def _is_off_peak_now(self) -> bool:
         """Return True if the current time falls in any configured off-peak slot."""
         from datetime import time as dtime
@@ -323,6 +337,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         if self._unsub_energy_reset:
             self._unsub_energy_reset()
             self._unsub_energy_reset = None
+        self.battery_drive.async_stop()
         self.device_manager.async_unload()
 
     # ------------------------------------------------------------------
@@ -430,6 +445,10 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             raw = await self._read_sensors()
             self._update_state(raw)
 
+            # Enter or leave Drive (Helios switched off → regulation off too)
+            await self.battery_drive.async_sync()
+            self.battery_action = self.battery_drive.state
+
             if not self.enabled:
                 return self._snapshot()
 
@@ -449,11 +468,6 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             self.virtual_surplus_w = score_input.get("surplus_w", 0.0)
             self.f_surplus, self.f_tempo, self.f_solar = self.scoring_engine.compute_components(score_input)
             self.global_score = self.scoring_engine.compute(score_input)
-
-            if self._cfg.get(CONF_BATTERY_ENABLED):
-                self.battery_action = self.battery_strategy.decide(score_input)
-                if self.battery_available:
-                    await self.battery_strategy.async_apply(self.hass, self.battery_action)
 
             if self.enabled:
                 dispatch_input = {
@@ -534,7 +548,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
 
         cfg = self._cfg
         battery_enabled = cfg.get(CONF_BATTERY_ENABLED, False)
-        battery_soc = _float_or_none(self.hass, cfg.get(CONF_BATTERY_SOC_ENTITY)) if battery_enabled else None
+        battery_soc = read_battery_soc(self.hass, cfg) if battery_enabled else None
 
         return {
             "pv_power_w":        _mean(self._buf_pv,    cfg.get(CONF_PV_POWER_ENTITY)),
@@ -542,7 +556,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
             "house_power_w":     _mean(self._buf_house,  cfg.get(CONF_HOUSE_POWER_ENTITY)),
             "battery_soc":       battery_soc,
             "battery_available": battery_soc is not None if battery_enabled else False,
-            "battery_power_w":   _mean(self._buf_battery, cfg.get(CONF_BATTERY_POWER_ENTITY)) if (battery_enabled and battery_soc is not None) else None,
+            "battery_power_w":   self._buf_mean(self._buf_battery, fallback=read_battery_power(self.hass, cfg)) if (battery_enabled and battery_soc is not None) else None,
             "tempo_color":      normalize_tempo_color(_str(cfg.get(CONF_TEMPO_COLOR_ENTITY))),
             "tempo_next_color": normalize_tempo_color(_str(cfg.get(CONF_TEMPO_NEXT_COLOR_ENTITY))),
             "forecast_kwh": _float(entity) if (entity := cfg.get(CONF_FORECAST_ENTITY)) else None,
@@ -589,6 +603,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         cfg = self._cfg
         if not cfg.get(CONF_BATTERY_ENABLED):
             return 0.0
+        if not self.battery_driving:
+            return 0.0  # not driven: Helios cannot count on the battery
         soc = self.battery_soc
         if soc is None:
             return 0.0

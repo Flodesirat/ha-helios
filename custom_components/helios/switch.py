@@ -6,6 +6,7 @@ import time
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -64,7 +65,11 @@ async def async_setup_entry(
     coordinator: EnergyOptimizerCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [EnergyOptimizerModeSwitch(coordinator, entry)]
     if coordinator.config.get(CONF_BATTERY_ENABLED) and coordinator.device_manager.battery_device is not None:
-        entities.append(BatteryManualSwitch(coordinator, entry))
+        entities.append(BatteryDrivingSwitch(coordinator, entry))
+    # switch.helios_battery_manual (before 1.1) is replaced by battery_driving
+    registry = er.async_get(hass)
+    if old_id := registry.async_get_entity_id("switch", DOMAIN, f"{entry.entry_id}_battery_manual"):
+        registry.async_remove(old_id)
     entities += [
         PoolForceSwitch(coordinator, entry, device)
         for device in coordinator.device_manager.devices
@@ -110,10 +115,12 @@ class EnergyOptimizerModeSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs) -> None:
         self.coordinator.enabled = True
         self.async_write_ha_state()
+        await self.coordinator.battery_drive.async_sync()
 
     async def async_turn_off(self, **kwargs) -> None:
         self.coordinator.enabled = False
         self.async_write_ha_state()
+        await self.coordinator.battery_drive.async_sync()
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -293,40 +300,42 @@ class EVPluggedSwitch(_BaseDeviceSwitch):
         self.async_write_ha_state()
 
 
-class BatteryManualSwitch(CoordinatorEntity, SwitchEntity):
-    """Manual mode switch for the home battery.
+class BatteryDrivingSwitch(CoordinatorEntity, SwitchEntity):
+    """Helios drives the batteries (Drive mode regulation).
 
-    When ON, Helios excludes the battery from the dispatch loop entirely
-    (BMS manages charge/discharge autonomously without Helios interference).
+    ON  → the Drive scripts are called and the setpoints follow the grid.
+    OFF → the neutral scripts are called; the battery is left out of the
+          dispatch (no charge demand, nothing available for the devices).
+    The state is persisted and restored on restart.
     """
 
     _attr_has_entity_name = True
-    _attr_translation_key = "eo_battery_manual"
-    suggested_object_id = "battery_manual"
+    _attr_translation_key = "eo_battery_driving"
+    suggested_object_id = "battery_driving"
 
     def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
         self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_battery_manual"
+        self._attr_unique_id = f"{entry.entry_id}_battery_driving"
 
     @property
     def is_on(self) -> bool:
+        return self.coordinator.battery_driving
+
+    async def _async_set(self, driving: bool) -> None:
         bat = self.coordinator.device_manager.battery_device
-        return bat.manual_mode if bat is not None else False
+        if bat is None:
+            return
+        bat.driving = driving
+        await self.coordinator.device_manager.async_persist_device_state()
+        self.async_write_ha_state()
+        await self.coordinator.battery_drive.async_sync()
 
     async def async_turn_on(self, **kwargs) -> None:
-        bat = self.coordinator.device_manager.battery_device
-        if bat is not None:
-            bat.manual_mode = True
-            await self.coordinator.device_manager.async_persist_device_state()
-        self.async_write_ha_state()
+        await self._async_set(True)
 
     async def async_turn_off(self, **kwargs) -> None:
-        bat = self.coordinator.device_manager.battery_device
-        if bat is not None:
-            bat.manual_mode = False
-            await self.coordinator.device_manager.async_persist_device_state()
-        self.async_write_ha_state()
+        await self._async_set(False)
 
     @property
     def device_info(self) -> DeviceInfo:

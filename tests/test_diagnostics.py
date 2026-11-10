@@ -99,6 +99,11 @@ def _make_coordinator(
     coordinator.battery_soc       = battery_soc
     coordinator.battery_power_w   = None
     coordinator.battery_action    = "idle"
+    coordinator.battery_driving   = True
+    coordinator.battery_drive.as_dict.return_value = {
+        "regulation_state": "regulating", "setpoint_w": 420, "target_w": 30,
+        "last_grid_w": 55, "batteries": [{"name": "Batterie", "entity": "number.drive", "written_w": 420}],
+    }
     coordinator.tempo_color       = "blue"
     coordinator.tempo_next_color  = None
     coordinator.forecast_kwh      = 8.5

@@ -34,10 +34,13 @@ score = w_surplus × f_surplus + w_tempo × f_tempo + w_soc × f_soc + w_forecas
 Chaque `f_*` ∈ [0..1] (1.0 = consommer maintenant). Fonctions trapézoïdales fuzzy.
 Poids par défaut : surplus=0.4, tempo=0.3, soc=0.2, forecast=0.1.
 
-### Battery strategy
-`decide() → "forced_charge" | "autoconsommation"` — appelle un script utilisateur au changement d'état.
-`forced_charge` : `tempo_next_color == red` et heures creuses. Sinon `autoconsommation`.
-(Évolution prévue : régulation en mode Drive, multi-batteries — voir ticket dédié.)
+### Batteries — régulation Drive
+- Config : liste `CONF_BATTERIES` (entry v2) ; lire via `battery_config.get_batteries()` (accepte aussi l'ancien format à plat). `coordinator.config` expose les totaux (capacité, puissances) dans les clés à plat.
+- `battery_regulator.py` : logique pure (`PassiveRegulator`, répartition) — sans HA, rejouable hors ligne.
+- `battery_drive.py` : `BatteryDriveController`, boucle **séparée** du cycle coordinator, déclenchée à chaque relevé réseau (`state_changed` + `state_reported`). États : `off | startup_wait | regulating | precharge | mode_lost`.
+- Changement de mode uniquement via les scripts utilisateur (Drive / neutre), jamais d'appel direct à la batterie.
+- `switch.helios_battery_driving` (persisté) : OFF ou Helios coupé → script neutre, `bat_available_w = 0`, batterie hors dispatch.
+- Test de non-régression : `tests/test_battery_replay.py` rejoue le 16/10 (référence 540 Wh import / 119 Wh export).
 
 ### Device dispatch
 Algorithme greedy : filtre éligibles → score effectif = `global_score × (priority/10) × urgency_modifier` → tri décroissant → affecte surplus_w.

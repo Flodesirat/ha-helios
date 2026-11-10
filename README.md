@@ -28,32 +28,74 @@ Copier le dossier `custom_components/helios/` dans le répertoire `custom_compon
 
 ### Configuration — étape Batterie
 
+L'étape se fait en deux temps : les réglages communs, puis un formulaire par batterie (case « Ajouter une autre batterie » pour en déclarer plusieurs). Dans les options, la section **Batterie** ouvre les réglages communs puis la liste des batteries (ajouter, modifier, supprimer).
+
+**Réglages communs**
+
 | Paramètre | Description |
 |-----------|-------------|
 | Batterie activée | Active tout le module batterie |
-| Entité SOC | Sensor état de charge (%) |
-| Capacité (kWh) | Capacité utile de la batterie |
-| SOC min | Plancher de charge journalier (%). En dessous de ce seuil, la batterie est prioritaire sur tous les appareils (urgence = 1.0) et `bat_available_w` = 0 (la batterie ne cède rien aux autres). |
-| SOC min jour rouge | Plancher de charge les jours Tempo rouge (%). Remplace `SOC min` en jour rouge — même logique, plancher plus élevé pour protéger la réserve. |
-| SOC max | Plafond de charge (%). La demande de charge de la batterie descend linéairement de `charge_max_w` à 0 entre `SOC min` et `SOC max`. Au-delà, la batterie ne demande plus de budget. |
-| Puissance max charge | Puissance maximale de charge de l'onduleur (W) — demande maximale de la batterie quand SOC = SOC min. |
-| Puissance max décharge | Puissance maximale de décharge de l'onduleur (W) — plafond de `bat_available_w`. |
+| SOC min | Plancher de charge journalier (%). En dessous de ce seuil, la batterie est prioritaire sur tous les appareils (urgence = 1.0) et `bat_available_w` = 0 (la batterie ne cède rien aux autres). La régulation ne décharge pas non plus en dessous. |
+| SOC min jour rouge | Plancher de charge les jours Tempo rouge (%), pour le pilotage des appareils. Remplace `SOC min` en jour rouge — même logique, plancher plus élevé pour protéger la réserve. **Ne limite pas la régulation.** |
+| SOC max | Plafond de charge (%) pour le pilotage des appareils. La demande de charge de la batterie descend linéairement de `charge_max_w` à 0 entre `SOC min` et `SOC max`. Au-delà, la batterie ne demande plus de budget. La régulation, elle, charge jusqu'à 100 %. |
 | Priorité batterie (1–10) | Importance de la batterie dans l'allocation greedy, sur la même échelle que les appareils. Défaut : 7. Une priorité haute garantit que la batterie est chargée avant les appareils moins importants ; une priorité basse lui permet de passer après eux quand le surplus est limité. Son urgence (dérivée du déficit SOC) peut amplifier ou atténuer l'effet de la priorité. |
-| Script charge forcée | Script HA appelé **une seule fois** quand Helios décide de charger la batterie depuis le réseau (la nuit précédant un jour Tempo rouge, pendant les heures creuses). Le script doit mettre l'onduleur en mode "charge forcée réseau" — Helios ne contrôle pas la puissance ni la durée, c'est le BMS/onduleur qui gère. |
-| Script autoconsommation | Script HA appelé **une seule fois** quand Helios revient en mode normal (fin des HC, jour non rouge, etc.). Le script doit remettre l'onduleur en mode "autoconsommation" — la batterie absorbe le surplus PV et décharge sur déficit maison selon sa propre logique. |
+| Cible réseau jour bleu / blanc / rouge | Puissance réseau visée par la régulation selon la couleur Tempo du jour (W, + = import). Défaut : 30 W — un léger import plutôt que de risquer d'exporter. |
+
+**Par batterie**
+
+| Paramètre | Description |
+|-----------|-------------|
+| Nom | Affiché dans la carte et les options |
+| Entité SOC | Sensor état de charge (%) |
+| Entité puissance | Sensor puissance batterie (W, négatif = charge, positif = décharge) |
+| Entité consigne Drive | Entité `number` de la consigne de puissance (W, + = décharge, − = charge). Pour une Marstek Venus avec ha-marstek-local-api : `number.<batterie>_drive_grid_power`. Sans cette entité, la batterie n'est pas régulée. |
+| Script de passage en Drive | Script appelé à l'activation du pilotage, au démarrage de Home Assistant et toutes les heures. Il met la batterie dans le mode où elle suit la consigne (ex. `select.<batterie>_operating_mode` → `Drive`). Helios attend la fin du script (jusqu'à 45 s). |
+| Script de mode neutre | Script appelé quand le pilotage est désactivé ou qu'Helios est coupé : il rend la batterie à un mode autonome (ex. `Programmed`). |
+| Capacité (kWh) | Capacité utile. Avec plusieurs batteries, le SOC global est la moyenne pondérée par les capacités. |
+| Puissance max charge / décharge | Bornes de la consigne (W). Avec plusieurs batteries, le dispatch et l'optimiseur utilisent leur somme. |
+
+Les scripts rendent Helios indépendant de la marque : toute batterie qui expose une consigne de puissance réglable peut être pilotée.
+
+#### Régulation en mode Drive
+
+Quand le pilotage est actif (`switch.helios_battery_driving` sur ON et Helios activé), Helios régule le réseau **à chaque relevé du capteur réseau**, indépendamment du cycle de dispatch des appareils. Un relevé est un nouveau `last_reported` : un relevé de même valeur est traité aussi.
+
+```
+consigne = clamp( puissance appliquée au moment du relevé + réseau − cible )
+```
+
+- **Correction immédiate et complète**, sans gain, bande morte ni filtre (testé sur une journée rejouée : ces variantes coûtaient environ 20 % d'import en plus).
+- **Base = consigne réellement appliquée au moment de la mesure** : une consigne écrite compte comme appliquée 3 s après l'écriture. Sans cela, avec un compteur lent (10 à 15 s), la même erreur serait corrigée deux fois.
+- **Bornes** : puissances max de chaque batterie ; pas de décharge si SOC ≤ `SOC min` ; pas de charge à 100 %.
+- **Pas de décharge en heures creuses** : la consigne est bornée à ≤ 0 (la charge sur export reste possible).
+- **Plusieurs batteries** : la consigne est répartie à parts égales (consigne / N). La part qu'une batterie ne peut pas prendre (vide, pleine, à sa puissance max) va aux autres. Une batterie dont le SOC est indisponible est laissée de côté.
+- La consigne n'est écrite (`number.set_value`) que si sa valeur arrondie change. Le seuil d'envoi et le rafraîchissement vers la batterie restent gérés par l'intégration de la batterie.
+
+**Pré-charge avant un jour rouge** — en heures creuses, quand la couleur du lendemain est rouge (`tempo_next_color`), la régulation est suspendue (on reste en Drive) : les batteries chargent à pleine puissance jusqu'à 100 %, plafonnées pour que l'import total ne dépasse pas la puissance souscrite (`grid_subscription_w`), recalculé à chaque relevé.
+
+**Robustesse**
+
+| Situation | Comportement |
+|-----------|--------------|
+| Passage en Drive | Régulation à partir de 0 W ; relevés ignorés 15 s après la première consigne non nulle (le changement de mode de la batterie est lent). |
+| Toutes les heures | Rappel du script Drive, puis réécriture immédiate de la consigne courante. |
+| Consigne perdue (ex. redémarrage de l'intégration de la batterie) | L'entité `number` est relue toutes les 60 s. Si elle diffère de la valeur écrite **deux lectures de suite**, Helios repart de 0 W, réécrit la consigne et applique à nouveau l'attente de 15 s. |
+| Capteur réseau indisponible | Consigne inchangée. |
+| Échec d'un appel de service | Journalisé ; le relevé suivant réessaie. |
+| Redémarrage de HA / rechargement d'Helios | L'état de `switch.helios_battery_driving` est sauvegardé ; s'il était sur ON, le script Drive est rappelé. |
+
+**Pilotage désactivé** (switch sur OFF, ou Helios coupé) : le script neutre est appelé, Helios n'écrit plus de consigne, et la batterie sort du dispatch des appareils (`bat_available_w` = 0, aucune demande de charge).
 
 #### Détection d'une batterie indisponible
 
-Helios surveille en permanence l'entité SOC configurée. Dès que son état cesse d'être numérique (`unavailable`, `unknown`, ou toute valeur non parseable comme un nombre), Helios considère la batterie comme **indisponible** et applique automatiquement le comportement suivant :
+Helios surveille en permanence les entités SOC configurées. Dès que l'état d'une batterie cesse d'être numérique (`unavailable`, `unknown`, ou toute valeur non parseable comme un nombre), elle est considérée comme **indisponible** :
 
-| Grandeur | Comportement normal | Batterie indisponible |
+| Grandeur | Comportement normal | Toutes les batteries indisponibles |
 |----------|--------------------|-----------------------|
 | `bat_available_w` | Calculé selon le SOC | **0 W** — aucune décharge allouée aux appareils |
 | Demande de charge (`demand_w`) | Proportionnelle au déficit SOC | **0 W** — la batterie n'est plus candidate au dispatch |
 | Buffer de puissance batterie | Alimenté à chaque cycle | **Non alimenté** — les échantillons indisponibles ne polluent pas la moyenne |
-| Scripts charge forcée / autoconso | Appelés sur changement d'état | **Suspendus** — aucun script envoyé à l'onduleur hors ligne |
-
-> Dès que l'entité SOC retrouve une valeur numérique, Helios reprend le comportement normal et rappelle le script de mode approprié (charge forcée ou autoconsommation) pour remettre l'onduleur dans le bon état.
+| Régulation | Consigne répartie sur les batteries | Une batterie indisponible est laissée de côté ; les autres continuent |
 
 La carte Lovelace reflète également cet état : l'icône 🔋 passe en grisé et le SOC affiche **N/A** à la place du pourcentage.
 
@@ -122,7 +164,7 @@ Chaque type a sa propre logique de satisfaction (quand s'arrêter) et d'urgence 
 
 #### Mode manuel
 
-Chaque appareil (y compris la batterie) dispose d'un switch `helios_{slug}_manual`. Quand il est activé, l'appareil est **entièrement ignoré du dispatch** — Helios ne lui alloue pas de budget, ne l'allume pas, ne l'éteint pas. L'utilisateur garde le contrôle total du switch physique associé.
+Chaque appareil dispose d'un switch `helios_{slug}_manual` (pour la batterie, voir `switch.helios_battery_driving`). Quand il est activé, l'appareil est **entièrement ignoré du dispatch** — Helios ne lui alloue pas de budget, ne l'allume pas, ne l'éteint pas. L'utilisateur garde le contrôle total du switch physique associé.
 
 #### Service — lancement immédiat d'un électroménager
 
@@ -185,12 +227,12 @@ Ces valeurs sont calculées à chaque cycle et pilotent l'ensemble de la logique
 
 | Grandeur | Formule / source | Rôle |
 |----------|-----------------|------|
-| **Surplus** (`surplus_w`) | `max(0, PV − maison)` soit `max(0, −réseau − décharge + charge)` | Bilan électrique instantané : positif quand le PV excède la consommation maison. La charge/décharge batterie y est implicitement incluse via `house_power_w` — Helios ne pilote pas le BMS directement. Sert de base au budget `remaining`. |
-| **Surplus virtuel** (`virtual_surplus_w`) | `max(0, PV − maison + Σ appareils Helios actifs)` | Surplus corrigé en réajoutant la consommation des appareils que Helios a allumés. La batterie n'est **pas** dans ce Σ — sa charge/décharge est gérée par le BMS et déjà reflétée dans `house_power_w`. Sans cette correction, les appareils actifs gonflent `house_power_w` → surplus chute → fit s'effondre → extinction → rallumage → oscillation. Utilisé pour le calcul de `f_surplus` et de `fit`. |
+| **Surplus** (`surplus_w`) | `max(0, PV − maison)` soit `max(0, −réseau − décharge + charge)` | Bilan électrique instantané : positif quand le PV excède la consommation maison. La charge/décharge batterie y est implicitement incluse via `house_power_w` — la régulation de la batterie tourne dans sa propre boucle, à chaque relevé réseau. Sert de base au budget `remaining`. |
+| **Surplus virtuel** (`virtual_surplus_w`) | `max(0, PV − maison + Σ appareils Helios actifs)` | Surplus corrigé en réajoutant la consommation des appareils que Helios a allumés. La batterie n'est **pas** dans ce Σ — sa charge/décharge est gérée par la régulation et déjà reflétée dans `house_power_w`. Sans cette correction, les appareils actifs gonflent `house_power_w` → surplus chute → fit s'effondre → extinction → rallumage → oscillation. Utilisé pour le calcul de `f_surplus` et de `fit`. |
 | **Batterie disponible** (`bat_available_w`) | courbe pivot sur `[soc_min_jour … soc_max]`, plafonnée à `max_discharge_w` | Puissance de décharge supplémentaire estimée que la batterie peut fournir aux appareils. Vaut **0** si SOC < `soc_min` du jour (bleu/blanc) ou `soc_min_rouge` (jour rouge). Au-dessus, monte selon la courbe pivot : rampe plate jusqu'au pivot (0 → 0.3 × max), rampe forte ensuite (0.3 → 1.0 × max). Indépendant de la charge — `bat_available_w` représente la décharge possible, pas la charge en cours. Vaut également **0** si la batterie est indisponible (entité SOC non numérique). |
 | **Remaining** (`remaining_w`) | `surplus_virtuel + bat_available_w` (initial) | Budget de dispatch résiduel. Initialisé en début de cycle, puis décrémenté à chaque appareil sélectionné dans l'ordre du score effectif — la `power_w` calculée du `BatteryDevice` est déduite comme n'importe quel appareil. Les appareils déjà actifs ne le réduisent pas — leur puissance est déjà absente de `virtual_surplus`. `grid_allowance_w` n'est **pas** dans `remaining` — il définit une tolérance d'import réseau utilisée uniquement dans la zone 3 du calcul de fit. |
 
-> **Surplus réel vs surplus virtuel** : les deux valeurs divergent dès qu'au moins un appareil Helios est allumé. Le surplus virtuel (`virtual_surplus_w`) est utilisé pour `f_surplus` et le calcul de fit — il reflète ce que serait le surplus si ces appareils n'existaient pas. Le surplus réel (`surplus_w`) sert de base au budget `remaining` — il reflète la réalité mesurée. La batterie (gérée par le BMS) n'intervient pas dans cette correction.
+> **Surplus réel vs surplus virtuel** : les deux valeurs divergent dès qu'au moins un appareil Helios est allumé. Le surplus virtuel (`virtual_surplus_w`) est utilisé pour `f_surplus` et le calcul de fit — il reflète ce que serait le surplus si ces appareils n'existaient pas. Le surplus réel (`surplus_w`) sert de base au budget `remaining` — il reflète la réalité mesurée. La batterie (gérée par la régulation) n'intervient pas dans cette correction.
 
 #### Calcul du score de fit [0..1]
 
@@ -401,7 +443,7 @@ Chaque matin à **5h00**, Helios lance une simulation de la journée à venir po
 1. **Saison** — déterminée automatiquement à partir de la date du jour
 2. **Couverture nuageuse** — inférée depuis l'entité de prévision PV (ratio prévision / ciel clair) ; profil ciel clair par défaut si non configurée
 3. **Couleur Tempo** — lue depuis l'entité "couleur lendemain" (prioritaire) puis "couleur du jour"
-4. **SOC initial** — lu depuis l'entité SOC batterie au moment du lancement
+4. **SOC initial** — lu depuis les entités SOC des batteries au moment du lancement (moyenne pondérée par les capacités)
 5. **Appareils** — les appareils configurés dans Helios (y compris le BatteryDevice) sont convertis en modèles de simulation
 6. **Simulation** — la journée est simulée pas à pas avec le nouvel algorithme de dispatch
 
@@ -440,8 +482,8 @@ La prévision est disponible en attributs du sensor `helios_forecast` (voir auss
 
 | Entité | Type | Description |
 |--------|------|-------------|
-| `sensor.helios_battery` | Sensor | État courant de la batterie (`charge`, `autoconsommation`, `forced_charge`…). Attributs : `soc` (%), `power_w` (W mesurés, négatif = charge), `available_w` (W de décharge disponibles pour le dispatch), `demand_w` (W demandés en charge), `battery_available` (bool — `false` si l'entité SOC est `unavailable`/`unknown`), `urgency` [0–1], `effective_score` [0–1] |
-| `switch.helios_battery_manual` | Switch | Exclut la batterie du dispatch automatique — Helios ne lui alloue plus de budget, le BMS garde le contrôle total |
+| `sensor.helios_battery` | Sensor | État de la régulation : `off` (non pilotée), `startup_wait` (passage en Drive), `regulating`, `precharge` (pré-charge jour rouge), `mode_lost` (consigne perdue, reprise depuis 0 W). Mis à jour à chaque relevé réseau. Attributs : `setpoint_w` (consigne calculée, + = décharge), `target_w` (cible réseau active), `last_grid_w` (dernier relevé), `batteries` (consigne écrite par batterie), `driving`, `soc` (%, pondéré par les capacités), `power_w` (W mesurés, négatif = charge), `available_w` (W de décharge disponibles pour le dispatch), `demand_w` (W demandés en charge), `battery_available`, `urgency` [0–1], `effective_score` [0–1] |
+| `switch.helios_battery_driving` | Switch | Helios pilote les batteries (mode Drive). OFF → script neutre, plus de consigne, batterie exclue du dispatch. État sauvegardé. Remplace `switch.helios_battery_manual` (supprimé à la mise à jour ; un mode manuel actif devient pilotage OFF). |
  
 #### Entités par appareil
 

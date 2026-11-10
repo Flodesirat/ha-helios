@@ -23,32 +23,49 @@
       },
       "battery": {
         "title": "Batterie",
-        "description": "Laissez 'Batterie activée' décoché si vous n'avez pas de batterie.",
+        "description": "Réglages communs à toutes les batteries. Laissez « Batterie activée » décoché si vous n'avez pas de batterie.",
         "data": {
           "battery_enabled": "Batterie activée",
-          "battery_soc_entity": "Entité SOC batterie (%)",
-          "battery_power_entity": "Entité puissance batterie (W)",
-          "battery_charge_script": "Script de charge forcée",
-          "battery_autoconsum_script": "Script d'autoconsommation",
-          "battery_capacity_kwh": "Capacité batterie (kWh)",
           "battery_soc_min": "SOC minimum (%)",
           "battery_soc_max": "SOC maximum (%)",
           "battery_soc_reserve_rouge": "SOC de réserve jours rouges (%)",
+          "battery_priority": "Priorité de la batterie (1–10)",
+          "battery_grid_target_blue_w": "Cible réseau jour bleu (W)",
+          "battery_grid_target_white_w": "Cible réseau jour blanc (W)",
+          "battery_grid_target_red_w": "Cible réseau jour rouge (W)"
+        },
+        "data_description": {
+          "battery_soc_min": "Plancher de décharge sur jours bleus et blancs. Helios n'utilisera pas l'énergie batterie en dessous de ce seuil pour alimenter les appareils. Augmentez cette valeur pour conserver une réserve pour la nuit (ex : 30 %). La régulation ne décharge pas non plus en dessous.",
+          "battery_soc_max": "Plafond de charge. Utilisé par l'optimiseur journalier pour les simulations. Doit correspondre à la valeur configurée dans votre onduleur. La régulation, elle, charge jusqu'à 100 %.",
+          "battery_soc_reserve_rouge": "Seuil de protection en jour rouge. Si le SOC descend en dessous, Helios réserve la batterie : seuls les appareils dont la consommation tient dans le surplus PV seul peuvent être démarrés. La charge forcée la veille remplit la batterie à son maximum indépendamment de ce seuil. Ce seuil ne limite pas la régulation de la batterie.",
+          "battery_priority": "Priorité relative de la batterie face aux appareils dans le dispatch greedy (1 = faible, 10 = haute). Recommandé : 7.",
+          "battery_grid_target_blue_w": "Puissance réseau visée par la régulation (+ = import). Une petite valeur positive évite d'exporter."
+        }
+      },
+      "battery_unit": {
+        "title": "Batterie",
+        "description": "Une batterie pilotée en mode Drive. Helios écrit la consigne dans l'entité « consigne Drive » et change de mode avec vos scripts.",
+        "data": {
+          "battery_name": "Nom",
+          "battery_soc_entity": "Entité SOC (%)",
+          "battery_power_entity": "Entité puissance (W)",
+          "battery_drive_power_entity": "Entité consigne Drive (W)",
+          "battery_drive_script": "Script de passage en mode Drive",
+          "battery_neutral_script": "Script de retour au mode neutre",
+          "battery_capacity_kwh": "Capacité (kWh)",
           "battery_max_charge_power_w": "Puissance max de charge (W)",
           "battery_max_discharge_power_w": "Puissance max de décharge (W)",
-          "battery_priority": "Priorité de la batterie (1–10)"
+          "add_another": "Ajouter une autre batterie"
         },
         "data_description": {
           "battery_soc_entity": "Capteur retournant l'état de charge de la batterie en pourcentage (0–100).",
-          "battery_charge_script": "Appelé pendant les heures creuses la veille d'un jour Tempo rouge, pour remplir la batterie avant les heures pleines coûteuses.",
-          "battery_autoconsum_script": "Appelé pour revenir en mode autoconsommation. Le BMS/onduleur gère alors la charge et la décharge automatiquement.",
+          "battery_power_entity": "Capteur de puissance batterie (W). Négatif = charge, positif = décharge. Utilisé pour affiner le calcul du surplus disponible.",
           "battery_capacity_kwh": "Capacité nominale totale. Utilisée pour estimer la puissance disponible depuis la batterie pour alimenter les appareils.",
-          "battery_soc_min": "Plancher de décharge sur jours bleus et blancs. Helios n'utilisera pas l'énergie batterie en dessous de ce seuil pour alimenter les appareils. Augmentez cette valeur pour conserver une réserve pour la nuit (ex : 30 %).",
-          "battery_soc_max": "Plafond de charge. Utilisé par l'optimiseur journalier pour les simulations. Doit correspondre à la valeur configurée dans votre onduleur.",
-          "battery_soc_reserve_rouge": "Seuil de protection en jour rouge. Si le SOC descend en dessous, Helios réserve la batterie : seuls les appareils dont la consommation tient dans le surplus PV seul peuvent être démarrés. La charge forcée la veille remplit la batterie à son maximum indépendamment de ce seuil.",
           "battery_max_charge_power_w": "Puissance maximale de charge de votre onduleur/batterie (W). Nécessaire pour que l'optimiseur journalier simule correctement la recharge. Correspond à la limite configurée dans votre onduleur.",
           "battery_max_discharge_power_w": "Puissance maximale de décharge (W). Utilisée par l'optimiseur journalier et pour calculer l'énergie batterie disponible pour les appareils. Correspond à la limite configurée dans votre onduleur.",
-          "battery_priority": "Priorité relative de la batterie face aux appareils dans le dispatch greedy (1 = faible, 10 = haute). Recommandé : 7."
+          "battery_drive_power_entity": "Entité number : + = décharge, − = charge.",
+          "battery_drive_script": "Appelé à l'activation du pilotage, puis toutes les heures.",
+          "battery_neutral_script": "Appelé quand le pilotage est désactivé ou qu'Helios est coupé."
         }
       },
       "devices": {
@@ -210,32 +227,60 @@
       },
       "battery": {
         "title": "Batterie",
+        "description": "Réglages communs à toutes les batteries. Laissez « Batterie activée » décoché si vous n'avez pas de batterie.",
         "data": {
           "battery_enabled": "Batterie activée",
-          "battery_soc_entity": "Entité SOC batterie (%)",
-          "battery_power_entity": "Entité puissance batterie (W)",
-          "battery_charge_script": "Script de charge forcée",
-          "battery_autoconsum_script": "Script d'autoconsommation",
-          "battery_capacity_kwh": "Capacité batterie (kWh)",
           "battery_soc_min": "SOC minimum (%)",
           "battery_soc_max": "SOC maximum (%)",
           "battery_soc_reserve_rouge": "SOC de réserve jours rouges (%)",
+          "battery_priority": "Priorité de la batterie (1–10)",
+          "battery_grid_target_blue_w": "Cible réseau jour bleu (W)",
+          "battery_grid_target_white_w": "Cible réseau jour blanc (W)",
+          "battery_grid_target_red_w": "Cible réseau jour rouge (W)"
+        },
+        "data_description": {
+          "battery_soc_min": "Plancher de décharge sur jours bleus et blancs. Helios n'utilisera pas l'énergie batterie en dessous de ce seuil pour alimenter les appareils. Augmentez cette valeur pour conserver une réserve pour la nuit (ex : 30 %). La régulation ne décharge pas non plus en dessous.",
+          "battery_soc_max": "Plafond de charge. Utilisé par l'optimiseur journalier pour les simulations. Doit correspondre à la valeur configurée dans votre onduleur. La régulation, elle, charge jusqu'à 100 %.",
+          "battery_soc_reserve_rouge": "Seuil de protection en jour rouge. Si le SOC descend en dessous, Helios réserve la batterie : seuls les appareils dont la consommation tient dans le surplus PV seul peuvent être démarrés. La charge forcée la veille remplit la batterie à son maximum indépendamment de ce seuil. Ce seuil ne limite pas la régulation de la batterie.",
+          "battery_priority": "Priorité relative de la batterie face aux appareils dans le dispatch greedy (1 = faible, 10 = haute). Recommandé : 7.",
+          "battery_grid_target_blue_w": "Puissance réseau visée par la régulation (+ = import). Une petite valeur positive évite d'exporter."
+        }
+      },
+      "batteries_select": {
+        "title": "Gestion des batteries",
+        "data": {
+          "choice": "Batterie à modifier"
+        }
+      },
+      "opt_battery_action": {
+        "title": "Batterie {battery_name}",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "opt_battery_unit": {
+        "title": "Batterie",
+        "description": "Une batterie pilotée en mode Drive. Helios écrit la consigne dans l'entité « consigne Drive » et change de mode avec vos scripts.",
+        "data": {
+          "battery_name": "Nom",
+          "battery_soc_entity": "Entité SOC (%)",
+          "battery_power_entity": "Entité puissance (W)",
+          "battery_drive_power_entity": "Entité consigne Drive (W)",
+          "battery_drive_script": "Script de passage en mode Drive",
+          "battery_neutral_script": "Script de retour au mode neutre",
+          "battery_capacity_kwh": "Capacité (kWh)",
           "battery_max_charge_power_w": "Puissance max de charge (W)",
-          "battery_max_discharge_power_w": "Puissance max de décharge (W)",
-          "battery_priority": "Priorité de la batterie (1–10)"
+          "battery_max_discharge_power_w": "Puissance max de décharge (W)"
         },
         "data_description": {
           "battery_soc_entity": "Capteur retournant l'état de charge de la batterie en pourcentage (0–100).",
           "battery_power_entity": "Capteur de puissance batterie (W). Négatif = charge, positif = décharge. Utilisé pour affiner le calcul du surplus disponible.",
-          "battery_charge_script": "Appelé pendant les heures creuses la veille d'un jour Tempo rouge, pour remplir la batterie avant les heures pleines coûteuses.",
-          "battery_autoconsum_script": "Appelé pour revenir en mode autoconsommation. Le BMS/onduleur gère alors la charge et la décharge automatiquement.",
           "battery_capacity_kwh": "Capacité nominale totale. Utilisée pour estimer la puissance disponible depuis la batterie pour alimenter les appareils.",
-          "battery_soc_min": "Plancher de décharge sur jours bleus et blancs. Helios n'utilisera pas l'énergie batterie en dessous de ce seuil pour alimenter les appareils. Augmentez cette valeur pour conserver une réserve pour la nuit (ex : 30 %).",
-          "battery_soc_max": "Plafond de charge. Utilisé par l'optimiseur journalier pour les simulations. Doit correspondre à la valeur configurée dans votre onduleur.",
-          "battery_soc_reserve_rouge": "Seuil de protection en jour rouge. Si le SOC descend en dessous, Helios réserve la batterie : seuls les appareils dont la consommation tient dans le surplus PV seul peuvent être démarrés. La charge forcée la veille remplit la batterie à son maximum indépendamment de ce seuil.",
           "battery_max_charge_power_w": "Puissance maximale de charge de votre onduleur/batterie (W). Nécessaire pour que l'optimiseur journalier simule correctement la recharge. Correspond à la limite configurée dans votre onduleur.",
           "battery_max_discharge_power_w": "Puissance maximale de décharge (W). Utilisée par l'optimiseur journalier et pour calculer l'énergie batterie disponible pour les appareils. Correspond à la limite configurée dans votre onduleur.",
-          "battery_priority": "Priorité relative de la batterie face aux appareils dans le dispatch greedy (1 = faible, 10 = haute). Recommandé : 7."
+          "battery_drive_power_entity": "Entité number : + = décharge, − = charge.",
+          "battery_drive_script": "Appelé à l'activation du pilotage, puis toutes les heures.",
+          "battery_neutral_script": "Appelé quand le pilotage est désactivé ou qu'Helios est coupé."
         }
       },
       "strategy": {
@@ -387,10 +432,11 @@
       "eo_battery": {
         "name": "Batterie",
         "state": {
-          "forced_charge": "Charge forcée",
-          "autoconsommation": "Autoconsommation",
-          "reserve": "Réserve",
-          "idle": "Inactif"
+          "off": "Non pilotée",
+          "startup_wait": "Passage en Drive",
+          "regulating": "Régulation",
+          "precharge": "Pré-charge jour rouge",
+          "mode_lost": "Consigne perdue"
         }
       },
       "eo_tempo_next_color": {
@@ -446,6 +492,9 @@
       },
       "eo_ev_plugged": {
         "name": "Véhicule branché {name}"
+      },
+      "eo_battery_driving": {
+        "name": "Pilotage batterie"
       }
     },
     "select": {

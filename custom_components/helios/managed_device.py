@@ -693,24 +693,26 @@ class BatteryDevice:
     sorted candidate list.
     """
 
-    def __init__(self, config: dict[str, Any], manual_entity: str | None = None) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.name: str              = "battery"
         self.priority: int          = int(config.get(CONF_BATTERY_PRIORITY, DEFAULT_BATTERY_PRIORITY))
         self._soc_min: float        = float(config.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
         self._soc_max: float        = float(config.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX))
         self._soc_min_rouge: float  = float(config.get(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE))
         self._charge_max_w: float   = float(config.get(CONF_BATTERY_MAX_CHARGE_POWER_W, 0.0))
-        self._manual_entity: str | None = manual_entity
 
         # Runtime state — updated each dispatch cycle via update()
         self._soc: float            = 0.0
         self._tempo_red: bool       = False
         self._available: bool       = True
 
+        # User-set (switch.helios_battery_driving, persisted): Helios drives the
+        # batteries. Off → the battery is left out of the dispatch.
+        self.driving: bool          = True
+
         # Interface fields (shared with ManagedDevice)
         self.fit: float             = 1.0
         self.is_on: bool            = False
-        self.manual_mode: bool      = False
         self.last_reason: str       = ""
         self.last_effective_score: float = 0.0
         self.min_on_remaining_s: float   = 0.0
@@ -769,13 +771,15 @@ class BatteryDevice:
         """0.4×priority/10 + 0.3×fit(=1.0) + 0.3×urgency."""
         return 0.4 * (self.priority / 10.0) + 0.3 * 1.0 + 0.3 * self.urgency
 
-    def is_manual(self, reader: StateReader) -> bool:
-        """True when manual_mode is set or the helios_battery_manual switch is on."""
-        if self.manual_mode:
-            return True
-        if not self._manual_entity:
-            return False
-        raw = reader(self._manual_entity)
-        if raw is None or raw in ("unavailable", "unknown"):
-            return False
-        return raw in ("on", "true", "1")
+    @property
+    def manual_mode(self) -> bool:
+        """Not driven by Helios (inverse of ``driving``, kept for the simulation)."""
+        return not self.driving
+
+    @manual_mode.setter
+    def manual_mode(self, value: bool) -> None:
+        self.driving = not value
+
+    def is_manual(self, reader: StateReader) -> bool:  # noqa: ARG002 — same signature as ManagedDevice
+        """True when Helios does not drive the battery: left out of the dispatch."""
+        return not self.driving

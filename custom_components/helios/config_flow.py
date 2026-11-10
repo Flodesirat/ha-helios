@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
+from .battery_config import get_batteries
 from .const import (
     DOMAIN,
     # Sources
@@ -18,10 +19,14 @@ from .const import (
     CONF_PEAK_PV_W, DEFAULT_PEAK_PV_W,
     CONF_GRID_SUBSCRIPTION_W, DEFAULT_GRID_SUBSCRIPTION_W,
     # Battery
-    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_POWER_ENTITY,
-    CONF_BATTERY_CHARGE_SCRIPT, CONF_BATTERY_AUTOCONSUM_SCRIPT,
-    CONF_BATTERY_CAPACITY_KWH, CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
+    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX,
     CONF_BATTERY_SOC_RESERVE_ROUGE,
+    CONF_BATTERY_GRID_TARGET_BLUE_W, CONF_BATTERY_GRID_TARGET_WHITE_W, CONF_BATTERY_GRID_TARGET_RED_W,
+    DEFAULT_BATTERY_GRID_TARGET_W,
+    CONF_BATTERIES, CONF_BATTERY_NAME, DEFAULT_BATTERY_NAME,
+    CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_POWER_ENTITY,
+    CONF_BATTERY_DRIVE_POWER_ENTITY, CONF_BATTERY_DRIVE_SCRIPT, CONF_BATTERY_NEUTRAL_SCRIPT,
+    CONF_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     # Devices list
     CONF_DEVICES,
@@ -94,12 +99,13 @@ _LOGGER = logging.getLogger(__name__)
 class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial config flow."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
         self._devices: list[dict[str, Any]] = []
         self._current_device: dict[str, Any] = {}
+        self._batteries: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------ Step 1 — Sources
     async def async_step_user(self, user_input: dict | None = None):
@@ -139,13 +145,35 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
 
     # ------------------------------------------------------------------ Step 2 — Battery
     async def async_step_battery(self, user_input: dict | None = None):
+        """Global battery settings; then one form per battery if enabled."""
         if user_input is not None:
             self._data.update(user_input)
+            if user_input.get(CONF_BATTERY_ENABLED):
+                return await self.async_step_battery_unit()
+            self._data[CONF_BATTERIES] = []
             return await self.async_step_devices()
 
         return self.async_show_form(
             step_id="battery",
             data_schema=_battery_schema(),
+        )
+
+    async def async_step_battery_unit(self, user_input: dict | None = None):
+        """One battery — loops while 'add another' is ticked."""
+        if user_input is not None:
+            add_another = user_input.pop("add_another", False)
+            self._batteries.append(user_input)
+            if add_another:
+                return await self.async_step_battery_unit()
+            self._data[CONF_BATTERIES] = self._batteries
+            return await self.async_step_devices()
+
+        return self.async_show_form(
+            step_id="battery_unit",
+            data_schema=_battery_unit_schema(
+                {CONF_BATTERY_NAME: f"{DEFAULT_BATTERY_NAME} {len(self._batteries) + 1}"},
+                add_another=True,
+            ),
         )
 
     # ------------------------------------------------------------------ Step 3 — Devices list
@@ -454,6 +482,11 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
         )
         self._editing_device_idx: int = -1   # -1 = new device
         self._current_device: dict[str, Any] = {}
+        self._batteries: list[dict[str, Any]] = get_batteries(
+            {**config_entry.data, **config_entry.options}
+        )
+        self._battery_global: dict[str, Any] = {}
+        self._editing_battery_idx: int = -1  # -1 = new battery
 
     def _current(self, key: str, fallback: Any = None) -> Any:
         """Return current value from options (priority) or data."""
@@ -529,24 +562,96 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
         )
 
     async def async_step_battery(self, user_input: dict | None = None):
+        """Global battery settings; then the battery list if enabled."""
         if user_input is not None:
-            return self.async_create_entry(data={**self._entry.options, **user_input})
+            self._battery_global = user_input
+            if user_input.get(CONF_BATTERY_ENABLED):
+                return await self.async_step_batteries_select()
+            return self._save_batteries()
 
         return self.async_show_form(
             step_id="battery",
             data_schema=_battery_schema(defaults={
                 k: self._current(k)
                 for k in (
-                    CONF_BATTERY_ENABLED, CONF_BATTERY_SOC_ENTITY,
-                    CONF_BATTERY_POWER_ENTITY,
-                    CONF_BATTERY_CHARGE_SCRIPT, CONF_BATTERY_AUTOCONSUM_SCRIPT,
-                    CONF_BATTERY_CAPACITY_KWH, CONF_BATTERY_SOC_MIN,
-                    CONF_BATTERY_SOC_MAX, CONF_BATTERY_SOC_RESERVE_ROUGE,
-                    CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
+                    CONF_BATTERY_ENABLED,
+                    CONF_BATTERY_SOC_MIN, CONF_BATTERY_SOC_MAX, CONF_BATTERY_SOC_RESERVE_ROUGE,
                     CONF_BATTERY_PRIORITY,
+                    CONF_BATTERY_GRID_TARGET_BLUE_W, CONF_BATTERY_GRID_TARGET_WHITE_W,
+                    CONF_BATTERY_GRID_TARGET_RED_W,
                 )
                 if self._current(k) is not None
             }),
+        )
+
+    def _save_batteries(self):
+        return self.async_create_entry(data={
+            **self._entry.options, **self._battery_global, CONF_BATTERIES: self._batteries,
+        })
+
+    async def async_step_batteries_select(self, user_input: dict | None = None):
+        """CRUD menu: list the batteries, add one, or finish."""
+        if user_input is not None:
+            choice = user_input["choice"]
+            if choice == _OPT_DONE:
+                return self._save_batteries()
+            if choice == _OPT_ADD:
+                self._editing_battery_idx = -1
+                return await self.async_step_opt_battery_unit()
+            self._editing_battery_idx = int(choice)
+            return await self.async_step_opt_battery_action()
+
+        options = [
+            {"value": str(i), "label": b.get(CONF_BATTERY_NAME) or f"{DEFAULT_BATTERY_NAME} {i + 1}"}
+            for i, b in enumerate(self._batteries)
+        ] + [
+            {"value": _OPT_ADD,  "label": "Ajouter une batterie"},
+            {"value": _OPT_DONE, "label": "Terminer"},
+        ]
+        return self.async_show_form(
+            step_id="batteries_select",
+            data_schema=vol.Schema({
+                vol.Required("choice"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=options)
+                ),
+            }),
+        )
+
+    async def async_step_opt_battery_action(self, user_input: dict | None = None):
+        """Edit or delete the selected battery."""
+        battery = self._batteries[self._editing_battery_idx]
+        if user_input is not None:
+            if user_input["action"] == "delete":
+                self._batteries.pop(self._editing_battery_idx)
+                return await self.async_step_batteries_select()
+            return await self.async_step_opt_battery_unit()
+
+        return self.async_show_form(
+            step_id="opt_battery_action",
+            data_schema=vol.Schema({
+                vol.Required("action", default="edit"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=["edit", "delete"])
+                ),
+            }),
+            description_placeholders={"battery_name": battery.get(CONF_BATTERY_NAME, DEFAULT_BATTERY_NAME)},
+        )
+
+    async def async_step_opt_battery_unit(self, user_input: dict | None = None):
+        """Add a battery, or edit the selected one (pre-filled)."""
+        if user_input is not None:
+            if self._editing_battery_idx < 0:
+                self._batteries.append(user_input)
+            else:
+                self._batteries[self._editing_battery_idx] = user_input
+            return await self.async_step_batteries_select()
+
+        if self._editing_battery_idx < 0:
+            defaults = {CONF_BATTERY_NAME: f"{DEFAULT_BATTERY_NAME} {len(self._batteries) + 1}"}
+        else:
+            defaults = self._batteries[self._editing_battery_idx]
+        return self.async_show_form(
+            step_id="opt_battery_unit",
+            data_schema=_battery_unit_schema(defaults),
         )
 
     async def async_step_strategy(self, user_input: dict | None = None):
@@ -876,39 +981,13 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
 # ---------------------------------------------------------------------------
 
 def _battery_schema(defaults: dict | None = None) -> vol.Schema:
+    """Settings shared by all batteries."""
     d = defaults or {}
+    target_selector = selector.NumberSelector(
+        selector.NumberSelectorConfig(min=-500, max=500, step=5, unit_of_measurement="W")
+    )
     return vol.Schema({
         vol.Required(CONF_BATTERY_ENABLED, default=d.get(CONF_BATTERY_ENABLED, False)): selector.BooleanSelector(),
-        vol.Optional(CONF_BATTERY_SOC_ENTITY, **_opt_default(d, CONF_BATTERY_SOC_ENTITY)): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor")
-        ),
-        vol.Optional(CONF_BATTERY_POWER_ENTITY, **_opt_default(d, CONF_BATTERY_POWER_ENTITY)): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["sensor", "input_number"])
-        ),
-        vol.Optional(CONF_BATTERY_CHARGE_SCRIPT, **_opt_default(d, CONF_BATTERY_CHARGE_SCRIPT)): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="script")
-        ),
-        vol.Optional(CONF_BATTERY_AUTOCONSUM_SCRIPT, **_opt_default(d, CONF_BATTERY_AUTOCONSUM_SCRIPT)): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="script")
-        ),
-        vol.Optional(
-            CONF_BATTERY_CAPACITY_KWH,
-            default=d.get(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH),
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(min=0.5, max=100, step=0.5, unit_of_measurement="kWh")
-        ),
-        vol.Optional(
-            CONF_BATTERY_MAX_CHARGE_POWER_W,
-            default=d.get(CONF_BATTERY_MAX_CHARGE_POWER_W, 0),
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(min=0, max=15000, step=100, unit_of_measurement="W")
-        ),
-        vol.Optional(
-            CONF_BATTERY_MAX_DISCHARGE_POWER_W,
-            default=d.get(CONF_BATTERY_MAX_DISCHARGE_POWER_W, 0),
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(min=0, max=15000, step=100, unit_of_measurement="W")
-        ),
         vol.Optional(
             CONF_BATTERY_SOC_MIN,
             default=d.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN),
@@ -933,7 +1012,63 @@ def _battery_schema(defaults: dict | None = None) -> vol.Schema:
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=1, max=10, step=1, mode=selector.NumberSelectorMode.BOX)
         ),
+        vol.Optional(
+            CONF_BATTERY_GRID_TARGET_BLUE_W,
+            default=d.get(CONF_BATTERY_GRID_TARGET_BLUE_W, DEFAULT_BATTERY_GRID_TARGET_W),
+        ): target_selector,
+        vol.Optional(
+            CONF_BATTERY_GRID_TARGET_WHITE_W,
+            default=d.get(CONF_BATTERY_GRID_TARGET_WHITE_W, DEFAULT_BATTERY_GRID_TARGET_W),
+        ): target_selector,
+        vol.Optional(
+            CONF_BATTERY_GRID_TARGET_RED_W,
+            default=d.get(CONF_BATTERY_GRID_TARGET_RED_W, DEFAULT_BATTERY_GRID_TARGET_W),
+        ): target_selector,
     })
+
+
+def _battery_unit_schema(defaults: dict | None = None, add_another: bool = False) -> vol.Schema:
+    """One battery: its entities, Drive scripts and limits."""
+    d = defaults or {}
+    schema = {
+        vol.Required(CONF_BATTERY_NAME, default=d.get(CONF_BATTERY_NAME, DEFAULT_BATTERY_NAME)): selector.TextSelector(),
+        vol.Optional(CONF_BATTERY_SOC_ENTITY, **_opt_default(d, CONF_BATTERY_SOC_ENTITY)): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        ),
+        vol.Optional(CONF_BATTERY_POWER_ENTITY, **_opt_default(d, CONF_BATTERY_POWER_ENTITY)): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "input_number"])
+        ),
+        vol.Optional(CONF_BATTERY_DRIVE_POWER_ENTITY, **_opt_default(d, CONF_BATTERY_DRIVE_POWER_ENTITY)): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["number", "input_number"])
+        ),
+        vol.Optional(CONF_BATTERY_DRIVE_SCRIPT, **_opt_default(d, CONF_BATTERY_DRIVE_SCRIPT)): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="script")
+        ),
+        vol.Optional(CONF_BATTERY_NEUTRAL_SCRIPT, **_opt_default(d, CONF_BATTERY_NEUTRAL_SCRIPT)): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="script")
+        ),
+        vol.Optional(
+            CONF_BATTERY_CAPACITY_KWH,
+            default=d.get(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0.5, max=100, step=0.5, unit_of_measurement="kWh")
+        ),
+        vol.Optional(
+            CONF_BATTERY_MAX_CHARGE_POWER_W,
+            default=d.get(CONF_BATTERY_MAX_CHARGE_POWER_W, 0),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=15000, step=50, unit_of_measurement="W")
+        ),
+        vol.Optional(
+            CONF_BATTERY_MAX_DISCHARGE_POWER_W,
+            default=d.get(CONF_BATTERY_MAX_DISCHARGE_POWER_W, 0),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=15000, step=50, unit_of_measurement="W")
+        ),
+    }
+    if add_another:
+        schema[vol.Required("add_another", default=False)] = selector.BooleanSelector()
+    return vol.Schema(schema)
 
 
 def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
