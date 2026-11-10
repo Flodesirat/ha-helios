@@ -151,6 +151,8 @@ class ManagedDevice:
         self.wh_off_peak_hysteresis_k: float = float(
             config.get(CONF_WH_OFF_PEAK_HYSTERESIS_K, DEFAULT_WH_OFF_PEAK_HYSTERESIS_K)
         )
+        # Runtime — tomorrow is a red Tempo day (set by DeviceManager each cycle)
+        self.tempo_next_red: bool = False
 
         # ---- Off-peak slots (from global config) ----
         gcfg = global_cfg or {}
@@ -304,10 +306,16 @@ class ManagedDevice:
         """Minimum temperature to reach during off-peak hours.
 
         Reads the configured entity; falls back to the static legionella floor.
+        On the eve of a red Tempo day, the daytime target replaces it (never
+        lower than the usual minimum) so the tank is full before red peak hours.
         """
         if self.wh_temp_min_entity:
-            return self._state_float(reader, self.wh_temp_min_entity, fallback=self.wh_temp_min)
-        return self.wh_temp_min
+            base = self._state_float(reader, self.wh_temp_min_entity, fallback=self.wh_temp_min)
+        else:
+            base = self.wh_temp_min
+        if self.tempo_next_red:
+            return max(base, self.wh_temp_target)
+        return base
 
     # ------------------------------------------------------------------
     # Satisfaction — has the device reached its target?

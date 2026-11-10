@@ -71,7 +71,7 @@ consigne = clamp( puissance appliquée au moment du relevé + réseau − cible 
 - **Plusieurs batteries** : la consigne est répartie à parts égales (consigne / N). La part qu'une batterie ne peut pas prendre (vide, pleine, à sa puissance max) va aux autres. Une batterie dont le SOC est indisponible est laissée de côté.
 - La consigne n'est écrite (`number.set_value`) que si sa valeur arrondie change. Le seuil d'envoi et le rafraîchissement vers la batterie restent gérés par l'intégration de la batterie.
 
-**Pré-charge avant un jour rouge** — en heures creuses, quand la couleur du lendemain est rouge (`tempo_next_color`), la régulation est suspendue (on reste en Drive) : les batteries chargent à pleine puissance jusqu'à 100 %, plafonnées pour que l'import total ne dépasse pas la puissance souscrite (`grid_subscription_w`), recalculé à chaque relevé.
+**Pré-charge avant un jour rouge** — en heures creuses, quand la couleur du lendemain est rouge (`tempo_next_color`), la régulation est suspendue (on reste en Drive) : les batteries chargent à pleine puissance jusqu'à 100 %, plafonnées pour que l'import total ne dépasse pas la puissance souscrite (`grid_subscription_w`), recalculé à chaque relevé. Le chauffe-eau, qui chauffe la même nuit jusqu'à sa cible (voir `water_heater`), est compris dans cet import et passe en premier.
 
 **Robustesse**
 
@@ -144,10 +144,14 @@ Chaque type a sa propre logique de satisfaction (quand s'arrêter) et d'urgence 
 | Paramètre spécifique | Description |
 |----------------------|-------------|
 | Entité température | Sensor °C du ballon |
-| Température cible | Seuil de satisfaction en heures pleines (°C) — le chauffe-eau s'arrête une fois atteint |
+| Température cible | Seuil de satisfaction en heures pleines (°C) — le chauffe-eau s'arrête une fois atteint. Sert aussi de cible en heures creuses la veille d'un jour rouge |
 | Température min | Plancher bas — si la température descend sous ce seuil, l'urgence atteint 1.0 et le démarrage est forcé indépendamment du surplus |
-| Entité température min HC | Sensor ou `input_number` fixant la température à atteindre pendant les heures creuses. Si absent, la température cible principale est utilisée |
+| Entité température min HC | Sensor ou `input_number` fixant la température à atteindre pendant les heures creuses. Si absent, la température min est utilisée |
 | Hystérésis HC | Bande morte en heures creuses (°C) : Helios force le démarrage seulement si `temp < temp_min_hc − hystérésis`. Évite les cycles courts près du seuil (défaut : 3 °C) |
+
+**Veille d'un jour rouge** : quand demain est un jour rouge Tempo (`tempo_next_color = red`), le chauffe-eau chauffe en heures creuses jusqu'à la **température cible** (celle de la journée) au lieu du minimum HC. Si le minimum HC est plus haut, c'est lui qui est gardé. Chauffer en HC (~0,16 €/kWh) évite de chauffer en heures pleines rouges (~0,71 €/kWh). En heures pleines, rien ne change (chauffe sur surplus, plancher légionelle). Aucun paramètre à régler.
+
+La même nuit, la pré-charge de la batterie mesure l'import réseau (chauffe-eau compris) et limite sa charge pour rester sous la puissance souscrite : le chauffe-eau passe en premier.
 
 **`ev_charger`** — chargeur de véhicule électrique. Satisfait quand le SOC atteint la cible (%). L'urgence combine le déficit de SOC et la proximité d'un éventuel départ. Si le véhicule n'est pas branché (`ev_plugged_entity = off`), l'appareil est ignoré.
 
@@ -304,7 +308,7 @@ L'urgence dépend du type d'appareil. Les appareils sans notion de deadline (`ge
 | Type | Calcul |
 |------|--------|
 | **Batterie** | `1.0` si SOC < `soc_min` du jour — `0.0` si SOC ≥ `soc_max` — rampe linéaire entre les deux |
-| **Ballon d'eau chaude** | `(température_cible − température_actuelle) / plage_temp` — monte quand la température baisse. En heures creuses, référence sur le minimum HC plutôt que la cible |
+| **Ballon d'eau chaude** | `(température_cible − température_actuelle) / plage_temp` — monte quand la température baisse. En heures creuses, référence sur le minimum HC plutôt que la cible (sur la cible la veille d'un jour rouge) |
 | **VE** | `0.6 × déficit_SOC + 0.4 × urgence_départ` — combine le déficit de charge et le temps restant avant l'heure de départ configurée |
 | **HVAC** | `écart_consigne / 3°C` — urgence maximale à 3 °C d'écart |
 | **Piscine** | `minutes_de_filtration_manquantes / minutes_restantes_avant_fin_de_plage` — monte en fin de fenêtre horaire si le quota n'est pas atteint |

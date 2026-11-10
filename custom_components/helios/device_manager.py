@@ -463,8 +463,10 @@ class DeviceManager:
         now_ts = time_mod.time()
 
         # ---- Update generic daily on-time counter (all devices) ----
+        tempo_next_red = score_input.get("tempo_next_color") == TEMPO_RED
         for device in self.devices:
             device.update_daily_on_time(self._scan_interval, today)
+            device.tempo_next_red = tempo_next_red
 
         # ---- Update pool run counters (always, including during force mode) ----
         pool_changed = False

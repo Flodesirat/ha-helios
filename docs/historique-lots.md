@@ -10,6 +10,7 @@ Chaque lot livré est consigné à la fin du fichier de son domaine dans
 | Forçage | 2026-11-10 | batterie | #6 | Forçage de la batterie : charge / décharge, puissance, durée, depuis la carte | [historique/batterie.md](historique/batterie.md) |
 | Pas des prix | 2026-11-10 | config-flow | #4 | Formulaire Stratégie : pas des prix Tempo `0.0001` → `"any"` (refusé par HA) | [historique/config-flow.md](historique/config-flow.md) |
 | Relance de démarrage | 2026-11-10 | infra | #5 | Le timer de relance (sources indisponibles) est annulé au déchargement du coordinator | [historique/infra.md](historique/infra.md) |
+| Veille de rouge | 2026-11-10 | appareils | #3 | Chauffe-eau : en HC, chauffe jusqu'à la cible de journée quand demain est rouge | [historique/appareils.md](historique/appareils.md) |
 
 ## Consigner un nouveau lot
 

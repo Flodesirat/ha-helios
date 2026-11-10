@@ -87,6 +87,7 @@ def _device_diag(
             "temp_min":          device.wh_temp_min,
             "temp_min_entity":   ManagedDevice._state_float(reader, device.wh_temp_min_entity) if device.wh_temp_min_entity else None,
             "off_peak_hysteresis_k": device.wh_off_peak_hysteresis_k,
+            "tempo_next_red":        device.tempo_next_red,
         }
 
     if device.device_type == DEVICE_TYPE_POOL:

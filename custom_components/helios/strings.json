@@ -106,7 +106,7 @@
         },
         "data_description": {
           "wh_temp_entity": "Capteur de température actuelle du ballon.",
-          "wh_temp_target": "Température cible en dehors des heures creuses. Le chauffe-eau est arrêté quand cette valeur est atteinte.",
+          "wh_temp_target": "Température cible en dehors des heures creuses, et en heures creuses la veille d'un jour rouge Tempo. Le chauffe-eau est arrêté quand cette valeur est atteinte.",
           "wh_temp_min": "Température en dessous de laquelle le chauffe-eau est forcé ON immédiatement, quelle que soit l'heure ou le score solaire.",
           "wh_temp_min_entity": "Entité définissant la température minimale à atteindre pendant les heures creuses. Le chauffe-eau chauffe jusqu'à cette valeur en HC, puis s'arrête.",
           "wh_power_entity": "Capteur de puissance réelle (W). Permet de détecter quand le thermostat interne coupe la résistance. Utilisé pour le calcul du surplus disponible et l'apprentissage de la consommation de fond.",
@@ -359,7 +359,7 @@
         },
         "data_description": {
           "wh_temp_entity": "Capteur de température actuelle du ballon.",
-          "wh_temp_target": "Température cible en dehors des heures creuses. Le chauffe-eau est arrêté quand cette valeur est atteinte.",
+          "wh_temp_target": "Température cible en dehors des heures creuses, et en heures creuses la veille d'un jour rouge Tempo. Le chauffe-eau est arrêté quand cette valeur est atteinte.",
           "wh_temp_min": "Température en dessous de laquelle le chauffe-eau est forcé ON immédiatement, quelle que soit l'heure ou le score solaire.",
           "wh_temp_min_entity": "Entité définissant la température minimale à atteindre pendant les heures creuses. Le chauffe-eau chauffe jusqu'à cette valeur en HC, puis s'arrête.",
           "wh_power_entity": "Capteur de puissance réelle (W). Permet de détecter quand le thermostat interne coupe la résistance. Utilisé pour le calcul du surplus disponible et l'apprentissage de la consommation de fond.",
