@@ -550,7 +550,12 @@ const hasBatUnavailable = makeHass({
     daily_on_minutes: 45, allowed_start: "06:00", allowed_end: "22:00",
   }),
 
-  "switch.helios_battery_driving":      state("on"),
+  // Renamed Helios device: entity ids prefixed (all_house_helios_*) — the card must still find them
+  "switch.all_house_helios_battery_driving":       state("on"),
+  "switch.all_house_helios_battery_force":         state("on", { force_remaining_min: 42 }),
+  "select.all_house_helios_battery_force_direction": state("discharge", { options: ["charge", "discharge"] }),
+  "select.all_house_helios_battery_force_duration":  state("1h", { options: ["15min","30min","1h","2h","4h","8h","12h","24h"] }),
+  "number.all_house_helios_battery_force_power":     state("800", { min: 0, max: 1450, step: 50 }),
   "switch.helios_pool_manual":          state("off"),
   "switch.helios_water_heater_manual":  state("off"),
   "switch.helios_pool_force":           state("off"),

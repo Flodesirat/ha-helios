@@ -1944,29 +1944,40 @@ class HeliosCard extends HTMLElement {
   }
 
   // ------------------------------------------------------------------ Bat modal
-  _batDrivingSwitchEntity() {
-    const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
-    if (entryId) {
-      const disc = this._discoverEntities(entryId);
-      if (disc?.["battery_driving"]) return disc["battery_driving"];
+  // Finds a Helios entity whatever its entity_id: the user may have renamed the
+  // Helios device (entity ids then read e.g. switch.all_house_helios_battery_force),
+  // and hass.entities does not expose unique_id. Tries, in order:
+  //   1. the entity registry: platform "helios" + translation_key;
+  //   2. the default entity id  <domain>.helios_<name>;
+  //   3. any <domain> entity whose id ends with "helios_<name>".
+  _findHeliosEntity(domain, translationKey, name) {
+    const hass = this._hass;
+    if (!hass) return null;
+    for (const [entityId, info] of Object.entries(hass.entities ?? {})) {
+      if (info.platform === "helios" && info.translation_key === translationKey
+          && entityId.startsWith(domain + ".") && hass.states[entityId] !== undefined) {
+        return entityId;
+      }
     }
-    const candidate = "switch.helios_battery_driving";
-    return this._hass?.states[candidate] !== undefined ? candidate : null;
+    const fallback = `${domain}.helios_${name}`;
+    if (hass.states[fallback] !== undefined) return fallback;
+    const suffix = `helios_${name}`;
+    return Object.keys(hass.states).find(
+      (eid) => eid.startsWith(domain + ".") && eid.endsWith(suffix)
+    ) ?? null;
   }
 
-  // Battery force entities, by unique_id suffix (fallback: default entity ids)
+  _batDrivingSwitchEntity() {
+    return this._findHeliosEntity("switch", "eo_battery_driving", "battery_driving");
+  }
+
+  // Battery force entities (see _findHeliosEntity)
   _batForceEntities() {
-    const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
-    const disc = entryId ? this._discoverEntities(entryId) : null;
-    const pick = (suffix, fallback) => {
-      if (disc?.[suffix]) return disc[suffix];
-      return this._hass?.states[fallback] !== undefined ? fallback : null;
-    };
     return {
-      force:     pick("battery_force",           "switch.helios_battery_force"),
-      direction: pick("battery_force_direction", "select.helios_battery_force_direction"),
-      duration:  pick("battery_force_duration",  "select.helios_battery_force_duration"),
-      power:     pick("battery_force_power",     "number.helios_battery_force_power"),
+      force:     this._findHeliosEntity("switch", "eo_battery_force",           "battery_force"),
+      direction: this._findHeliosEntity("select", "eo_battery_force_direction", "battery_force_direction"),
+      duration:  this._findHeliosEntity("select", "eo_battery_force_duration",  "battery_force_duration"),
+      power:     this._findHeliosEntity("number", "eo_battery_force_power",     "battery_force_power"),
     };
   }
 
