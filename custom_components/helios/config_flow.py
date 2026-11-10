@@ -530,6 +530,12 @@ def _validate_pool(user_input: dict) -> dict[str, str]:
     return errors
 
 
+_OPTIONAL_SOURCE_ENTITIES = (
+    CONF_GRID_POWER_ENTITY, CONF_HOUSE_POWER_ENTITY,
+    CONF_TEMPO_COLOR_ENTITY, CONF_TEMPO_NEXT_COLOR_ENTITY, CONF_FORECAST_ENTITY,
+)
+
+
 class EnergyOptimizerOptionsFlow(OptionsFlow):
     """Reconfigure without reinstalling — full CRUD on sources, battery, strategy and devices."""
 
@@ -578,7 +584,9 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
 
     async def async_step_sources(self, user_input: dict | None = None):
         if user_input is not None:
-            return self.async_create_entry(data={**self._entry.options, **user_input})
+            # A field left empty removes the source (None also hides the value from entry.data)
+            cleared = {k: None for k in _OPTIONAL_SOURCE_ENTITIES if not user_input.get(k)}
+            return self.async_create_entry(data={**self._entry.options, **user_input, **cleared})
 
         return self.async_show_form(
             step_id="sources",
@@ -589,23 +597,23 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
                 ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
                 vol.Optional(
                     CONF_GRID_POWER_ENTITY,
-                    default=self._current(CONF_GRID_POWER_ENTITY, ""),
+                    description={"suggested_value": self._current(CONF_GRID_POWER_ENTITY)},
                 ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
                 vol.Optional(
                     CONF_HOUSE_POWER_ENTITY,
-                    default=self._current(CONF_HOUSE_POWER_ENTITY, ""),
+                    description={"suggested_value": self._current(CONF_HOUSE_POWER_ENTITY)},
                 ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
                 vol.Optional(
                     CONF_TEMPO_COLOR_ENTITY,
-                    default=self._current(CONF_TEMPO_COLOR_ENTITY, ""),
+                    description={"suggested_value": self._current(CONF_TEMPO_COLOR_ENTITY)},
                 ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
                 vol.Optional(
                     CONF_TEMPO_NEXT_COLOR_ENTITY,
-                    default=self._current(CONF_TEMPO_NEXT_COLOR_ENTITY, ""),
+                    description={"suggested_value": self._current(CONF_TEMPO_NEXT_COLOR_ENTITY)},
                 ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
                 vol.Optional(
                     CONF_FORECAST_ENTITY,
-                    default=self._current(CONF_FORECAST_ENTITY, ""),
+                    description={"suggested_value": self._current(CONF_FORECAST_ENTITY)},
                 ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
                 vol.Optional(
                     CONF_PEAK_PV_W,

@@ -13,6 +13,7 @@ Chaque lot livré est consigné à la fin du fichier de son domaine dans
 | Veille de rouge | 2026-11-10 | appareils | #3 | Chauffe-eau : en HC, chauffe jusqu'à la cible de journée quand demain est rouge | [historique/appareils.md](historique/appareils.md) |
 | Piscine | 2026-11-10 | appareils | #1 | Loi de filtration selon la température de l'eau, hivernage automatique, hors-gel, pas de filtration en HP rouge, mode et températures dans la carte | [historique/appareils.md](historique/appareils.md) |
 | Score optionnel | 2026-11-10 | carte | #9 | Option `sections.score` : masque la barre de score et sa décomposition, aussi en mode compact | [historique/carte.md](historique/carte.md) |
+| Sources vides | 2026-11-11 | config-flow | #10 | Options flow Sources : entités facultatives en `suggested_value`, champ vidé = source retirée | [historique/config-flow.md](historique/config-flow.md) |
 
 ## Consigner un nouveau lot
 

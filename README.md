@@ -24,6 +24,8 @@ Copier le dossier `custom_components/helios/` dans le répertoire `custom_compon
 | Entité prévision PV | Non | Sensor retournant les kWh restants à produire aujourd'hui |
 | Puissance crête PV | Non | Puissance installée en Wc — utilisée par la prévision journalière (défaut : 3000 W) |
 
+Dans les options, la section **Sources** reprend les entités configurées ; vider un champ facultatif retire la source (Helios ne la lit plus).
+
 > **Pourquoi deux entités Tempo ?** La prévision journalière tourne à 5h, encore en heures creuses (22h–6h). La couleur qui s'applique à la journée qui commence (HP 6h–22h) est parfois stockée dans une entité "lendemain" par les intégrations Tempo. Si une seule entité est disponible, laisser l'autre vide.
 
 ### Configuration — étape Batterie
