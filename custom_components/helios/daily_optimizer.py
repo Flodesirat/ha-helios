@@ -217,7 +217,13 @@ def ha_devices_to_sim(
 
         elif dev_type == DEVICE_TYPE_POOL:
             pool_ent = d.get(CONF_POOL_FILTRATION_ENTITY)
-            pool_h = _read_float(pool_ent, 0.0)
+            # Same rule as the dispatch: table on the water temperature
+            pool_h = (
+                ManagedDevice(d, gcfg)._pool_required_minutes_live(  # noqa: SLF001
+                    ManagedDevice._make_ha_reader(hass)  # noqa: SLF001
+                ) / 60.0
+                if hass is not None else 0.0
+            )
             sd_kwargs.update(
                 run_quota_h=pool_h if pool_h > 0 else None,
                 pool_required_min=pool_h * 60.0 if pool_h > 0 else None,

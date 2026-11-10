@@ -10,11 +10,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.helios.device_manager import DeviceManager
-from custom_components.helios.managed_device import ManagedDevice, _POOL_MUST_RUN_WINDOW_H
+from custom_components.helios.managed_device import ManagedDevice
 from custom_components.helios.const import (
     DEVICE_TYPE_POOL,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
-    CONF_DEVICE_POWER_W, CONF_POOL_FILTRATION_ENTITY,
+    CONF_DEVICE_POWER_W, CONF_POOL_WATER_TEMP_ENTITY,
     CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
 )
 
@@ -28,7 +28,7 @@ def _pool_config(name="Piscine", switch="switch.pompe", filtration_entity="senso
         CONF_DEVICE_TYPE:            DEVICE_TYPE_POOL,
         CONF_DEVICE_SWITCH_ENTITY:   switch,
         CONF_DEVICE_POWER_W:         300,
-        CONF_POOL_FILTRATION_ENTITY: filtration_entity,
+        CONF_POOL_WATER_TEMP_ENTITY: filtration_entity,
     }
 
 
@@ -242,7 +242,7 @@ class TestPoolForceModeDispatch:
         hass = MagicMock()
         hass.services = AsyncMock()
         mock_state = MagicMock()
-        mock_state.state = "1"   # 1 h required → normal device is satisfied
+        mock_state.state = "1"   # water 1 °C → 2 h (default table) → normal device is satisfied
         hass.states.get.return_value = mock_state
 
         # Score above threshold so gate doesn't fire; let greedy/satisfaction run
@@ -528,7 +528,7 @@ class TestDeviceManualMode:
         mgr = _make_manager([device])
         hass = MagicMock()
         hass.services = AsyncMock()
-        # Filtration entity: 4 h required → device is not satisfied (0 min done)
+        # Water 4 °C → 2 h required (default table) → not satisfied (0 min done)
         mock_state = MagicMock()
         mock_state.state = "4"
         hass.states.get.return_value = mock_state
@@ -786,12 +786,12 @@ class TestPoolMustRunDeadline:
     def test_within_window_far_from_deadline_no_must_run(self):
         """Pool runs until 22:00; at 10:00 with 300 min required there is plenty of time."""
         device, reader = _pool_with_end("22:00", required_h=5.0)
-        # 10:00 → 720 min until 22:00 → well outside _POOL_MUST_RUN_WINDOW_H * 60
+        # 10:00 → 720 min until 22:00 → plenty of time left
         now = datetime.combine(date.today(), datetime.strptime("10:00", "%H:%M").time())
         assert device.must_run_now(reader, now=now) is False
 
     def test_within_window_just_inside_must_run_window(self):
-        """Pool runs until 22:00; at 14:01 only _POOL_MUST_RUN_WINDOW_H-1 h remain → still outside window."""
+        """Pool runs until 22:00; at 14:01 7h59 remain → deficit still small."""
         device, reader = _pool_with_end("22:00", required_h=5.0)
         # 22:00 - 8h = 14:00; at 14:01 there are 7h59 left → must_run not yet active
         now = datetime.combine(date.today(), datetime.strptime("14:01", "%H:%M").time())

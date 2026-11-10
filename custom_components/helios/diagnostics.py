@@ -99,6 +99,15 @@ def _device_diag(
             "inhibit_until":        _ts_iso(device.pool_inhibit_until),
             "is_forced":            device.pool_force_until is not None and now_ts < device.pool_force_until,
             "is_inhibited":         device.pool_inhibit_until is not None and now_ts < device.pool_inhibit_until,
+            "mode":                 device.pool_mode(now_ts),
+            "water_temperature":    device._pool_temp(reader, device.pool_water_temp_entity),  # noqa: SLF001
+            "local_temperature":    device._pool_temp(reader, device.pool_local_temp_entity),  # noqa: SLF001
+            "filtration_table":     device.pool_filtration_table,
+            "wintering_enabled":    device.pool_wintering_enabled,
+            "wintering":            device.pool_wintering,
+            "frost_level":          device.pool_frost_level,
+            "tempo_red":            device.tempo_red,
+            "errors":               device.pool_errors(reader),
         }
 
     if device.device_type == DEVICE_TYPE_APPLIANCE:

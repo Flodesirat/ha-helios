@@ -124,8 +124,26 @@
       "device_pool": {
         "title": "Piscine",
         "data": {
-          "pool_filtration_entity": "Entité heures de filtration requises (h)",
-          "pool_split_sessions": "Autoriser plusieurs sessions par jour"
+          "pool_water_temp_entity": "Température de l'eau",
+          "pool_local_temp_entity": "Température du local technique",
+          "pool_filtration_table": "Loi de filtration (température:heures)",
+          "pool_wintering_enabled": "Hivernage automatique",
+          "pool_wintering_temp": "Seuil d'hivernage (température de l'eau)",
+          "pool_wintering_duration_h": "Durée de filtration en hivernage",
+          "pool_frost_temp": "Hors-gel : seuil des sessions (local)",
+          "pool_frost_continuous_temp": "Hors-gel : seuil de marche continue (local)",
+          "pool_frost_session_minutes": "Hors-gel : durée d'une session (par heure)"
+        },
+        "data_description": {
+          "pool_water_temp_entity": "Lue chaque jour à minuit pour fixer la durée de filtration du jour.",
+          "pool_local_temp_entity": "Sert à la protection hors-gel de la pompe et des canalisations.",
+          "pool_filtration_table": "Points « température:heures » séparés par des virgules, ex. 10:2, 14:4, 20:10, 24:12, 28:16, 32:24. Interpolation linéaire entre les points, valeurs des extrémités au-delà.",
+          "pool_wintering_enabled": "Passe en hivernage quand l'eau est sous le seuil à minuit ; sortie à seuil + 2 °C. En hivernage, pas de plage horaire : filtration sur le surplus solaire, sinon en heures creuses avant minuit.",
+          "pool_wintering_temp": "Température de l'eau à minuit sous laquelle la piscine passe en hivernage.",
+          "pool_wintering_duration_h": "Durée de filtration journalière fixe en hivernage : sur le surplus solaire, le reste en heures creuses avant minuit.",
+          "pool_frost_temp": "Sous ce seuil, la pompe tourne au début de chaque heure, même en jour rouge et quota atteint. Sortie à seuil + 1 °C.",
+          "pool_frost_continuous_temp": "Sous ce seuil, la pompe tourne en continu. Sortie à seuil + 1 °C.",
+          "pool_frost_session_minutes": "Minutes de marche au début de chaque heure en hors-gel. Ce temps compte dans la filtration du jour."
         }
       },
       "device_appliance": {
@@ -201,7 +219,9 @@
     },
     "error": {
       "device_weights_must_sum_to_one": "Les poids par appareil doivent sommer à 1,0.",
-      "sample_interval_out_of_range": "L'intervalle d'échantillonnage doit être compris entre 10 s et l'intervalle de mise à jour."
+      "sample_interval_out_of_range": "L'intervalle d'échantillonnage doit être compris entre 10 s et l'intervalle de mise à jour.",
+      "invalid_filtration_table": "Loi de filtration invalide : au moins deux points « température:heures », températures distinctes, heures entre 0 et 24.",
+      "frost_continuous_above_sessions": "Le seuil de marche continue doit être inférieur ou égal au seuil des sessions."
     },
     "abort": {
       "already_configured": "Cette intégration est déjà configurée."
@@ -384,8 +404,26 @@
       "opt_device_pool": {
         "title": "Piscine",
         "data": {
-          "pool_filtration_entity": "Entité heures de filtration requises (h)",
-          "pool_split_sessions": "Autoriser plusieurs sessions par jour"
+          "pool_water_temp_entity": "Température de l'eau",
+          "pool_local_temp_entity": "Température du local technique",
+          "pool_filtration_table": "Loi de filtration (température:heures)",
+          "pool_wintering_enabled": "Hivernage automatique",
+          "pool_wintering_temp": "Seuil d'hivernage (température de l'eau)",
+          "pool_wintering_duration_h": "Durée de filtration en hivernage",
+          "pool_frost_temp": "Hors-gel : seuil des sessions (local)",
+          "pool_frost_continuous_temp": "Hors-gel : seuil de marche continue (local)",
+          "pool_frost_session_minutes": "Hors-gel : durée d'une session (par heure)"
+        },
+        "data_description": {
+          "pool_water_temp_entity": "Lue chaque jour à minuit pour fixer la durée de filtration du jour.",
+          "pool_local_temp_entity": "Sert à la protection hors-gel de la pompe et des canalisations.",
+          "pool_filtration_table": "Points « température:heures » séparés par des virgules, ex. 10:2, 14:4, 20:10, 24:12, 28:16, 32:24. Interpolation linéaire entre les points, valeurs des extrémités au-delà.",
+          "pool_wintering_enabled": "Passe en hivernage quand l'eau est sous le seuil à minuit ; sortie à seuil + 2 °C. En hivernage, pas de plage horaire : filtration sur le surplus solaire, sinon en heures creuses avant minuit.",
+          "pool_wintering_temp": "Température de l'eau à minuit sous laquelle la piscine passe en hivernage.",
+          "pool_wintering_duration_h": "Durée de filtration journalière fixe en hivernage : sur le surplus solaire, le reste en heures creuses avant minuit.",
+          "pool_frost_temp": "Sous ce seuil, la pompe tourne au début de chaque heure, même en jour rouge et quota atteint. Sortie à seuil + 1 °C.",
+          "pool_frost_continuous_temp": "Sous ce seuil, la pompe tourne en continu. Sortie à seuil + 1 °C.",
+          "pool_frost_session_minutes": "Minutes de marche au début de chaque heure en hors-gel. Ce temps compte dans la filtration du jour."
         }
       },
       "opt_device_appliance": {
@@ -424,7 +462,9 @@
     },
     "error": {
       "device_weights_must_sum_to_one": "Les poids par appareil doivent sommer à 1,0.",
-      "sample_interval_out_of_range": "L'intervalle d'échantillonnage doit être compris entre 10 s et l'intervalle de mise à jour."
+      "sample_interval_out_of_range": "L'intervalle d'échantillonnage doit être compris entre 10 s et l'intervalle de mise à jour.",
+      "invalid_filtration_table": "Loi de filtration invalide : au moins deux points « température:heures », températures distinctes, heures entre 0 et 24.",
+      "frost_continuous_above_sessions": "Le seuil de marche continue doit être inférieur ou égal au seuil des sessions."
     }
   },
   "entity": {
@@ -506,6 +546,12 @@
           "on": "Piloté ON",
           "off": "Piloté OFF"
         }
+      },
+      "eo_pool_wintering": {
+        "name": "{name} hivernage"
+      },
+      "eo_pool_frost_protection": {
+        "name": "{name} hors-gel"
       }
     },
     "switch": {

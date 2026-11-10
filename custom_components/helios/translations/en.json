@@ -124,8 +124,26 @@
       "device_pool": {
         "title": "Pool",
         "data": {
-          "pool_filtration_entity": "Required filtration hours entity (h)",
-          "pool_split_sessions": "Allow multiple sessions per day"
+          "pool_water_temp_entity": "Water temperature",
+          "pool_local_temp_entity": "Pump room temperature",
+          "pool_filtration_table": "Filtration law (temperature:hours)",
+          "pool_wintering_enabled": "Automatic wintering",
+          "pool_wintering_temp": "Wintering threshold (water temperature)",
+          "pool_wintering_duration_h": "Filtration time while wintering",
+          "pool_frost_temp": "Frost protection: session threshold (room)",
+          "pool_frost_continuous_temp": "Frost protection: continuous run threshold (room)",
+          "pool_frost_session_minutes": "Frost protection: session length (per hour)"
+        },
+        "data_description": {
+          "pool_water_temp_entity": "Read every day at midnight to set the day's filtration time.",
+          "pool_local_temp_entity": "Used for frost protection of the pump and pipes.",
+          "pool_filtration_table": "Comma-separated \"temperature:hours\" points, e.g. 10:2, 14:4, 20:10, 24:12, 28:16, 32:24. Linear interpolation between points, end values beyond.",
+          "pool_wintering_enabled": "Switches to wintering when the water is below the threshold at midnight; exits at threshold + 2 °C. While wintering, no time window: filtration on solar surplus, otherwise in off-peak hours before midnight.",
+          "pool_wintering_temp": "Water temperature at midnight below which the pool goes into wintering.",
+          "pool_wintering_duration_h": "Fixed daily filtration time while wintering: on solar surplus, the rest in off-peak hours before midnight.",
+          "pool_frost_temp": "Below this threshold, the pump runs at the start of every hour, even on red days and with the quota reached. Exits at threshold + 1 °C.",
+          "pool_frost_continuous_temp": "Below this threshold, the pump runs continuously. Exits at threshold + 1 °C.",
+          "pool_frost_session_minutes": "Run minutes at the start of each hour during frost protection. This time counts in the day's filtration."
         }
       },
       "device_appliance": {
@@ -187,7 +205,9 @@
     },
     "error": {
       "device_weights_must_sum_to_one": "The per-device weights must sum to 1.0.",
-      "sample_interval_out_of_range": "Sampling interval must be between 10 s and the update interval."
+      "sample_interval_out_of_range": "Sampling interval must be between 10 s and the update interval.",
+      "invalid_filtration_table": "Invalid filtration law: at least two \"temperature:hours\" points, distinct temperatures, hours between 0 and 24.",
+      "frost_continuous_above_sessions": "The continuous run threshold must be lower than or equal to the session threshold."
     },
     "abort": {
       "already_configured": "This integration is already configured."
@@ -348,8 +368,26 @@
       "opt_device_pool": {
         "title": "Pool",
         "data": {
-          "pool_filtration_entity": "Required filtration hours entity (h)",
-          "pool_split_sessions": "Allow multiple sessions per day"
+          "pool_water_temp_entity": "Water temperature",
+          "pool_local_temp_entity": "Pump room temperature",
+          "pool_filtration_table": "Filtration law (temperature:hours)",
+          "pool_wintering_enabled": "Automatic wintering",
+          "pool_wintering_temp": "Wintering threshold (water temperature)",
+          "pool_wintering_duration_h": "Filtration time while wintering",
+          "pool_frost_temp": "Frost protection: session threshold (room)",
+          "pool_frost_continuous_temp": "Frost protection: continuous run threshold (room)",
+          "pool_frost_session_minutes": "Frost protection: session length (per hour)"
+        },
+        "data_description": {
+          "pool_water_temp_entity": "Read every day at midnight to set the day's filtration time.",
+          "pool_local_temp_entity": "Used for frost protection of the pump and pipes.",
+          "pool_filtration_table": "Comma-separated \"temperature:hours\" points, e.g. 10:2, 14:4, 20:10, 24:12, 28:16, 32:24. Linear interpolation between points, end values beyond.",
+          "pool_wintering_enabled": "Switches to wintering when the water is below the threshold at midnight; exits at threshold + 2 °C. While wintering, no time window: filtration on solar surplus, otherwise in off-peak hours before midnight.",
+          "pool_wintering_temp": "Water temperature at midnight below which the pool goes into wintering.",
+          "pool_wintering_duration_h": "Fixed daily filtration time while wintering: on solar surplus, the rest in off-peak hours before midnight.",
+          "pool_frost_temp": "Below this threshold, the pump runs at the start of every hour, even on red days and with the quota reached. Exits at threshold + 1 °C.",
+          "pool_frost_continuous_temp": "Below this threshold, the pump runs continuously. Exits at threshold + 1 °C.",
+          "pool_frost_session_minutes": "Run minutes at the start of each hour during frost protection. This time counts in the day's filtration."
         }
       },
       "opt_device_appliance": {
@@ -388,7 +426,9 @@
     },
     "error": {
       "device_weights_must_sum_to_one": "The per-device weights must sum to 1.0.",
-      "sample_interval_out_of_range": "Sampling interval must be between 10 s and the update interval."
+      "sample_interval_out_of_range": "Sampling interval must be between 10 s and the update interval.",
+      "invalid_filtration_table": "Invalid filtration law: at least two \"temperature:hours\" points, distinct temperatures, hours between 0 and 24.",
+      "frost_continuous_above_sessions": "The continuous run threshold must be lower than or equal to the session threshold."
     }
   },
   "entity": {
@@ -470,6 +510,12 @@
           "on": "Controlled ON",
           "off": "Controlled OFF"
         }
+      },
+      "eo_pool_wintering": {
+        "name": "{name} wintering"
+      },
+      "eo_pool_frost_protection": {
+        "name": "{name} frost protection"
       }
     },
     "switch": {

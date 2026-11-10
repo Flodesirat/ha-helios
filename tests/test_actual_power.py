@@ -21,7 +21,7 @@ from custom_components.helios.const import (
     CONF_DEVICE_POWER_W, CONF_DEVICE_POWER_ENTITY, CONF_DEVICE_PRIORITY,
     CONF_APPLIANCE_POWER_ENTITY,
     CONF_EV_PLUGGED_ENTITY, CONF_EV_SOC_ENTITY, CONF_EV_SOC_TARGET,
-    CONF_POOL_FILTRATION_ENTITY,
+    CONF_POOL_WATER_TEMP_ENTITY,
 )
 
 POWER_ENTITY    = "sensor.device_power"
@@ -54,7 +54,7 @@ def _make_device(
         cfg[CONF_EV_SOC_ENTITY]     = None
         cfg[CONF_EV_SOC_TARGET]     = 100
     if device_type == DEVICE_TYPE_POOL:
-        cfg[CONF_POOL_FILTRATION_ENTITY] = None
+        cfg[CONF_POOL_WATER_TEMP_ENTITY] = None
     d = ManagedDevice(cfg)
     d.is_on = is_on
     return d

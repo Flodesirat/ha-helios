@@ -24,7 +24,7 @@ from custom_components.helios.managed_device import ManagedDevice
 from custom_components.helios.const import (
     DEVICE_TYPE_POOL, DEVICE_TYPE_WATER_HEATER,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
-    CONF_DEVICE_POWER_W, CONF_POOL_FILTRATION_ENTITY,
+    CONF_DEVICE_POWER_W, CONF_POOL_WATER_TEMP_ENTITY,
     CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_WH_TEMP_MIN,
     CONF_DEVICE_MIN_ON_MINUTES,
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END,
@@ -41,7 +41,7 @@ def _pool_cfg(name="Piscine", switch="switch.pompe"):
         CONF_DEVICE_TYPE:            DEVICE_TYPE_POOL,
         CONF_DEVICE_SWITCH_ENTITY:   switch,
         CONF_DEVICE_POWER_W:         300,
-        CONF_POOL_FILTRATION_ENTITY: "sensor.filtration_h",
+        CONF_POOL_WATER_TEMP_ENTITY: "sensor.filtration_h",
     }
 
 

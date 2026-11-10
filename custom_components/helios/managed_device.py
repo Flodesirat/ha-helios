@@ -34,7 +34,12 @@ from .const import (
     CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
     HVAC_MODE_HEAT, HVAC_MODE_COOL,
     # Pool
-    CONF_POOL_FILTRATION_ENTITY, CONF_POOL_SPLIT_SESSIONS,
+    CONF_POOL_WATER_TEMP_ENTITY, CONF_POOL_LOCAL_TEMP_ENTITY,
+    CONF_POOL_FILTRATION_TABLE, CONF_POOL_WINTERING_ENABLED, CONF_POOL_WINTERING_TEMP,
+    CONF_POOL_WINTERING_DURATION_H, CONF_POOL_FROST_TEMP, CONF_POOL_FROST_CONTINUOUS_TEMP,
+    CONF_POOL_FROST_SESSION_MINUTES,
+    POOL_MODE_AUTO, POOL_MODE_WINTERING, POOL_MODE_FROST, POOL_MODE_MANUAL,
+    POOL_ERROR_NO_WATER_TEMP, POOL_ERROR_NO_LOCAL_TEMP,
     # Appliance
     CONF_APPLIANCE_READY_ENTITY, CONF_APPLIANCE_PREPARE_SCRIPT,
     CONF_APPLIANCE_START_SCRIPT, CONF_APPLIANCE_POWER_ENTITY,
@@ -54,7 +59,9 @@ from .const import (
     DEFAULT_EV_SOC_TARGET, DEFAULT_EV_MIN_CHARGE_POWER_W,
     DEFAULT_WH_TEMP_TARGET, DEFAULT_WH_TEMP_MIN, DEFAULT_WH_OFF_PEAK_HYSTERESIS_K,
     DEFAULT_HVAC_HYSTERESIS_K, DEFAULT_HVAC_MIN_OFF_MINUTES,
-    DEFAULT_POOL_SPLIT_SESSIONS,
+    DEFAULT_POOL_FILTRATION_TABLE, DEFAULT_POOL_WINTERING_ENABLED, DEFAULT_POOL_WINTERING_TEMP,
+    DEFAULT_POOL_WINTERING_DURATION_H, DEFAULT_POOL_FROST_TEMP, DEFAULT_POOL_FROST_CONTINUOUS_TEMP,
+    DEFAULT_POOL_FROST_SESSION_MINUTES,
     DEFAULT_APPLIANCE_POWER_THRESHOLD_W, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES,
     DEFAULT_APPLIANCE_DEADLINE_SLOTS,
     DEFAULT_BATTERY_PRIORITY, DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
@@ -62,12 +69,12 @@ from .const import (
     TEMPO_RED,
     BATTERY_FORCE_CHARGE,
 )
+from .pool_filtration import (
+    FROST_OFF, filtration_hours, frost_wants_on, next_frost_level, next_wintering,
+    parse_filtration_table,
+)
 
 _LOGGER = logging.getLogger(__name__)
-
-# Pool must_run: only force filtration in the last N hours of the day.
-# Before this window the day is still open — solar may yet provide the needed energy.
-_POOL_MUST_RUN_WINDOW_H = 8  # hours before midnight (default: fires after 16:00)
 
 # A StateReader reads a HA entity state and returns its raw string value,
 # or None if the entity is unavailable / unknown / missing.
@@ -166,8 +173,21 @@ class ManagedDevice:
         self.hvac_min_off_minutes: int        = int(config.get(CONF_HVAC_MIN_OFF_MINUTES, DEFAULT_HVAC_MIN_OFF_MINUTES))
 
         # ---- Pool ----
-        self.pool_filtration_entity: str | None = config.get(CONF_POOL_FILTRATION_ENTITY)
-        self.pool_split_sessions: bool          = bool(config.get(CONF_POOL_SPLIT_SESSIONS, DEFAULT_POOL_SPLIT_SESSIONS))
+        self.pool_water_temp_entity: str | None = config.get(CONF_POOL_WATER_TEMP_ENTITY)
+        self.pool_local_temp_entity: str | None = config.get(CONF_POOL_LOCAL_TEMP_ENTITY)
+        try:
+            self.pool_filtration_table = parse_filtration_table(
+                config.get(CONF_POOL_FILTRATION_TABLE, DEFAULT_POOL_FILTRATION_TABLE)
+            )
+        except ValueError as err:
+            _LOGGER.warning("Pool '%s': invalid filtration table (%s) — using default", self.name, err)
+            self.pool_filtration_table = parse_filtration_table(DEFAULT_POOL_FILTRATION_TABLE)
+        self.pool_wintering_enabled: bool  = bool(config.get(CONF_POOL_WINTERING_ENABLED, DEFAULT_POOL_WINTERING_ENABLED))
+        self.pool_wintering_temp: float    = float(config.get(CONF_POOL_WINTERING_TEMP, DEFAULT_POOL_WINTERING_TEMP))
+        self.pool_wintering_duration_h: float = float(config.get(CONF_POOL_WINTERING_DURATION_H, DEFAULT_POOL_WINTERING_DURATION_H))
+        self.pool_frost_temp: float        = float(config.get(CONF_POOL_FROST_TEMP, DEFAULT_POOL_FROST_TEMP))
+        self.pool_frost_continuous_temp: float = float(config.get(CONF_POOL_FROST_CONTINUOUS_TEMP, DEFAULT_POOL_FROST_CONTINUOUS_TEMP))
+        self.pool_frost_session_minutes: int = int(config.get(CONF_POOL_FROST_SESSION_MINUTES, DEFAULT_POOL_FROST_SESSION_MINUTES))
 
         # ---- Appliance ----
         self.appliance_ready_entity: str | None   = config.get(CONF_APPLIANCE_READY_ENTITY)
@@ -209,8 +229,16 @@ class ManagedDevice:
         # Pool — daily run tracking (persisted externally)
         self.pool_daily_run_minutes: float       = 0.0
         self.pool_last_date: date | None         = None
-        # Snapshot of required filtration minutes taken at 05:00 — stable all day
+        # Snapshot of required filtration minutes taken at midnight — stable all day
         self.pool_required_minutes_today: float | None = None
+        # Wintering state decided at the midnight snapshot (persisted for its hysteresis)
+        self.pool_wintering: bool                = False
+        # Frost protection level, updated every cycle from the pump-room temperature
+        self.pool_frost_level: str               = FROST_OFF
+        # Runtime — current Tempo day is red (set by DeviceManager each cycle)
+        self.tempo_red: bool                     = False
+        # Last reported pool errors (DeviceManager logs on change)
+        self.pool_errors_last: list[str]         = []
 
         # EV — manual plugged state (used when no ev_plugged_entity is configured)
         self.ev_plugged_manual: bool           = False
@@ -238,6 +266,8 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     def is_in_allowed_window(self, now: time) -> bool:
         """True if *now* falls within [allowed_start, allowed_end]."""
+        if self.device_type == DEVICE_TYPE_POOL and self.pool_wintering:
+            return True  # wintering: no time window, the day's quota is due by midnight
         start = self._allowed_start_t
         end   = self._allowed_end_t
         if start is None or end is None:
@@ -414,7 +444,22 @@ class ManagedDevice:
                 return 0.0
             deficit_m = max(0.0, required_m - self.pool_daily_run_minutes)
             _now = now or datetime.now()
-            minutes_left = max(1.0, (self._pool_deadline_dt(_now) - _now).total_seconds() / 60)
+            if self.pool_wintering and self._off_peak_slots:
+                # Wintering: solar surplus first, otherwise off-peak hours before
+                # midnight. Forced only in off-peak hours, once the off-peak time
+                # left today no longer exceeds the deficit; never forced in peak hours.
+                if deficit_m <= 0:
+                    return 0.0
+                now_t = _now.time()
+                if self._is_off_peak(now_t) and deficit_m >= self._off_peak_minutes_until_midnight(now_t):
+                    return 1.0
+                to_midnight = (24 * 60) - (now_t.hour * 60 + now_t.minute)
+                return min(0.99, deficit_m / max(1.0, to_midnight))
+            deadline = (
+                datetime.combine(_now.date() + timedelta(days=1), time(0, 0))
+                if self.pool_wintering else self._pool_deadline_dt(_now)
+            )
+            minutes_left = max(1.0, (deadline - _now).total_seconds() / 60)
             return min(1.0, deficit_m / minutes_left)
 
         if self.device_type == DEVICE_TYPE_APPLIANCE:
@@ -528,28 +573,105 @@ class ManagedDevice:
         if self.pool_last_date != today:
             self.pool_daily_run_minutes = 0.0
             self.pool_last_date = today
-            self.pool_required_minutes_today = None  # re-captured at 05:00
+            self.pool_required_minutes_today = None  # re-captured on the first cycle of the day
         if self.is_on:
             self.pool_daily_run_minutes += scan_interval_minutes
 
     def try_capture_pool_required(self, reader: StateReader, current_hour: int) -> None:
-        """Snapshot the required filtration minutes once at 05:00 (or on restart if already ≥ 05:00).
+        """Snapshot the required filtration minutes once a day.
 
-        Reading the entity live would cause ON/OFF oscillations as the pool
-        temperature—and thus the required hours—evolves during the day.
+        The water temperature is read at midnight (first cycle of the day), like
+        the run counter reset. Reading live would cause ON/OFF oscillations as
+        the pool temperature — and thus the required hours — evolves during the day.
+        The wintering decision is taken at the same time, from the same reading.
+        Without a reading, no quota: Helios does not drive the pump (see pool_errors).
         """
         if self.pool_required_minutes_today is not None:
             return  # already captured today
-        if current_hour < 5:
-            return  # wait until 05:00
-        raw = self._pool_required_minutes_live(reader)
-        if raw <= 0.0:
-            return  # entity not ready yet — try again next cycle
-        self.pool_required_minutes_today = raw
-        _LOGGER.info(
-            "Pool '%s': captured daily required filtration = %.1f min at %02d:xx",
-            self.name, raw, current_hour,
+        water_temp = self._pool_temp(reader, self.pool_water_temp_entity)
+        if water_temp is None:
+            return  # no sensor / unavailable — try again next cycle
+        self.pool_wintering = self.pool_wintering_enabled and next_wintering(
+            self.pool_wintering, water_temp, self.pool_wintering_temp,
         )
+        self.pool_required_minutes_today = self._pool_minutes_for(water_temp, self.pool_wintering)
+        _LOGGER.info(
+            "Pool '%s': water %.1f °C at %02d:xx → %.1f min required today%s",
+            self.name, water_temp, current_hour, self.pool_required_minutes_today,
+            " (wintering)" if self.pool_wintering else "",
+        )
+
+    def _pool_minutes_for(self, water_temp: float, wintering: bool) -> float:
+        """Required filtration minutes for a given water temperature."""
+        if wintering:
+            return self.pool_wintering_duration_h * 60.0
+        return filtration_hours(self.pool_filtration_table, water_temp) * 60.0
+
+    def update_pool_frost(self, reader: StateReader) -> None:
+        """Update the frost protection level from the pump-room temperature.
+
+        An unavailable sensor keeps the previous level (fail safe).
+        """
+        room_temp = self._pool_temp(reader, self.pool_local_temp_entity)
+        if room_temp is None:
+            return
+        level = next_frost_level(
+            self.pool_frost_level, room_temp,
+            self.pool_frost_temp, self.pool_frost_continuous_temp,
+        )
+        if level != self.pool_frost_level:
+            _LOGGER.info(
+                "Pool '%s': frost protection %s → %s (room %.1f °C)",
+                self.name, self.pool_frost_level, level, room_temp,
+            )
+            self.pool_frost_level = level
+
+    def pool_frost_wants_on(self, now: time) -> bool:
+        """True when frost protection requires the pump to run now."""
+        return frost_wants_on(self.pool_frost_level, now.minute, self.pool_frost_session_minutes)
+
+    def pool_red_peak_blocked(self, now: time) -> bool:
+        """Red Tempo day during peak hours: Helios must not run the pump."""
+        return self.tempo_red and not self._is_off_peak(now)
+
+    def pool_mode(self, now_ts: float | None = None) -> str:
+        """Display mode: manual > frost > wintering > auto."""
+        ts = time_mod.time() if now_ts is None else now_ts
+        if (
+            self.manual_mode
+            or (self.pool_force_until is not None and ts < self.pool_force_until)
+            or (self.pool_inhibit_until is not None and ts < self.pool_inhibit_until)
+        ):
+            return POOL_MODE_MANUAL
+        if self.is_on and self.last_decision_reason == "frost":
+            return POOL_MODE_FROST
+        if self.pool_wintering:
+            return POOL_MODE_WINTERING
+        return POOL_MODE_AUTO
+
+    def _pool_temp(self, reader: StateReader, entity_id: str | None) -> float | None:
+        if not entity_id:
+            return None
+        raw = reader(entity_id)
+        if raw is None or raw in ("unavailable", "unknown"):
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+
+    def _off_peak_minutes_until_midnight(self, now: time) -> float:
+        """Off-peak minutes left between *now* and midnight (all configured slots)."""
+        now_m = now.hour * 60 + now.minute
+        total = 0
+        for start, end in self._off_peak_slots:
+            s = start.hour * 60 + start.minute
+            e = end.hour * 60 + end.minute
+            # A midnight-crossing slot splits into [s, 24:00) and [00:00, e)
+            parts = [(s, e)] if s <= e else [(s, 24 * 60), (0, e)]
+            for ps, pe in parts:
+                total += max(0, pe - max(ps, now_m))
+        return float(total)
 
     def _pool_deadline_dt(self, now: datetime) -> datetime:
         """Return the datetime of the pool's daily deadline (allowed_end or midnight).
@@ -567,17 +689,40 @@ class ManagedDevice:
         return datetime.combine(now.date() + timedelta(days=1), time(0, 0))
 
     def _pool_required_minutes_live(self, reader: StateReader) -> float:
-        """Read the filtration entity directly (only used for the 05:00 snapshot)."""
-        raw = self._state_float(reader, self.pool_filtration_entity)
-        return raw * 60.0  # hours → minutes
+        """Required minutes from the current readings, without touching the daily state."""
+        water_temp = self._pool_temp(reader, self.pool_water_temp_entity)
+        if water_temp is None:
+            return 0.0
+        wintering = self.pool_wintering_enabled and next_wintering(
+            self.pool_wintering, water_temp, self.pool_wintering_temp,
+        )
+        return self._pool_minutes_for(water_temp, wintering)
 
     def _pool_required_minutes(self, reader: StateReader) -> float:
         """Return the stable daily snapshot, or live value if snapshot not yet taken."""
         if self.pool_required_minutes_today is not None:
             return self.pool_required_minutes_today
-        # Before 05:00 or entity unavailable at 05:00: use live value so the
-        # force-mode path still works, but dispatch won't run (score = 0 at night).
+        # No snapshot (water sensor missing / unavailable since midnight): the
+        # dispatch leaves the pump alone, this value is only informative.
         return self._pool_required_minutes_live(reader)
+
+    def pool_quota_known(self) -> bool:
+        """True once today's filtration quota has been set from the water sensor."""
+        return self.pool_required_minutes_today is not None
+
+    def pool_errors(self, reader: StateReader) -> list[str]:
+        """Current pool errors (codes shown by the card).
+
+        - POOL_ERROR_NO_WATER_TEMP: no quota for today — Helios cannot drive the pump.
+        - POOL_ERROR_NO_LOCAL_TEMP: room sensor missing / unavailable — frost
+          protection cannot be managed.
+        """
+        errors: list[str] = []
+        if not self.pool_quota_known():
+            errors.append(POOL_ERROR_NO_WATER_TEMP)
+        if self._pool_temp(reader, self.pool_local_temp_entity) is None:
+            errors.append(POOL_ERROR_NO_LOCAL_TEMP)
+        return errors
 
     # ------------------------------------------------------------------
     # Deadline / departure urgency helper

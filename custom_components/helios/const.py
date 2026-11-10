@@ -127,8 +127,16 @@ HVAC_MODES = [HVAC_MODE_HEAT, HVAC_MODE_COOL]
 # ---------------------------------------------------------------------------
 # Per-device keys — pool
 # ---------------------------------------------------------------------------
-CONF_POOL_FILTRATION_ENTITY = "pool_filtration_entity"  # sensor → required hours today
-CONF_POOL_SPLIT_SESSIONS    = "pool_split_sessions"     # allow multiple sessions per day
+CONF_POOL_FILTRATION_ENTITY = "pool_filtration_entity"  # removed in 1.2 — kept to purge old configs and for the simulation
+CONF_POOL_WATER_TEMP_ENTITY = "pool_water_temp_entity"  # water temperature (read at midnight)
+CONF_POOL_LOCAL_TEMP_ENTITY = "pool_local_temp_entity"  # pump-room temperature (frost protection)
+CONF_POOL_FILTRATION_TABLE  = "pool_filtration_table"   # "temp:hours, …" — linear interpolation
+CONF_POOL_WINTERING_ENABLED = "pool_wintering_enabled"  # automatic wintering on water temperature
+CONF_POOL_WINTERING_TEMP    = "pool_wintering_temp"     # °C — wintering below this
+CONF_POOL_WINTERING_DURATION_H = "pool_wintering_duration_h"  # h/day while wintering
+CONF_POOL_FROST_TEMP        = "pool_frost_temp"         # °C — frost sessions below this
+CONF_POOL_FROST_CONTINUOUS_TEMP = "pool_frost_continuous_temp"  # °C — continuous run below this
+CONF_POOL_FROST_SESSION_MINUTES = "pool_frost_session_minutes"  # min run at the start of each hour
 
 # ---------------------------------------------------------------------------
 # Per-device keys — appliance (washer, dishwasher…)
@@ -281,7 +289,23 @@ DEFAULT_WH_OFF_PEAK_HYSTERESIS_K   = 3.0    # °C — must_run triggers only bel
 DEFAULT_HVAC_HYSTERESIS_K          = 0.5    # °C
 DEFAULT_HVAC_MIN_OFF_MINUTES       = 5
 
-DEFAULT_POOL_SPLIT_SESSIONS        = True
+DEFAULT_POOL_FILTRATION_TABLE      = "10:2, 14:4, 20:10, 24:12, 28:16, 32:24"
+DEFAULT_POOL_WINTERING_ENABLED     = False
+DEFAULT_POOL_WINTERING_TEMP        = 12.0   # °C
+DEFAULT_POOL_WINTERING_DURATION_H  = 2.0    # h
+DEFAULT_POOL_FROST_TEMP            = 2.0    # °C
+DEFAULT_POOL_FROST_CONTINUOUS_TEMP = -2.0   # °C
+DEFAULT_POOL_FROST_SESSION_MINUTES = 15     # min
+
+# Pool display mode (DeviceStateSensor attribute "pool_mode")
+POOL_MODE_AUTO      = "auto"
+POOL_MODE_WINTERING = "wintering"
+POOL_MODE_FROST     = "frost"
+POOL_MODE_MANUAL    = "manual"
+
+# Pool errors (DeviceStateSensor attribute "pool_errors")
+POOL_ERROR_NO_WATER_TEMP = "no_water_temperature"  # no quota → Helios cannot drive the pump
+POOL_ERROR_NO_LOCAL_TEMP = "no_local_temperature"  # frost protection cannot be managed
 
 DEFAULT_APPLIANCE_POWER_THRESHOLD_W     = 10.0   # W — "cycle ended" detection
 DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES = 120   # min — fallback if no power sensor

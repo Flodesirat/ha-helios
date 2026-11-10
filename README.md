@@ -172,10 +172,29 @@ La même nuit, la pré-charge de la batterie mesure l'import réseau (chauffe-ea
 
 **`pool`** — pompe de piscine. Satisfait quand le quota journalier de filtration est atteint. L'urgence monte linéairement : `minutes manquantes / minutes restantes avant la fin de plage` — elle atteint 1.0 en fin de fenêtre si le quota n'est pas atteint, forçant le démarrage.
 
-| Paramètre spécifique | Description |
-|----------------------|-------------|
-| Quota journalier | Durée de filtration cible (heures) |
-| Entité filtration | Sensor indiquant le temps de filtration déjà effectué (heures) |
+| Paramètre spécifique | Défaut | Description |
+|----------------------|--------|-------------|
+| Température de l'eau | — | Sensor °C de l'eau. Lu à minuit pour fixer le quota du jour (figé jusqu'au minuit suivant) |
+| Température du local | — | Sensor °C du local technique, pour le hors-gel |
+| Loi de filtration | `10:2, 14:4, 20:10, 24:12, 28:16, 32:24` | Points `température:heures`. Interpolation linéaire entre les points, valeurs des extrémités au-delà (ex. 17 °C → 7 h) |
+| Hivernage automatique | désactivé | Active la bascule automatique en hivernage |
+| Seuil d'hivernage | 12 °C | Eau à minuit sous ce seuil → hivernage ; sortie à seuil + 2 °C |
+| Durée en hivernage | 2 h | Quota fixe en hivernage (au lieu de la loi) |
+| Hors-gel : seuil des sessions | 2 °C | Local sous ce seuil → la pompe tourne au début de chaque heure ; sortie à seuil + 1 °C |
+| Hors-gel : seuil de marche continue | −2 °C | Local sous ce seuil → marche continue ; sortie à seuil + 1 °C |
+| Hors-gel : durée d'une session | 15 min | Minutes de marche au début de chaque heure |
+
+**Journée** : le compteur de filtration et le quota repartent à minuit (premier cycle de la journée). Le hors-gel qui tourne après minuit compte donc dans la nouvelle journée.
+
+**Hivernage** : pas de plage horaire. La filtration se fait sur le surplus solaire ; ce qui manque se fait en heures creuses avant minuit. Helios force la pompe en heures creuses dès que le temps d'heures creuses restant avant minuit ne dépasse plus le temps manquant (ex. HC 22h–6h, 2 h manquantes → 22h–24h). Jamais de marche forcée en heures pleines. Sans créneau d'heures creuses configuré, l'urgence se calcule jusqu'à minuit.
+
+**Hors-gel** : prioritaire sur la plage horaire, les jours rouges et le quota. Le temps de marche compte dans la filtration du jour et peut dépasser le quota. Le mode manuel et un forçage ON/OFF en cours priment sur le hors-gel. Si la sonde du local devient indisponible, le niveau de hors-gel en cours est conservé. À la fin d'une session, la pompe revient au dispatch normal, sans attendre la durée minimale allumé.
+
+**Jours rouges** : pendant les heures pleines d'un jour rouge Tempo (hors créneaux d'heures creuses de l'étape Stratégie), Helios n'allume pas la pompe et l'éteint si elle tourne (raison `red_peak`). Seuls le hors-gel et le forçage manuel restent possibles. Le déficit est accepté ; l'urgence peut le rattraper en heures creuses si la plage horaire le permet.
+
+**Erreurs** : sans température d'eau (sonde absente, ou indisponible depuis minuit), il n'y a pas de quota du jour. Helios affiche « impossible de piloter la pompe » et ne touche plus à la pompe, sauf pour le hors-gel et le forçage manuel. Une sonde qui tombe en panne après la lecture de minuit ne gêne pas : le quota du jour est déjà fixé. Sans température du local (absente ou indisponible), Helios affiche « impossible de gérer le mode hors-gel » ; si la sonde tombe en panne pendant un hors-gel, le niveau en cours est conservé. Les erreurs sont écrites dans le journal HA (une fois, à leur apparition), exposées dans l'attribut `pool_errors` et affichées par la carte.
+
+**Mise à jour depuis 1.1** : l'ancien paramètre « Entité heures de filtration » est supprimé. Une piscine configurée avant la 1.2 est en erreur « impossible de piloter la pompe » tant qu'elle n'est pas reconfigurée (Options → appareil) avec ses deux sondes.
 
 **`appliance`** — électroménager à cycle unique (lave-vaisselle, lave-linge…). Non interruptible : une fois démarré, Helios ne l'éteint pas avant la fin du cycle. Le cycle est déclenché manuellement (bouton "Prêt" dans la carte) ou automatiquement via `appliance_schedule.json` en simulation. L'urgence est pilotée par la deadline automatique calculée au moment de la mise en attente (voir [Deadline automatique pour l'électroménager](#deadline-automatique-pour-lélectroménager)).
 
@@ -520,6 +539,15 @@ Pour chaque appareil configuré (slug = nom normalisé) :
 |--------|------|-------------|
 | `sensor.helios_{slug}` | Sensor | État de l'appareil — `on` \| `off` \| `satisfied` \| `waiting`. Attributs : `effective_score`, `fit`, `urgency`, `power_w`, `reason` (dernière décision) |
 | `switch.helios_{slug}_manual` | Switch | Passe l'appareil en mode manuel — Helios ne le pilote plus, l'état du switch physique reste sous contrôle de l'utilisateur |
+
+Piscine, en plus :
+
+| Entité | Type | Description |
+|--------|------|-------------|
+| `binary_sensor.helios_{slug}_wintering` | Binary sensor | ON en hivernage. Attributs : `wintering_enabled`, `wintering_temp`, `wintering_duration_h` |
+| `binary_sensor.helios_{slug}_frost_protection` | Binary sensor | ON quand le hors-gel est actif. Attribut `frost_level` : `off`, `sessions`, `continuous` |
+
+Le sensor `sensor.helios_{slug}` d'une piscine porte aussi `pool_mode` (`manual`, `frost`, `wintering`, `auto`, dans cet ordre de priorité ; `frost` quand la pompe tourne pour le hors-gel), `pool_errors` (`no_water_temperature`, `no_local_temperature`), `water_temperature`, `local_temperature`, `pool_wintering`, `frost_level`, `filtration_done_min`, `filtration_required_min`. La carte affiche le mode (❄️ en hors-gel), les deux températures et les erreurs.
 
 #### Entités énergie et économies
 

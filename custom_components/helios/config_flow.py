@@ -10,6 +10,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .battery_config import get_batteries
+from .pool_filtration import is_valid_filtration_table
 from .const import (
     DOMAIN,
     # Sources
@@ -48,7 +49,10 @@ from .const import (
     CONF_HVAC_MODE, CONF_HVAC_HYSTERESIS_K, CONF_HVAC_MIN_OFF_MINUTES,
     HVAC_MODES,
     # Pool
-    CONF_POOL_FILTRATION_ENTITY, CONF_POOL_SPLIT_SESSIONS,
+    CONF_POOL_FILTRATION_ENTITY, CONF_POOL_WATER_TEMP_ENTITY, CONF_POOL_LOCAL_TEMP_ENTITY,
+    CONF_POOL_FILTRATION_TABLE, CONF_POOL_WINTERING_ENABLED, CONF_POOL_WINTERING_TEMP,
+    CONF_POOL_WINTERING_DURATION_H, CONF_POOL_FROST_TEMP, CONF_POOL_FROST_CONTINUOUS_TEMP,
+    CONF_POOL_FROST_SESSION_MINUTES,
     # Appliance
     CONF_APPLIANCE_READY_ENTITY, CONF_APPLIANCE_PREPARE_SCRIPT,
     CONF_APPLIANCE_START_SCRIPT, CONF_APPLIANCE_POWER_ENTITY,
@@ -84,7 +88,9 @@ from .const import (
     DEFAULT_EV_SOC_TARGET, DEFAULT_EV_MIN_CHARGE_POWER_W,
     DEFAULT_WH_TEMP_TARGET, DEFAULT_WH_TEMP_MIN, DEFAULT_WH_OFF_PEAK_HYSTERESIS_K,
     DEFAULT_HVAC_HYSTERESIS_K, DEFAULT_HVAC_MIN_OFF_MINUTES,
-    DEFAULT_POOL_SPLIT_SESSIONS,
+    DEFAULT_POOL_FILTRATION_TABLE, DEFAULT_POOL_WINTERING_ENABLED, DEFAULT_POOL_WINTERING_TEMP,
+    DEFAULT_POOL_WINTERING_DURATION_H, DEFAULT_POOL_FROST_TEMP, DEFAULT_POOL_FROST_CONTINUOUS_TEMP,
+    DEFAULT_POOL_FROST_SESSION_MINUTES,
     DEFAULT_APPLIANCE_POWER_THRESHOLD_W, DEFAULT_APPLIANCE_CYCLE_DURATION_MINUTES,
     DEFAULT_APPLIANCE_DEADLINE_SLOTS,
 )
@@ -298,20 +304,17 @@ class EnergyOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_device_pool(self, user_input: dict | None = None):
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._current_device.update(user_input)
-            return await self.async_step_device_common()
+            errors = _validate_pool(user_input)
+            if not errors:
+                self._current_device.update(user_input)
+                return await self.async_step_device_common()
 
         return self.async_show_form(
             step_id="device_pool",
-            data_schema=vol.Schema({
-                vol.Required(CONF_POOL_FILTRATION_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["sensor", "input_number", "number"]
-                    )
-                ),
-                vol.Optional(CONF_POOL_SPLIT_SESSIONS, default=DEFAULT_POOL_SPLIT_SESSIONS): selector.BooleanSelector(),
-            }),
+            data_schema=_pool_schema(user_input or {}),
+            errors=errors,
         )
 
     async def async_step_device_appliance(self, user_input: dict | None = None):
@@ -467,6 +470,64 @@ def _opt_default(device: dict, key: str) -> dict:
     if key in device and device[key] not in (None, ""):
         return {"default": device[key]}
     return {}
+
+
+def _pool_schema(cd: dict) -> vol.Schema:
+    """Pool form — shared by the config flow and the options flow (pre-filled from cd)."""
+    temp_sel = selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=["sensor", "input_number", "number"])
+    )
+
+    def _num(min_v: float, max_v: float, step: float, unit: str) -> selector.NumberSelector:
+        return selector.NumberSelector(selector.NumberSelectorConfig(
+            min=min_v, max=max_v, step=step, unit_of_measurement=unit,
+            mode=selector.NumberSelectorMode.BOX,
+        ))
+
+    return vol.Schema({
+        vol.Required(CONF_POOL_WATER_TEMP_ENTITY, **_opt_default(cd, CONF_POOL_WATER_TEMP_ENTITY)): temp_sel,
+        vol.Required(CONF_POOL_LOCAL_TEMP_ENTITY, **_opt_default(cd, CONF_POOL_LOCAL_TEMP_ENTITY)): temp_sel,
+        vol.Required(
+            CONF_POOL_FILTRATION_TABLE,
+            default=cd.get(CONF_POOL_FILTRATION_TABLE, DEFAULT_POOL_FILTRATION_TABLE),
+        ): selector.TextSelector(),
+        vol.Optional(
+            CONF_POOL_WINTERING_ENABLED,
+            default=cd.get(CONF_POOL_WINTERING_ENABLED, DEFAULT_POOL_WINTERING_ENABLED),
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_POOL_WINTERING_TEMP,
+            default=cd.get(CONF_POOL_WINTERING_TEMP, DEFAULT_POOL_WINTERING_TEMP),
+        ): _num(0, 25, 0.5, "°C"),
+        vol.Optional(
+            CONF_POOL_WINTERING_DURATION_H,
+            default=cd.get(CONF_POOL_WINTERING_DURATION_H, DEFAULT_POOL_WINTERING_DURATION_H),
+        ): _num(0, 24, 0.5, "h"),
+        vol.Optional(
+            CONF_POOL_FROST_TEMP,
+            default=cd.get(CONF_POOL_FROST_TEMP, DEFAULT_POOL_FROST_TEMP),
+        ): _num(-10, 10, 0.5, "°C"),
+        vol.Optional(
+            CONF_POOL_FROST_CONTINUOUS_TEMP,
+            default=cd.get(CONF_POOL_FROST_CONTINUOUS_TEMP, DEFAULT_POOL_FROST_CONTINUOUS_TEMP),
+        ): _num(-20, 10, 0.5, "°C"),
+        vol.Optional(
+            CONF_POOL_FROST_SESSION_MINUTES,
+            default=cd.get(CONF_POOL_FROST_SESSION_MINUTES, DEFAULT_POOL_FROST_SESSION_MINUTES),
+        ): _num(1, 60, 1, "min"),
+    })
+
+
+def _validate_pool(user_input: dict) -> dict[str, str]:
+    """Errors for the pool form (empty when valid)."""
+    errors: dict[str, str] = {}
+    if not is_valid_filtration_table(user_input.get(CONF_POOL_FILTRATION_TABLE)):
+        errors[CONF_POOL_FILTRATION_TABLE] = "invalid_filtration_table"
+    if float(user_input.get(CONF_POOL_FROST_CONTINUOUS_TEMP, DEFAULT_POOL_FROST_CONTINUOUS_TEMP)) > float(
+        user_input.get(CONF_POOL_FROST_TEMP, DEFAULT_POOL_FROST_TEMP)
+    ):
+        errors[CONF_POOL_FROST_CONTINUOUS_TEMP] = "frost_continuous_above_sessions"
+    return errors
 
 
 class EnergyOptimizerOptionsFlow(OptionsFlow):
@@ -864,21 +925,20 @@ class EnergyOptimizerOptionsFlow(OptionsFlow):
 
     async def async_step_opt_device_pool(self, user_input: dict | None = None):
         cd = self._current_device
+        errors: dict[str, str] = {}
         if user_input is not None:
-            cd.update({k: v for k, v in user_input.items() if v not in (None, "")})
-            return await self.async_step_opt_device_common()
+            errors = _validate_pool(user_input)
+            if not errors:
+                cd.update({k: v for k, v in user_input.items() if v not in (None, "")})
+                # Replaced by the water temperature entity (1.2) / never used
+                cd.pop(CONF_POOL_FILTRATION_ENTITY, None)
+                cd.pop("pool_split_sessions", None)
+                return await self.async_step_opt_device_common()
 
         return self.async_show_form(
             step_id="opt_device_pool",
-            data_schema=vol.Schema({
-                vol.Required(
-                    CONF_POOL_FILTRATION_ENTITY,
-                    **_opt_default(cd, CONF_POOL_FILTRATION_ENTITY),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain=["sensor", "input_number", "number"])
-                ),
-                vol.Optional(CONF_POOL_SPLIT_SESSIONS, default=cd.get(CONF_POOL_SPLIT_SESSIONS, DEFAULT_POOL_SPLIT_SESSIONS)): selector.BooleanSelector(),
-            }),
+            data_schema=_pool_schema({**cd, **(user_input or {})}),
+            errors=errors,
         )
 
     async def async_step_opt_device_appliance(self, user_input: dict | None = None):

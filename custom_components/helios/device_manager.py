@@ -24,12 +24,18 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_HYSTERESIS_W, DEFAULT_HYSTERESIS_DURATION_MINUTES,
     STORAGE_KEY, STORAGE_VERSION,
+    POOL_ERROR_NO_WATER_TEMP, POOL_ERROR_NO_LOCAL_TEMP,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 # How long (seconds) power must stay below threshold to confirm cycle ended
 _APPLIANCE_LOW_POWER_CONFIRM_S = 180
+
+_POOL_ERROR_LOG = {
+    POOL_ERROR_NO_WATER_TEMP: "no water temperature — unable to drive the pump",
+    POOL_ERROR_NO_LOCAL_TEMP: "no pump-room temperature — unable to manage frost protection",
+}
 
 
 def compute_fit(
@@ -120,6 +126,9 @@ class DeviceManager:
                             )
                     except ValueError:
                         pass
+
+                # Wintering state is kept across days (its hysteresis needs it)
+                device.pool_wintering = bool(stored.get("pool_wintering", False))
 
                 # Restore force/inhibit only if still active
                 force_until = stored.get("pool_force_until")
@@ -362,6 +371,7 @@ class DeviceManager:
                     "required_minutes": device.pool_required_minutes_today,
                     "pool_force_until":   device.pool_force_until,
                     "pool_inhibit_until": device.pool_inhibit_until,
+                    "pool_wintering":     device.pool_wintering,
                 })
             data[device.name] = entry
         if self.battery_device is not None:
@@ -467,6 +477,7 @@ class DeviceManager:
         for device in self.devices:
             device.update_daily_on_time(self._scan_interval, today)
             device.tempo_next_red = tempo_next_red
+            device.tempo_red      = tempo_color == TEMPO_RED
 
         # ---- Update pool run counters (always, including during force mode) ----
         pool_changed = False
@@ -477,6 +488,14 @@ class DeviceManager:
             before_required = device.pool_required_minutes_today
             device.update_pool_run_time(self._scan_interval, today)
             device.try_capture_pool_required(reader, now.hour)
+            device.update_pool_frost(reader)
+            errors = device.pool_errors(reader)
+            if errors != device.pool_errors_last:
+                for code in set(errors) - set(device.pool_errors_last):
+                    _LOGGER.error("Pool '%s': %s", device.name, _POOL_ERROR_LOG[code])
+                for code in set(device.pool_errors_last) - set(errors):
+                    _LOGGER.info("Pool '%s': resolved — %s", device.name, _POOL_ERROR_LOG[code])
+                device.pool_errors_last = errors
             if (device.pool_daily_run_minutes != before_minutes
                     or device.pool_required_minutes_today != before_required):
                 pool_changed = True
@@ -504,6 +523,34 @@ class DeviceManager:
             else:
                 device.pool_inhibit_until = None
                 _LOGGER.info("Pool '%s': inhibit mode expired", device.name)
+
+        # ---- Pool frost protection ----
+        # Priority over the allowed window, red days and the daily quota (its run
+        # time counts in the daily total and may exceed it). Manual mode and a
+        # user force ON/OFF take precedence.
+        pool_frost_on: set[ManagedDevice] = set()
+        for device in self.devices:
+            if device.device_type != DEVICE_TYPE_POOL or device.manual_mode:
+                continue
+            if device.pool_force_until is not None and now_ts < device.pool_force_until:
+                continue
+            if device.pool_inhibit_until is not None and now_ts < device.pool_inhibit_until:
+                continue
+            if device.pool_frost_wants_on(now):
+                pool_frost_on.add(device)
+                if not device.is_on:
+                    await self._async_set_switch(hass, device, True, reason="frost", context=_base_ctx)
+                else:
+                    device.last_decision_reason = "frost"
+            elif device.is_on and device.last_decision_reason == "frost":
+                if not device.pool_quota_known():
+                    # No quota: the dispatch does not drive the pump — stop it here.
+                    await self._async_set_switch(hass, device, False, reason="frost_end", context=_base_ctx)
+                    continue
+                # Session over: hand the pump back to the dispatch below, which
+                # keeps it on (surplus, urgency) or turns it off — min_on waived.
+                device.last_decision_reason = "frost_end"
+                device.turned_on_at = None
 
         # ---- Generic device force ON: maintain / expire (water_heater, ev, generic) ----
         _GENERIC_FORCEABLE = {DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_EV, DEVICE_TYPE_GENERIC}
@@ -537,6 +584,10 @@ class DeviceManager:
                     return False
                 if device.pool_inhibit_until is not None and now_ts < device.pool_inhibit_until:
                     return False
+                if device in pool_frost_on:
+                    return False
+                if not device.pool_quota_known():
+                    return False  # no water temperature → unable to drive the pump
             elif device.device_type in {DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_EV, DEVICE_TYPE_GENERIC}:
                 if device.force_until is not None and now_ts < device.force_until:
                     return False
@@ -631,6 +682,8 @@ class DeviceManager:
                 if device.appliance_state in (APPLIANCE_STATE_IDLE, APPLIANCE_STATE_DONE):
                     continue  # Le pré-pass gère ces états
                 # PREPARING et RUNNING : inclus pour le suivi budgétaire
+            if device.device_type == DEVICE_TYPE_POOL and device.pool_red_peak_blocked(now):
+                continue  # Jour rouge en HP : pas de filtration (la Phase 4 éteint la pompe)
             all_candidates.append(device)
 
         if self.battery_device is not None and not self.battery_device.is_manual(reader):
@@ -828,7 +881,12 @@ class DeviceManager:
                 continue  # Machine d'état propriétaire
             if not device.interruptible:
                 continue
-            await self._async_set_switch(hass, device, False, reason="budget", context=_base_ctx)
+            _reason = (
+                "red_peak"
+                if device.device_type == DEVICE_TYPE_POOL and device.pool_red_peak_blocked(now)
+                else "budget"
+            )
+            await self._async_set_switch(hass, device, False, reason=_reason, context=_base_ctx)
 
     # ------------------------------------------------------------------
     # Appliance state machine

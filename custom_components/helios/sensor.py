@@ -619,6 +619,12 @@ class DeviceStateSensor(_BaseEOSensor):
         elif d.device_type == DEVICE_TYPE_POOL:
             attrs["filtration_done_min"]     = round(d.pool_daily_run_minutes, 1)
             attrs["filtration_required_min"] = round(d.pool_required_minutes_today or 0.0, 1)
+            attrs["pool_mode"]       = d.pool_mode()
+            attrs["pool_errors"]     = d.pool_errors(reader)
+            attrs["pool_wintering"]  = d.pool_wintering
+            attrs["frost_level"]     = d.pool_frost_level
+            attrs["water_temperature"] = d._pool_temp(reader, d.pool_water_temp_entity)  # noqa: SLF001
+            attrs["local_temperature"] = d._pool_temp(reader, d.pool_local_temp_entity)  # noqa: SLF001
             fu = d.pool_force_until
             attrs["force_remaining_min"]     = round(max(0.0, (fu - _time.time()) / 60), 1) if fu else 0.0
             slug = slugify(d.name)

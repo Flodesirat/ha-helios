@@ -1557,6 +1557,8 @@ class HeliosCard extends HTMLElement {
     // Type-specific primary info
     switch (dev.type) {
       case "pool": {
+        const mode = this._poolModeLabel(dev);
+        if (mode) parts.push(mode);
         const doneMin = this._attr(dev.entity, "filtration_done_min");
         const reqMin  = this._attr(dev.entity, "filtration_required_min");
         if (doneMin !== null && reqMin !== null) {
@@ -1565,6 +1567,9 @@ class HeliosCard extends HTMLElement {
           if (forceRem > 1) s += ` 🔒 ${Math.round(forceRem)} min`;
           parts.push(s);
         }
+        const temps = this._poolTemps(dev);
+        if (temps) parts.push(temps);
+        if (this._poolErrors(dev).length) parts.push("⚠️ Erreur");
         break;
       }
       case "water_heater": {
@@ -1602,6 +1607,41 @@ class HeliosCard extends HTMLElement {
     return parts.join(" · ");
   }
 
+  _poolModeLabel(dev) {
+    const labels = {
+      manual:    "Manuel",
+      frost:     "❄️ Hors-gel",
+      wintering: "Hivernage",
+      auto:      "Filtration auto",
+    };
+    const mode = this._attr(dev.entity, "pool_mode");
+    return mode ? (labels[mode] ?? mode) : null;
+  }
+
+  _poolErrors(dev) {
+    const labels = {
+      no_water_temperature: "Pas de température d'eau : impossible de piloter la pompe",
+      no_local_temperature: "Pas de température du local : impossible de gérer le mode hors-gel",
+    };
+    const errors = this._attr(dev.entity, "pool_errors") ?? [];
+    return errors.map(e => labels[e] ?? e);
+  }
+
+  _poolErrorsHtml(dev) {
+    return this._poolErrors(dev)
+      .map(msg => `<div style="color:var(--error-color, #F44336);font-size:12px">⚠️ ${msg}</div>`)
+      .join("");
+  }
+
+  _poolTemps(dev) {
+    const water = this._attr(dev.entity, "water_temperature");
+    const local = this._attr(dev.entity, "local_temperature");
+    const parts = [];
+    if (water !== null) parts.push(`💧 ${water.toFixed(1)}°C`);
+    if (local !== null) parts.push(`🏠 ${local.toFixed(1)}°C`);
+    return parts.join(" ");
+  }
+
   _defaultIcon(type) {
     const icons = { pool: "🏊", water_heater: "🌡️", appliance: "🫧", ev: "🚗", ev_charger: "🚗" };
     return icons[type] ?? "🔌";
@@ -1615,6 +1655,9 @@ class HeliosCard extends HTMLElement {
       budget:         "Budget",
       off_hours:      "Hors plage",
       manual:         "Manuel",
+      frost:          "Hors-gel",
+      frost_end:      "Fin hors-gel",
+      red_peak:       "Rouge HP",
       // rétrocompat (anciens logs)
       must_run:       "Forcé",
       dispatch:       "Surplus",
@@ -1859,13 +1902,23 @@ class HeliosCard extends HTMLElement {
         const doneMin  = this._attr(dev.entity, "filtration_done_min");
         const reqMin   = this._attr(dev.entity, "filtration_required_min");
         const forceRem = this._attr(dev.entity, "force_remaining_min") ?? 0;
-        if (doneMin === null || reqMin === null) return "";
+        const errorsHtml = this._poolErrorsHtml(dev);
+        if (doneMin === null || reqMin === null) return errorsHtml;
         const pct      = Math.min(100, reqMin > 0 ? Math.round(doneMin / reqMin * 100) : 100);
         const barColor = pct >= 100 ? "#4CAF50" : "#2196F3";
 
         const forceHtml = this._buildForceSection(dev, d => this._poolForceEntity(d), d => this._poolDurationEntity(d));
+        const mode  = this._poolModeLabel(dev);
+        const temps = this._poolTemps(dev);
+        const infoHtml = (mode || temps) ? `
+          <div class="hm-manual-row">
+            <span class="hm-manual-label">${mode ? `Mode : ${mode}` : ""}</span>
+            <span class="hm-manual-label">${temps}</span>
+          </div>` : "";
 
         return `
+          ${errorsHtml}
+          ${infoHtml}
           <div class="hm-progress-wrap">
             <div class="hm-bar-bg"><div class="hm-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
             <span class="hm-bar-text">Filtration : ${(doneMin / 60).toFixed(1)} h / ${(reqMin / 60).toFixed(1)} h (${pct} %)</span>

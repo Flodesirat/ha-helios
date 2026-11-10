@@ -12,10 +12,10 @@ from custom_components.helios.managed_device import ManagedDevice, StateReader
 from custom_components.helios.const import (
     DEVICE_TYPE_POOL,
     CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_SWITCH_ENTITY,
-    CONF_DEVICE_POWER_W, CONF_POOL_FILTRATION_ENTITY,
+    CONF_DEVICE_POWER_W, CONF_POOL_WATER_TEMP_ENTITY,
 )
 
-FILTRATION_ENTITY = "sensor.filtration_h"
+WATER_ENTITY = "sensor.pool_water"
 
 
 # ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ def _pool_config(name="Piscine"):
         CONF_DEVICE_TYPE:            DEVICE_TYPE_POOL,
         CONF_DEVICE_SWITCH_ENTITY:   "switch.pompe",
         CONF_DEVICE_POWER_W:         300,
-        CONF_POOL_FILTRATION_ENTITY: FILTRATION_ENTITY,
+        CONF_POOL_WATER_TEMP_ENTITY: WATER_ENTITY,
     }
 
 
@@ -52,9 +52,8 @@ def _make_manager(stored_data: dict) -> DeviceManager:
     return mgr
 
 
-def _reader_with_filtration(minutes: float) -> StateReader:
-    hours = str(minutes / 60.0)  # entity in hours
-    return lambda eid: hours if eid == FILTRATION_ENTITY else None
+def _reader_with_water(temp: str) -> StateReader:
+    return lambda eid: temp if eid == WATER_ENTITY else None
 
 
 # ---------------------------------------------------------------------------
@@ -109,27 +108,27 @@ class TestPoolRequiredPersistence:
         device = mgr.devices[0]
         assert device.pool_required_minutes_today is None
 
-        # Simulate dispatch at 06:00 — entity says 3 h = 180 min
-        reader = _reader_with_filtration(180.0)
-        device.try_capture_pool_required(reader, current_hour=6)
+        # Water at 14 °C → 4 h = 240 min with the default table
+        reader = _reader_with_water("14")
+        device.try_capture_pool_required(reader, current_hour=0)
 
-        assert device.pool_required_minutes_today == pytest.approx(180.0)
+        assert device.pool_required_minutes_today == pytest.approx(240.0)
 
         # The dispatch loop should now trigger a save
         saved = {}
         mgr._store.async_save = AsyncMock(side_effect=lambda d: saved.update(d))
         await mgr._async_save_device_data()
 
-        assert saved["Piscine"]["required_minutes"] == pytest.approx(180.0)
+        assert saved["Piscine"]["required_minutes"] == pytest.approx(240.0)
 
     @pytest.mark.asyncio
-    async def test_required_minutes_not_captured_before_5am(self):
-        """Snapshot is not taken before 05:00 even if entity is available."""
+    async def test_required_minutes_not_captured_when_sensor_unavailable(self):
+        """No snapshot while the water sensor is unavailable."""
         mgr = _make_manager({})
         await mgr.async_setup()
 
         device = mgr.devices[0]
-        reader = _reader_with_filtration(180.0)
-        device.try_capture_pool_required(reader, current_hour=4)
+        reader = _reader_with_water("unavailable")
+        device.try_capture_pool_required(reader, current_hour=0)
 
         assert device.pool_required_minutes_today is None
