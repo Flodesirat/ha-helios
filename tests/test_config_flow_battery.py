@@ -15,6 +15,7 @@ from custom_components.helios.const import (
     CONF_BATTERY_DRIVE_SCRIPT, CONF_BATTERY_NEUTRAL_SCRIPT,
     CONF_BATTERY_MAX_CHARGE_POWER_W,
     CONF_BATTERY_GRID_TARGET_RED_W,
+    CONF_DEVICES, CONF_PRICE_RED_HP,
 )
 
 _A = {
@@ -47,13 +48,20 @@ async def test_config_flow_two_batteries(hass: HomeAssistant):
     assert flow["step_id"] == "battery_unit"
     flow = await hass.config_entries.flow.async_configure(flow["flow_id"], {**_B, "add_another": False})
     assert flow["step_id"] == "devices"
-    # The strategy form cannot be rendered by HA 2025.1 (its price selectors use
-    # step=0.0001, below the 0.001 minimum): check the data gathered so far.
-    data = hass.config_entries.flow._progress[flow["flow_id"]]._data
+    flow = await hass.config_entries.flow.async_configure(flow["flow_id"], {"add_device": False})
+    assert flow["step_id"] == "strategy"
+    with _no_setup():
+        result = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {CONF_PRICE_RED_HP: 0.7062}
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    data = result["data"]
     assert data[CONF_BATTERY_GRID_TARGET_RED_W] == 50
     assert [b[CONF_BATTERY_NAME] for b in data[CONF_BATTERIES]] == ["Venus A", "Venus B"]
     assert "add_another" not in data[CONF_BATTERIES][0]
-    hass.config_entries.flow.async_abort(flow["flow_id"])
+    assert data[CONF_DEVICES] == []
+    # Prices keep their four decimals (Tempo tariffs are given to 0.0001 €/kWh)
+    assert data[CONF_PRICE_RED_HP] == 0.7062
 
 
 async def test_config_flow_version_is_2():
@@ -122,3 +130,16 @@ async def test_options_add_and_delete_battery(hass: HomeAssistant):
         result = await hass.config_entries.options.async_configure(flow["flow_id"], {"choice": "__done__"})
     assert [b[CONF_BATTERY_NAME] for b in result["data"][CONF_BATTERIES]] == ["Venus B"]
     assert result["data"][CONF_BATTERY_GRID_TARGET_RED_W] == 60
+
+
+async def test_options_strategy_form_renders(hass: HomeAssistant):
+    entry = _entry(hass, [_A])
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await hass.config_entries.options.async_configure(flow["flow_id"], {"section": "strategy"})
+    assert flow["step_id"] == "strategy"
+    with _no_setup():
+        result = await hass.config_entries.options.async_configure(
+            flow["flow_id"], {CONF_PRICE_RED_HP: 0.6543}
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_PRICE_RED_HP] == 0.6543

@@ -1147,15 +1147,15 @@ def _strategy_schema(defaults: dict | None = None) -> vol.Schema:
             default=d.get(CONF_OFF_PEAK_2_END, ""),
         ): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TIME)),
         vol.Optional(CONF_PRICE_BLUE_HC,  default=d.get(CONF_PRICE_BLUE_HC,  DEFAULT_PRICE_BLUE_HC)):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step="any", unit_of_measurement="€/kWh")),
         vol.Optional(CONF_PRICE_BLUE_HP,  default=d.get(CONF_PRICE_BLUE_HP,  DEFAULT_PRICE_BLUE_HP)):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step="any", unit_of_measurement="€/kWh")),
         vol.Optional(CONF_PRICE_WHITE_HC, default=d.get(CONF_PRICE_WHITE_HC, DEFAULT_PRICE_WHITE_HC)):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step="any", unit_of_measurement="€/kWh")),
         vol.Optional(CONF_PRICE_WHITE_HP, default=d.get(CONF_PRICE_WHITE_HP, DEFAULT_PRICE_WHITE_HP)):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step="any", unit_of_measurement="€/kWh")),
         vol.Optional(CONF_PRICE_RED_HC,   default=d.get(CONF_PRICE_RED_HC,   DEFAULT_PRICE_RED_HC)):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step="any", unit_of_measurement="€/kWh")),
         vol.Optional(CONF_PRICE_RED_HP,   default=d.get(CONF_PRICE_RED_HP,   DEFAULT_PRICE_RED_HP)):
-            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step=0.0001, unit_of_measurement="€/kWh")),
+            selector.NumberSelector(selector.NumberSelectorConfig(min=0.01, max=5.0, step="any", unit_of_measurement="€/kWh")),
     })
