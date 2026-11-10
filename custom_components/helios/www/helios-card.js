@@ -17,6 +17,7 @@
  *     house: /lovelace/consommation              #   🏠 nœud maison
  *   sections:                                     # optionnel — affichage par section (défaut : tout affiché)
  *     money_saving: true                         # économies journalières et totales
+ *     score: true                                # barre de score (aussi en mode compact) — false masque aussi la décomposition
  *     score_detailed: true                       # décomposition du score (f_surplus, f_tempo, f_solar)
  *     surplus_computation: true                  # budget dispatch (surplus, virtuel, bat. dispo, remaining)
  *     forecast: true                             # prévision journalière
@@ -736,7 +737,7 @@ class HeliosCard extends HTMLElement {
         </div>
 
         <div class="footer" id="h-footer">
-          <div class="score-row">
+          <div class="score-row" id="h-score-row">
             <div class="lbl">Score</div>
             <div class="bar-wrap">
               <div class="bar-bg"><div class="bar-fill" id="h-score-bar"></div></div>
@@ -1331,9 +1332,14 @@ class HeliosCard extends HTMLElement {
       }
     }
 
+    // Score bar — affichée aussi en mode compact, sauf sections.score === false
+    const showScore = this._config.sections?.score !== false;
+    const scoreRow = this.shadowRoot.getElementById("h-score-row");
+    if (scoreRow) scoreRow.style.display = showScore ? "" : "none";
+
     // Score decomposition
     const scoreDecomp = this.shadowRoot.getElementById("h-score-decomp");
-    if (scoreDecomp) scoreDecomp.style.display = sec("score_detailed") ? "" : "none";
+    if (scoreDecomp) scoreDecomp.style.display = showScore && sec("score_detailed") ? "" : "none";
 
     // Surplus / budget computation
     const budgetRow = this.shadowRoot.getElementById("h-budget-row");
@@ -1377,6 +1383,13 @@ class HeliosCard extends HTMLElement {
           }
         }
       }
+    }
+
+    // Footer — masqué (bordure comprise) quand tous ses blocs le sont
+    const footerEl = this.shadowRoot.getElementById("h-footer");
+    if (footerEl) {
+      const anyVisible = [...footerEl.children].some(c => c.style.display !== "none");
+      footerEl.style.display = anyVisible ? "" : "none";
     }
 
     // Devices section

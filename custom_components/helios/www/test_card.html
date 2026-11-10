@@ -115,6 +115,16 @@
 </div>
 
 <div class="col">
+  <h3>Sections : sans score (barre et décomposition masquées)</h3>
+  <helios-card id="card-sec-noscore"></helios-card>
+</div>
+
+<div class="col">
+  <h3>Compact sans score</h3>
+  <helios-card id="card-compact-noscore"></helios-card>
+</div>
+
+<div class="col">
   <h3>node_urls — cliquer ☀️ / ⚡ / 🏠 (log panel)</h3>
   <helios-card id="card-node-urls"></helios-card>
 </div>
@@ -577,6 +587,8 @@ const cardSecLight        = document.getElementById("card-sec-light");
 const cardSecDevices      = document.getElementById("card-sec-devices");
 const cardSecNodev        = document.getElementById("card-sec-nodevices");
 const cardSecMin          = document.getElementById("card-sec-minimal");
+const cardSecNoscore      = document.getElementById("card-sec-noscore");
+const cardCompactNoscore  = document.getElementById("card-compact-noscore");
 const cardNodeUrls        = document.getElementById("card-node-urls");
 const cardBatUnavailable  = document.getElementById("card-bat-unavailable");
 const cardBatUnavCompact  = document.getElementById("card-bat-unavailable-compact");
@@ -599,7 +611,7 @@ const cfgSecNodev = {
   ...cfgBase,
   sections: { devices: false },
 };
-// Sections minimales : rien sous le flux (score barre reste toujours visible)
+// Sections minimales : rien sous le flux sauf la barre de score
 const cfgSecMin = {
   ...cfgBase,
   sections: { money_saving: false, score_detailed: false, surplus_computation: false, forecast: false, devices: false },
@@ -615,6 +627,10 @@ cardSecLight.setConfig(cfgSecLight);  cardSecLight.hass   = hassDay;
 cardSecDevices.setConfig(cfgSecDevices); cardSecDevices.hass = hassDay;
 cardSecNodev.setConfig(cfgSecNodev);  cardSecNodev.hass   = hassDay;
 cardSecMin.setConfig(cfgSecMin);      cardSecMin.hass     = hassDay;
+cardSecNoscore.setConfig({ ...cfgBase, sections: { score: false } });
+cardSecNoscore.hass = hassDay;
+cardCompactNoscore.setConfig({ ...cfgCompact, sections: { score: false } });
+cardCompactNoscore.hass = hassCompact;
 cardNodeUrls.setConfig({ ...cfgBase, node_urls: { pv: "#pv-page", grid: "#grid-page", house: "#house-page" } });
 cardNodeUrls.hass = hassDay;
 

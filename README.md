@@ -616,7 +616,7 @@ La **batterie** est toujours cliquable — elle ouvre une modale avec SOC, état
 
 | Option | Type | Défaut | Description |
 |--------|------|--------|-------------|
-| `compact` | bool | `false` | Vue condensée : flux SVG uniquement, toutes les sections masquées |
+| `compact` | bool | `false` | Vue condensée : flux SVG et barre de score, toutes les autres sections masquées |
 | `info_url` | string | — | URL du bouton ℹ️ (coin haut droit) |
 | `node_urls` | object | — | URLs de navigation au clic sur les nœuds SVG (voir ci-dessous) |
 | `sections` | object | — | Affichage par section en mode non-compact (voir ci-dessous) |
@@ -627,7 +627,7 @@ La **batterie** est toujours cliquable — elle ouvre une modale avec SOC, état
 
 #### Mode compact
 
-Flux SVG uniquement, sans aucune section. Idéal pour une vue secondaire ou une tuile résumée.
+Flux SVG et barre de score (masquable avec `sections.score: false`), sans les autres sections. Idéal pour une vue secondaire ou une tuile résumée.
 
 ```yaml
 type: custom:helios-card
@@ -655,11 +655,12 @@ URLs relatives → navigation HA interne. URLs absolues (`https://…`) → nouv
 
 #### Sections configurables
 
-En mode non-compact, six sections s'affichent sous le flux SVG quand les données sont disponibles. Chacune peut être masquée indépendamment en la passant à `false`.
+En mode non-compact, les sections ci-dessous s'affichent sous le flux SVG quand les données sont disponibles. Chacune peut être masquée indépendamment en la passant à `false`. La barre de score (`score`) est la seule à rester affichée en mode compact.
 
 | Section | Défaut | Contenu |
 |---------|--------|---------|
 | `money_saving` | `true` | Économies journalières et totales (€) |
+| `score` | `true` | Barre du score global, aussi en mode compact. `false` masque aussi sa décomposition |
 | `score_detailed` | `true` | Décomposition du score global (f_surplus, f_tempo, f_solar avec poids) |
 | `surplus_computation` | `true` | Budget dispatch : surplus, surplus virtuel, bat. disponible, remaining |
 | `forecast` | `true` | Prévision journalière (mise à jour à 5h) |
@@ -674,6 +675,15 @@ sections:
   score_detailed: false
   surplus_computation: false
   forecast: false
+```
+
+Exemple — vue compacte sans score (flux SVG seul) :
+
+```yaml
+type: custom:helios-card
+compact: true
+sections:
+  score: false
 ```
 
 > Les labels kWh dans le SVG (énergie journalière) ne font pas partie des sections — ils sont toujours affichés, y compris en mode compact.
