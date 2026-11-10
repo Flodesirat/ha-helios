@@ -139,23 +139,14 @@ def ha_devices_to_sim(
             Must be loaded outside the event loop and passed in to avoid blocking I/O.
     """
     from .simulation.devices import SimDevice, apply_appliance_schedule
-    from .managed_device import ManagedDevice
+    from .managed_device import ManagedDevice, _parse_time
 
     _appliance_schedule: dict[str, float] = appliance_schedule or {}
 
     def _t(v: str, default: str) -> float:
-        """Parse 'HH:MM' time string to decimal hours, or return default."""
-        try:
-            h, m = v.split(":")
-            return int(h) + int(m) / 60.0
-        except (ValueError, AttributeError):
-            pass
-        try:
-            return float(v)
-        except (ValueError, TypeError):
-            pass
-        h, m = default.split(":")
-        return int(h) + int(m) / 60.0
+        """Parse an 'HH:MM' / 'HH:MM:SS' time string to decimal hours, or return default."""
+        t = _parse_time(v) or _parse_time(default)
+        return t.hour + t.minute / 60.0
 
     def _read_float(entity_id: str | None, default: float) -> float:
         if not entity_id or hass is None:

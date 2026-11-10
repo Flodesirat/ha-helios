@@ -813,3 +813,22 @@ class TestRobustness:
         # Must not raise
         serialised = json.dumps(result)
         assert len(serialised) > 0
+
+
+def test_appliance_device_diag_has_cycle_start():
+    from datetime import datetime, time
+    from custom_components.helios.diagnostics import _device_diag
+    from custom_components.helios.const import (
+        CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_POWER_W, DEVICE_TYPE_APPLIANCE,
+        APPLIANCE_STATE_RUNNING,
+    )
+    device = ManagedDevice({
+        CONF_DEVICE_NAME: "Lave-linge", CONF_DEVICE_TYPE: DEVICE_TYPE_APPLIANCE, CONF_DEVICE_POWER_W: 2000,
+    })
+    device.appliance_state = APPLIANCE_STATE_RUNNING
+    device.appliance_cycle_start = 1_700_000_000.0
+    diag = _device_diag(device, lambda _eid: None, time(12, 0), 1500.0, 0.0)
+    assert diag["appliance"] == {
+        "state": APPLIANCE_STATE_RUNNING,
+        "cycle_start": datetime.fromtimestamp(1_700_000_000.0).isoformat(),
+    }

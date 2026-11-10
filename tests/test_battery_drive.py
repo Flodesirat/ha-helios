@@ -1,8 +1,9 @@
 """Tests for BatteryDriveController — Drive regulation through HA entities and scripts."""
 from __future__ import annotations
 
+import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import async_mock_service
@@ -494,3 +495,160 @@ class TestForce:
         assert len(_written(services)) == 2
         assert ctrl.state == BATTERY_STATE_FORCED
         ctrl.async_stop()
+
+
+# ---------------------------------------------------------------------------
+# Edge cases: bad readings, unknown SOC, failing services
+# ---------------------------------------------------------------------------
+
+class TestEdgeCases:
+
+    async def test_non_numeric_grid_reading_ignored(self, hass, services):
+        hass.states.async_set("sensor.grid", "500")
+        ctrl = await _started(hass, _coordinator([_battery("A")]))
+        hass.states.async_set("sensor.grid", "n/a")
+        await hass.async_block_till_done()
+        assert _written(services) == []
+        ctrl.async_stop()
+
+    async def test_reading_skipped_while_previous_one_is_written(self, hass, services):
+        hass.states.async_set("sensor.grid", "100")
+        ctrl = await _started(hass, _coordinator([_battery("A")]))
+        async with ctrl._lock:
+            hass.states.async_set("sensor.grid", "500")
+            await hass.async_block_till_done()
+        await hass.async_block_till_done()
+        assert _written(services) == []
+        ctrl.async_stop()
+
+    async def test_reading_after_deactivation_is_dropped(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        ctrl = await _started(hass, coord)
+        coord.battery_driving = False
+        await ctrl.async_sync()
+        await ctrl.async_handle_reading(500.0, at=100.0)
+        assert _written(services) == []
+        ctrl.async_stop()
+
+    async def test_no_known_soc_keeps_setpoint(self, hass, services):
+        ctrl = await _started(hass, _coordinator([_battery("A")]))
+        hass.states.async_set("sensor.a_soc", "unknown")
+        await ctrl.async_handle_reading(500.0, at=100.0)
+        assert _written(services) == []
+        ctrl.async_stop()
+
+    async def test_force_without_known_soc_writes_nothing(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        ctrl = await _started(hass, coord)
+        hass.states.async_set("sensor.a_soc", "unavailable")
+        _force(coord, "charge", power=800)
+        await ctrl.async_sync()
+        assert _written(services) == []
+        ctrl.async_stop()
+
+    async def test_force_at_soc_limit_with_driving_off_releases_battery(self, hass, services):
+        """Charge forcée, pilotage OFF, batterie pleine → fin du forçage et script neutre."""
+        coord = _coordinator([_battery("A")])
+        coord.battery_driving = False
+        ctrl = await _started(hass, coord)
+        bat = _force(coord, "charge", power=800)
+        await ctrl.async_sync()
+        assert ctrl.state == BATTERY_STATE_FORCED
+        hass.states.async_set("sensor.a_soc", "100")
+        await ctrl.async_handle_reading(0.0, at=100.0)
+        assert bat.force_until is None
+        assert ctrl.active is False
+        assert ctrl.state == BATTERY_STATE_OFF
+        assert len(services["a_neutral"]) == 1
+        ctrl.async_stop()
+
+    async def test_expired_force_with_driving_off_detected_by_status_check(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        coord.battery_driving = False
+        ctrl = await _started(hass, coord)
+        bat = _force(coord, "discharge", power=500)
+        await ctrl.async_sync()
+        bat.force_until = time.time() - 1
+        await ctrl._async_check_setpoints()
+        assert ctrl.active is False
+        assert len(services["a_neutral"]) == 1
+        ctrl.async_stop()
+
+    async def test_status_check_skipped_when_inactive_or_busy(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        coord.battery_driving = False
+        ctrl = await _started(hass, coord)
+        await ctrl._async_check_setpoints()        # inactive: nothing to check
+        coord.battery_driving = True
+        await ctrl.async_sync()
+        await ctrl.async_handle_reading(500.0, at=100.0)
+        hass.states.async_set("number.a_drive", "0")
+        async with ctrl._lock:
+            await ctrl._async_check_setpoints()    # busy: skipped, not counted
+        assert ctrl.batteries[0].mismatch_reads == 0
+        ctrl.async_stop()
+
+    async def test_status_check_ignores_never_written_battery(self, hass, services):
+        ctrl = await _started(hass, _coordinator([_battery("A"), _battery("B")]))
+        hass.states.async_set("sensor.b_soc", "unknown")    # B left out of the dispatch
+        await ctrl.async_handle_reading(500.0, at=100.0)
+        hass.states.async_set("number.b_drive", "300")
+        await ctrl._async_check_setpoints()
+        await ctrl._async_check_setpoints()
+        a, b = ctrl.batteries
+        assert b.written is None and b.mismatch_reads == 0
+        assert ctrl.state != BATTERY_STATE_MODE_LOST
+        ctrl.async_stop()
+
+    async def test_failed_write_is_retried_on_next_reading(self, hass, services, caplog):
+        ctrl = await _started(hass, _coordinator([_battery("A")]))
+
+        async def _down(call):
+            raise RuntimeError("down")
+
+        hass.services.async_register("number", "set_value", _down)
+        await ctrl.async_handle_reading(500.0, at=100.0)
+        assert "setpoint 470 W not written" in caplog.text
+        assert ctrl.batteries[0].written is None
+        set_value = async_mock_service(hass, "number", "set_value")
+        await ctrl.async_handle_reading(500.0, at=120.0)
+        assert [c.data["entity_id"] for c in set_value] == ["number.a_drive"]
+        ctrl.async_stop()
+
+    async def test_hourly_refresh_skipped_when_inactive(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        coord.battery_driving = False
+        ctrl = await _started(hass, coord)
+        await ctrl._async_refresh_drive()
+        assert services["a_drive"] == []
+        ctrl.async_stop()
+
+    async def test_battery_without_neutral_script(self, hass, services):
+        bat = _battery("A")
+        del bat[CONF_BATTERY_NEUTRAL_SCRIPT]
+        coord = _coordinator([bat])
+        ctrl = await _started(hass, coord)
+        coord.battery_driving = False
+        await ctrl.async_sync()
+        assert ctrl.state == BATTERY_STATE_OFF
+        assert services["a_neutral"] == []
+        ctrl.async_stop()
+
+    async def test_script_failure_is_logged(self, hass, caplog):
+        async def _boom(call):
+            raise RuntimeError("boom")
+
+        hass.services.async_register("script", "a_drive", _boom)
+        ctrl = BatteryDriveController(hass, _coordinator([_battery("A")]))
+        await ctrl._async_run_script("script.a_drive", "A")
+        assert "script.a_drive (A) failed: boom" in caplog.text
+
+    async def test_slow_script_is_not_awaited_forever(self, hass, caplog):
+        async def _slow(call):
+            await asyncio.sleep(1)
+
+        hass.services.async_register("script", "a_drive", _slow)
+        ctrl = BatteryDriveController(hass, _coordinator([_battery("A")]))
+        with patch("custom_components.helios.battery_drive.BATTERY_DRIVE_SCRIPT_TIMEOUT_S", 0.01):
+            await ctrl._async_run_script("script.a_drive", "A")
+        assert "script.a_drive (A) still running after" in caplog.text

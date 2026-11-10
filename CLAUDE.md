@@ -88,7 +88,7 @@ Couleur lue depuis une entité sensor standard (blue/white/red). Pas d'appel API
    - pour la régulation et le dispatch, un test qui rejoue une journée
      enregistrée (ex. `tests/data/`, simulation dans `simulation/`) ;
    - commande : `python -m pytest tests/ -q` — tout doit être vert, la CI
-     exige une couverture ≥ 45 %.
+     exige une couverture de 100 %.
 5. **Documenter** : consigner le lot (décisions, tests ajoutés) à la fin du
    fichier de domaine de `docs/historique/` (`batterie.md`, `appareils.md`…)
    et l'ajouter à l'index `docs/historique-lots.md`. Mettre à jour

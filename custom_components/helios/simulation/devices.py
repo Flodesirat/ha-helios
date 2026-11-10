@@ -67,36 +67,11 @@ class SimDevice:
     energy_kwh: float = field(default=0.0, init=False)
     energy_from_pv_kwh: float = field(default=0.0, init=False)
 
-    # ---- Queries ----
-    def in_window(self, hour: float) -> bool:
-        if self.allowed_end > self.allowed_start:
-            return self.allowed_start <= hour < self.allowed_end
-        # Overnight window (e.g. 22h → 6h)
-        return hour >= self.allowed_start or hour < self.allowed_end
-
-    def satisfied(self) -> bool:
-        """Simplified satisfaction — used as fallback when no ManagedDevice."""
-        if self.wh_temp is not None:
-            return self.wh_temp >= self.wh_temp_target
-        if self.ev_soc is not None:
-            return self.ev_soc >= self.ev_soc_target
-        if self.run_quota_h is not None:
-            return self.run_today_h >= self.run_quota_h
-        return False
-
-    def min_on_respected(self) -> bool:
-        """True when the device has been ON long enough to allow turn-off."""
-        return self._on_minutes >= self.min_on_minutes
-
     # ---- State transitions ----
     def turn_on(self) -> None:
         if not self.active:
             self.active = True
             self._on_minutes = 0.0
-
-    def turn_off(self) -> None:
-        self.active = False
-        self._on_minutes = 0.0
 
     def tick(self, step_minutes: float, pv_w: float, total_load_w: float) -> None:
         """Advance one simulation step (energy accounting + physical state)."""
@@ -289,69 +264,6 @@ class SimBatteryDevice:
     def update(self, soc: float | None, tempo_red: bool) -> None:
         """Update runtime state before each dispatch cycle."""
         self._bd.update(soc, tempo_red)
-
-    @property
-    def urgency(self) -> float:
-        return self._bd.urgency
-
-    @property
-    def power_w(self) -> float:
-        return self._bd.power_w
-
-    @property
-    def fit(self) -> float:
-        return self._bd.fit
-
-    @fit.setter
-    def fit(self, value: float) -> None:
-        self._bd.fit = value
-
-    @property
-    def is_on(self) -> bool:
-        return self._bd.is_on
-
-    @is_on.setter
-    def is_on(self, value: bool) -> None:
-        self._bd.is_on = value
-
-    @property
-    def satisfied(self) -> bool:
-        return self._bd.satisfied
-
-    @property
-    def effective_score(self) -> float:
-        return self._bd.effective_score
-
-    @property
-    def manual_mode(self) -> bool:
-        return self._bd.manual_mode
-
-    @manual_mode.setter
-    def manual_mode(self, value: bool) -> None:
-        self._bd.manual_mode = value
-
-    @property
-    def last_reason(self) -> str:
-        return self._bd.last_reason
-
-    @last_reason.setter
-    def last_reason(self, value: str) -> None:
-        self._bd.last_reason = value
-
-    @property
-    def last_effective_score(self) -> float:
-        return self._bd.last_effective_score
-
-    @last_effective_score.setter
-    def last_effective_score(self, value: float) -> None:
-        self._bd.last_effective_score = value
-
-    @property
-    def min_on_remaining_s(self) -> float:
-        return self._bd.min_on_remaining_s
-
-    def is_manual(self, reader=None) -> bool:
-        return self._bd.is_manual(reader if reader is not None else (lambda eid: None))
 
     def as_battery_device(self):
         """Return the underlying BatteryDevice for use in DeviceManager."""

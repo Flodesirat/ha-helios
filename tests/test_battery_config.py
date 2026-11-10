@@ -99,6 +99,24 @@ class TestReadSoc:
         assert read_battery_soc(hass, cfg) == pytest.approx(80.0)
         assert read_battery_power(hass, cfg) == pytest.approx(300.0)
 
+    async def test_non_numeric_soc_ignored(self, hass):
+        hass.states.async_set("sensor.a_soc", "error")
+        hass.states.async_set("sensor.b_soc", "40")
+        cfg = {CONF_BATTERIES: [
+            {CONF_BATTERY_SOC_ENTITY: "sensor.a_soc"},
+            {CONF_BATTERY_SOC_ENTITY: "sensor.b_soc"},
+        ]}
+        assert read_battery_soc(hass, cfg) == pytest.approx(40.0)
+
+    async def test_zero_capacity_falls_back_to_plain_mean(self, hass):
+        hass.states.async_set("sensor.a_soc", "80")
+        hass.states.async_set("sensor.b_soc", "40")
+        cfg = {CONF_BATTERIES: [
+            {CONF_BATTERY_SOC_ENTITY: "sensor.a_soc", CONF_BATTERY_CAPACITY_KWH: 0},
+            {CONF_BATTERY_SOC_ENTITY: "sensor.b_soc", CONF_BATTERY_CAPACITY_KWH: 0},
+        ]}
+        assert read_battery_soc(hass, cfg) == pytest.approx(60.0)
+
     async def test_none_when_no_soc(self, hass):
         hass.states.async_set("sensor.a_soc", "unknown")
         assert read_battery_soc(hass, {CONF_BATTERIES: [{CONF_BATTERY_SOC_ENTITY: "sensor.a_soc"}]}) is None

@@ -217,11 +217,3 @@ class TestDriving:
         bat = _bat()
         bat.driving = False
         assert bat.is_manual(lambda entity: None) is True
-
-    def test_manual_mode_alias(self):
-        """manual_mode reste l'inverse de driving (utilisé par la simulation)."""
-        bat = _bat()
-        bat.manual_mode = True
-        assert bat.driving is False
-        bat.manual_mode = False
-        assert bat.driving is True

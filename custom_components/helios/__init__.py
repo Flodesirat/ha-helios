@@ -11,7 +11,6 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.helpers import config_validation as cv
-from homeassistant.util import slugify
 
 from .battery_config import migrate_v1_to_v2
 from .const import CONF_BATTERIES, DOMAIN, PLATFORMS
@@ -40,11 +39,8 @@ _LOGGER = logging.getLogger(__name__)
 _CARD_URL_BASE = "/helios/helios-card.js"
 _CARD_DIR = Path(__file__).parent / "www"
 
-try:
-    _manifest_version = json.loads((Path(__file__).parent / "manifest.json").read_text())["version"]
-    _CARD_URL = f"{_CARD_URL_BASE}?v={_manifest_version}"
-except Exception:  # noqa: BLE001
-    _CARD_URL = _CARD_URL_BASE
+_manifest_version = json.loads((Path(__file__).parent / "manifest.json").read_text())["version"]
+_CARD_URL = f"{_CARD_URL_BASE}?v={_manifest_version}"
 
 
 def _versioned_card_url() -> str:

@@ -44,7 +44,7 @@ from .const import (
     CONF_OFF_PEAK_1_START, CONF_OFF_PEAK_1_END, CONF_OFF_PEAK_2_START, CONF_OFF_PEAK_2_END,
 )
 from .scoring_engine import ScoringEngine
-from .battery_config import read_battery_power, read_battery_soc, with_battery_totals
+from .battery_config import read_battery_power, read_battery_soc, state_float, with_battery_totals
 from .battery_drive import BatteryDriveController
 from .consumption_learner import ConsumptionLearner
 from .device_manager import DeviceManager
@@ -52,19 +52,6 @@ from .managed_device import ManagedDevice
 from .daily_optimizer import async_run_daily_forecast, ForecastResult
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _float_or_none(hass, entity_id: str | None) -> float | None:
-    """Return the numeric state of an entity, or None if unavailable/unknown/non-numeric."""
-    if not entity_id:
-        return None
-    s = hass.states.get(entity_id)
-    if s is None or s.state in ("unavailable", "unknown"):
-        return None
-    try:
-        return float(s.state)
-    except ValueError:
-        return None
 
 
 class EnergyOptimizerCoordinator(DataUpdateCoordinator):
@@ -205,15 +192,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     async def _async_sample_sensors(self, now: Any) -> None:  # noqa: ARG002
         """Sample raw power values into rolling buffers. No decisions, no state writes."""
         def _float(entity_id: str | None) -> float:
-            if not entity_id:
-                return 0.0
-            s = self.hass.states.get(entity_id)
-            if s is None or s.state in ("unavailable", "unknown"):
-                return 0.0
-            try:
-                return float(s.state)
-            except ValueError:
-                return 0.0
+            return state_float(self.hass, entity_id) or 0.0
 
         cfg = self._cfg
         pv_w    = _float(cfg.get(CONF_PV_POWER_ENTITY))
@@ -533,15 +512,7 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
     async def _read_sensors(self) -> dict[str, Any]:
         """Return averaged power values from sampling buffers + instantaneous non-power values."""
         def _float(entity_id: str | None) -> float:
-            if not entity_id:
-                return 0.0
-            s = self.hass.states.get(entity_id)
-            if s is None or s.state in ("unavailable", "unknown"):
-                return 0.0
-            try:
-                return float(s.state)
-            except ValueError:
-                return 0.0
+            return state_float(self.hass, entity_id) or 0.0
 
         def _str(entity_id: str | None) -> str | None:
             if not entity_id:

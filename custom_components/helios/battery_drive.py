@@ -203,8 +203,8 @@ class BatteryDriveController:
             return
         if not self.active:
             return
-        if self._forced_device() is not None:
-            await self._async_apply_force(at)
+        if (dev := self._forced_device()) is not None:
+            await self._async_apply_force(dev, at)
         elif self._forcing:
             self._leave_force()
 
@@ -331,12 +331,9 @@ class BatteryDriveController:
     # ------------------------------------------------------------------
     # Force (switch.helios_battery_force)
     # ------------------------------------------------------------------
-    async def _async_apply_force(self, at: float) -> None:
+    async def _async_apply_force(self, dev: BatteryDevice, at: float) -> None:
         """Write the forced setpoint: fixed power, SOC limits only (the
         subscription and the off-peak rule do not apply)."""
-        dev = self._forced_device()
-        if dev is None:
-            return
         self._forcing = True
         batteries, limits = self._available(allow_discharge=True)
         if not batteries:
@@ -429,8 +426,8 @@ class BatteryDriveController:
                     bat.number_entity, value, bat.written,
                 )
             self._restart_from_zero()
-            if self._forced_device() is not None:
-                await self._async_apply_force(time.monotonic())
+            if (dev := self._forced_device()) is not None:
+                await self._async_apply_force(dev, time.monotonic())
                 return
             self._recovering = True
             self.state = BATTERY_STATE_MODE_LOST

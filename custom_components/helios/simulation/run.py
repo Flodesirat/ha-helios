@@ -67,15 +67,11 @@ def print_report(result: SimResult, cfg: SimConfig, verbose: bool = False) -> No
         print(f"  {'─'*5}  {'─'*7}  {'─'*7}  {'─'*8}  "
               f"{'─'*9}  {'─'*5}  {'─'*5}  {'─'*10}  {'─'*28}")
 
-        prev_h = -1
         for s in result.steps:
-            h = int(s.hour)
-            mins = int((s.hour - h) * 60)
-            if mins != 0:
+            total_min = round(s.hour * 60)
+            if total_min % 60:
                 continue
-            if h == prev_h:
-                continue
-            prev_h = h
+            h = total_min // 60
             grid_str = f"{'+'if s.grid_w>0 else ''}{_fmt_w(s.grid_w)}"
             soc_str = f"{s.bat_soc:.0f}%" if s.bat_soc else "—"
             if s.bat_w > 0:

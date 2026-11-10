@@ -305,33 +305,6 @@ class ManagedDevice:
         """Return True if *now* falls in any configured off-peak slot."""
         return any(_is_in_slot(now, s, e) for s, e in self._off_peak_slots)
 
-    def _minutes_to_off_peak_end(self, now: time) -> float | None:
-        """Return minutes remaining until the end of the current off-peak slot.
-
-        Works purely with time-of-day arithmetic (no datetime objects) so it
-        is safe to call with a plain time value obtained from datetime.now().time().
-        Returns None if *now* is not inside any off-peak slot.
-        Handles midnight-crossing slots (e.g. 22:00 → 06:00).
-        """
-        def _mins(t: time) -> int:
-            return t.hour * 60 + t.minute
-
-        now_m = _mins(now)
-        for start, end in self._off_peak_slots:
-            if not _is_in_slot(now, start, end):
-                continue
-            end_m = _mins(end)
-            if start <= end:
-                # Same-day slot
-                return float(end_m - now_m)
-            # Midnight-crossing slot (e.g. 22:00 → 06:00)
-            if now >= start:
-                # Evening side: wrap around midnight
-                return float((24 * 60 - now_m) + end_m)
-            # Morning side
-            return float(end_m - now_m)
-        return None
-
     def _wh_off_peak_min(self, reader: StateReader) -> float:
         """Minimum temperature to reach during off-peak hours.
 
@@ -940,15 +913,6 @@ class BatteryDevice:
     def effective_score(self) -> float:
         """0.4×priority/10 + 0.3×fit(=1.0) + 0.3×urgency."""
         return 0.4 * (self.priority / 10.0) + 0.3 * 1.0 + 0.3 * self.urgency
-
-    @property
-    def manual_mode(self) -> bool:
-        """Not driven by Helios (inverse of ``driving``, kept for the simulation)."""
-        return not self.driving
-
-    @manual_mode.setter
-    def manual_mode(self, value: bool) -> None:
-        self.driving = not value
 
     def force_active(self, now: float | None = None) -> bool:
         """True while a force (charge / discharge at a fixed power) runs."""

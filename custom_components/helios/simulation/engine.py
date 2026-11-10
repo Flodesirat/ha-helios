@@ -100,9 +100,6 @@ class _SimNoOpStore:
     async def async_save(self, data: dict) -> None:
         pass
 
-    async def async_load(self) -> dict:
-        return {}
-
 
 class _SimDatetimeProxy:
     """Proxy for ``datetime`` that redirects ``now()`` to a simulated time.
@@ -125,12 +122,6 @@ class _SimDatetimeProxy:
 
     def combine(self, *args, **kwargs) -> _RealDatetime:
         return _RealDatetime.combine(*args, **kwargs)
-
-    def __call__(self, *args, **kwargs) -> _RealDatetime:
-        return _RealDatetime(*args, **kwargs)
-
-    def fromisoformat(self, s: str) -> _RealDatetime:
-        return _RealDatetime.fromisoformat(s)
 
 
 _sim_dt_proxy = _SimDatetimeProxy()

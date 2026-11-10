@@ -197,23 +197,6 @@ class TestSimDevicePhysicalState:
         assert sd.ev_soc > 30.0
         assert sd.ev_soc <= 100.0
 
-    def test_sim_device_satisfied_wh_by_temp(self):
-        sd = _wh_sim_device(wh_temp=61.0)  # above target
-        assert sd.satisfied() is True
-
-    def test_sim_device_satisfied_wh_not_reached(self):
-        sd = _wh_sim_device(wh_temp=55.0)  # below target
-        assert sd.satisfied() is False
-
-    def test_sim_device_satisfied_ev_by_soc(self):
-        sd = SimDevice(name="EV", power_w=3700, device_type=DEVICE_TYPE_EV,
-                       ev_soc=85.0, ev_soc_target=80.0)
-        assert sd.satisfied() is True
-
-    def test_sim_device_satisfied_generic_no_physical_state(self):
-        sd = SimDevice(name="Generic", power_w=1000)
-        assert sd.satisfied() is False  # no quota, no temp, no soc → never satisfied
-
 
 # ---------------------------------------------------------------------------
 # run() — backward compatibility (plain SimDevice list)

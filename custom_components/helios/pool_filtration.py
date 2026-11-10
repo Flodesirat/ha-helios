@@ -62,10 +62,9 @@ def filtration_hours(table: list[tuple[float, float]], water_temp: float) -> flo
         return table[0][1]
     if water_temp >= table[-1][0]:
         return table[-1][1]
-    for (t0, h0), (t1, h1) in zip(table, table[1:]):
-        if t0 <= water_temp <= t1:
-            return h0 + (h1 - h0) * (water_temp - t0) / (t1 - t0)
-    return table[-1][1]  # unreachable — table is sorted
+    # Sorted table, table[0] < water_temp < table[-1]: the segment always exists
+    (t0, h0), (t1, h1) = next(seg for seg in zip(table, table[1:]) if water_temp <= seg[1][0])
+    return h0 + (h1 - h0) * (water_temp - t0) / (t1 - t0)
 
 
 def next_wintering(currently: bool, water_temp: float, threshold: float) -> bool:

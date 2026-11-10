@@ -323,3 +323,142 @@ class TestDailyForecastInputs:
             await async_run_daily_forecast(hass, coordinator)
 
         assert coordinator.optimizer_context["tempo"] == "red"
+
+
+# ---------------------------------------------------------------------------
+# HA config → simulation devices
+# ---------------------------------------------------------------------------
+
+from custom_components.helios.const import (  # noqa: E402
+    CONF_DEVICE_NAME, CONF_DEVICE_TYPE, CONF_DEVICE_POWER_W,
+    CONF_DEVICE_ALLOWED_START, CONF_DEVICE_ALLOWED_END,
+    CONF_WH_TEMP_ENTITY, CONF_WH_TEMP_TARGET, CONF_EV_SOC_ENTITY,
+    CONF_POOL_WATER_TEMP_ENTITY, CONF_POOL_FILTRATION_TABLE,
+    CONF_APPLIANCE_CYCLE_DURATION_MINUTES,
+    CONF_FORECAST_ENTITY, CONF_EMA_ENABLED,
+    CONF_BATTERIES, CONF_BATTERY_SOC_ENTITY,
+    DEVICE_TYPE_WATER_HEATER, DEVICE_TYPE_EV, DEVICE_TYPE_POOL, DEVICE_TYPE_APPLIANCE,
+)
+from custom_components.helios.daily_optimizer import (  # noqa: E402
+    ha_devices_to_sim, season_from_date,
+)
+
+
+def test_season_from_today():
+    assert season_from_date() in {"winter", "spring", "summer", "autumn"}
+
+
+class TestHaDevicesToSim:
+
+    def test_allowed_window_from_time_selector(self):
+        """The UI stores times as HH:MM:SS."""
+        [sd], _ = ha_devices_to_sim([{
+            CONF_DEVICE_NAME: "Prise", CONF_DEVICE_TYPE: "generic", CONF_DEVICE_POWER_W: 500,
+            CONF_DEVICE_ALLOWED_START: "06:30:00", CONF_DEVICE_ALLOWED_END: "bad",
+        }])
+        assert sd.allowed_start == 6.5
+        assert sd.allowed_end == pytest.approx(23 + 59 / 60)   # invalid → default 23:59
+
+    @pytest.mark.parametrize("raw, expected", [("48", 48.0), ("unavailable", 55.0), ("hot", 55.0)])
+    async def test_water_heater_temperature_seeded_from_ha(self, hass, raw, expected):
+        hass.states.async_set("sensor.wh_temp", raw)
+        [sd], _ = ha_devices_to_sim([{
+            CONF_DEVICE_NAME: "Ballon", CONF_DEVICE_TYPE: DEVICE_TYPE_WATER_HEATER,
+            CONF_DEVICE_POWER_W: 2000, CONF_WH_TEMP_ENTITY: "sensor.wh_temp",
+            CONF_WH_TEMP_TARGET: 60,
+        }], hass=hass)
+        # Default: 5 °C below the target
+        assert sd.wh_temp == expected
+
+    async def test_ev_soc_seeded_from_ha(self, hass):
+        hass.states.async_set("sensor.ev_soc", "35")
+        [sd], _ = ha_devices_to_sim([{
+            CONF_DEVICE_NAME: "VE", CONF_DEVICE_TYPE: DEVICE_TYPE_EV,
+            CONF_DEVICE_POWER_W: 3700, CONF_EV_SOC_ENTITY: "sensor.ev_soc",
+        }], hass=hass)
+        assert sd.ev_soc == 35.0
+        assert sd.ev_plugged is True
+
+    async def test_pool_quota_from_water_temperature(self, hass):
+        hass.states.async_set("sensor.pool_water", "20")
+        [sd], [md] = ha_devices_to_sim([{
+            CONF_DEVICE_NAME: "Piscine", CONF_DEVICE_TYPE: DEVICE_TYPE_POOL,
+            CONF_DEVICE_POWER_W: 800, CONF_POOL_WATER_TEMP_ENTITY: "sensor.pool_water",
+            CONF_POOL_FILTRATION_TABLE: "10:2, 20:10, 30:20",
+        }], hass=hass)
+        assert sd.run_quota_h == pytest.approx(10.0)
+        assert md.pool_required_minutes_today == pytest.approx(600.0)
+
+    def test_pool_without_hass_has_no_quota(self):
+        [sd], [md] = ha_devices_to_sim([{
+            CONF_DEVICE_NAME: "Piscine", CONF_DEVICE_TYPE: DEVICE_TYPE_POOL, CONF_DEVICE_POWER_W: 800,
+        }])
+        assert sd.run_quota_h is None
+        assert md.pool_required_minutes_today is None
+
+    def test_appliance_cycle_and_schedule(self):
+        [sd], _ = ha_devices_to_sim(
+            [{
+                CONF_DEVICE_NAME: "Lave-linge", CONF_DEVICE_TYPE: DEVICE_TYPE_APPLIANCE,
+                CONF_DEVICE_POWER_W: 2000, CONF_APPLIANCE_CYCLE_DURATION_MINUTES: 90,
+            }],
+            appliance_schedule={"Lave-linge": 9.5},
+        )
+        assert sd.appliance_cycle_duration_minutes == 90
+        assert sd.appliance_ready_at_hour == 9.5
+
+
+# ---------------------------------------------------------------------------
+# Forecast inputs: forecast entity, battery SOC, schedule and base load files
+# ---------------------------------------------------------------------------
+
+class TestDailyForecastSources:
+
+    @pytest.mark.parametrize("forecast, expected_kwh", [(3.0, 3.0), ("n/a", None)])
+    async def test_forecast_entity_sets_cloud_cover(self, forecast, expected_kwh):
+        coordinator = _make_coordinator()
+        coordinator.entry.data = {**coordinator.entry.data, CONF_FORECAST_ENTITY: "sensor.forecast"}
+        hass = _make_hass(forecast_state=forecast)
+        with _patch_sim() as mock_sim:
+            await async_run_daily_forecast(hass, coordinator)
+        assert coordinator.optimizer_context["forecast_kwh"] == expected_kwh
+        sim_cfg = mock_sim.call_args.args[0]
+        if expected_kwh is None:
+            assert sim_cfg.cloud == "clear"
+        else:
+            # 3 kWh for a 3 kWp array is far below any clear-sky day
+            assert sim_cfg.cloud == "cloudy"
+
+    async def test_battery_soc_seeds_simulation(self):
+        coordinator = _make_coordinator()
+        coordinator.entry.data = {
+            **coordinator.entry.data,
+            CONF_BATTERY_ENABLED: True,
+            CONF_BATTERIES: [{CONF_BATTERY_SOC_ENTITY: "sensor.bat_soc"}],
+        }
+        hass = _make_hass()
+        hass.states.get.side_effect = lambda eid: MagicMock(state="72") if eid == "sensor.bat_soc" else None
+        with _patch_sim() as mock_sim:
+            await async_run_daily_forecast(hass, coordinator)
+        assert coordinator.optimizer_context["bat_soc_start"] == 72.0
+        assert mock_sim.call_args.args[0].bat_enabled is True
+
+    async def test_missing_schedule_and_base_load_files_are_tolerated(self, caplog):
+        coordinator = _make_coordinator()
+        coordinator.entry.data = {**coordinator.entry.data, CONF_EMA_ENABLED: False}
+        hass = _make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=OSError("no file"))
+        with _patch_sim() as mock_sim:
+            await async_run_daily_forecast(hass, coordinator)
+        assert "could not load base_load.json" in caplog.text
+        assert mock_sim.call_args.args[0].base_load_fn is None
+
+    async def test_ema_disabled_uses_static_base_load(self):
+        coordinator = _make_coordinator()
+        coordinator.entry.data = {**coordinator.entry.data, CONF_EMA_ENABLED: False}
+        static_fn = MagicMock()
+        hass = _make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=[{}, static_fn])
+        with _patch_sim() as mock_sim:
+            await async_run_daily_forecast(hass, coordinator)
+        assert mock_sim.call_args.args[0].base_load_fn is static_fn

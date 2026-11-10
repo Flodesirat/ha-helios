@@ -266,21 +266,18 @@ class BatteryForceSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def extra_state_attributes(self) -> dict:
         bat = self.coordinator.device_manager.battery_device
-        return {"force_remaining_min": round(bat.force_remaining_s() / 60, 1) if bat else 0.0}
+        return {"force_remaining_min": round(bat.force_remaining_s() / 60, 1)}
 
     async def _async_set(self, until: float | None) -> None:
-        bat = self.coordinator.device_manager.battery_device
-        if bat is None:
-            return
-        bat.force_until = until
+        # Created only with a battery device (see async_setup_entry)
+        self.coordinator.device_manager.battery_device.force_until = until
         await self.coordinator.device_manager.async_persist_device_state()
         self.async_write_ha_state()
         await self.coordinator.battery_drive.async_sync()
 
     async def async_turn_on(self, **kwargs) -> None:
         bat = self.coordinator.device_manager.battery_device
-        if bat is not None:
-            await self._async_set(time.time() + bat.force_duration_h * 3600)
+        await self._async_set(time.time() + bat.force_duration_h * 3600)
 
     async def async_turn_off(self, **kwargs) -> None:
         await self._async_set(None)
@@ -383,10 +380,7 @@ class BatteryDrivingSwitch(CoordinatorEntity, SwitchEntity):
         return self.coordinator.battery_driving
 
     async def _async_set(self, driving: bool) -> None:
-        bat = self.coordinator.device_manager.battery_device
-        if bat is None:
-            return
-        bat.driving = driving
+        self.coordinator.device_manager.battery_device.driving = driving
         await self.coordinator.device_manager.async_persist_device_state()
         self.async_write_ha_state()
         await self.coordinator.battery_drive.async_sync()

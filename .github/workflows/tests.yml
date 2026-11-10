@@ -26,7 +26,7 @@ jobs:
           python -m pytest tests/ -v --tb=short \
             --junit-xml=report.xml \
             --cov=custom_components/helios \
-            --cov-fail-under=45 \
+            --cov-fail-under=100 \
             --cov-report=term-missing \
             --cov-report=html:coverage-report \
             --cov-report=xml:coverage.xml
