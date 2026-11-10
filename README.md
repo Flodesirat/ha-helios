@@ -168,7 +168,7 @@ La même nuit, la pré-charge de la batterie mesure l'import réseau (chauffe-ea
 | Paramètre spécifique | Description |
 |----------------------|-------------|
 | Entité température | Sensor °C de la pièce |
-| Entité consigne | Sensor ou input_number de la température cible |
+| Entité consigne | `number`, `input_number` (état = température cible) ou `climate` (consigne lue dans l'attribut `temperature`) |
 | Mode | `heat` ou `cool` |
 | Hystérésis | Bande morte en °C pour éviter les cycles courts |
 

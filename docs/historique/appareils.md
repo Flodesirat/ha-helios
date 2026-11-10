@@ -138,3 +138,23 @@ filtrer pendant les heures pleines d'un jour rouge.
 - Tests piscine existants : passés de l'ancienne entité à la sonde d'eau
   (`test_pool_force.py`, `test_pool_persistence.py`, `test_regression.py`,
   `test_actual_power.py`).
+
+## HVAC : consigne lue sur une entité climate (#11, 2026-11-11)
+
+### Contexte
+
+Le config flow accepte une entité `climate` comme consigne HVAC, mais Helios
+lisait son état (le mode : `heat`, `cool`…) : consigne à 0 °C, chauffage
+toujours « satisfait », clim jamais. Trouvé en écrivant les tests de #8.
+
+### Décisions
+
+- `ManagedDevice._make_ha_reader` : pour une entité `climate.*`, renvoie
+  l'attribut `temperature` (consigne), `None` s'il est absent. Une entité
+  `climate` n'est lue que comme consigne HVAC. `number` / `input_number` inchangés.
+
+### Tests
+
+- `test_managed_device_misc.py::TestHvacClimateSetpoint` (satisfaction et
+  urgence avec une consigne `climate`, consigne absente) ; `TestHvac` pour la
+  logique HVAC elle-même, jusque-là non testée.

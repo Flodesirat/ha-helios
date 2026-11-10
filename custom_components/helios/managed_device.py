@@ -798,10 +798,19 @@ class ManagedDevice:
     # ------------------------------------------------------------------
     @staticmethod
     def _make_ha_reader(hass: HomeAssistant) -> StateReader:
-        """Build a StateReader from a live HomeAssistant instance."""
+        """Build a StateReader from a live HomeAssistant instance.
+
+        A climate entity is only read as an HVAC setpoint: its state is the
+        mode (heat, cool…), the setpoint is the ``temperature`` attribute.
+        """
         def reader(entity_id: str) -> str | None:
             s = hass.states.get(entity_id)
-            return s.state if s is not None else None
+            if s is None:
+                return None
+            if entity_id and entity_id.startswith("climate."):
+                setpoint = s.attributes.get("temperature")
+                return None if setpoint is None else str(setpoint)
+            return s.state
         return reader
 
     @staticmethod
