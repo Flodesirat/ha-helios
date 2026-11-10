@@ -7,6 +7,7 @@ full orchestration layer.
 from __future__ import annotations
 
 import logging
+import time as time_mod
 from datetime import date, datetime, time, timedelta
 from typing import Any, Callable
 
@@ -59,6 +60,7 @@ from .const import (
     DEFAULT_BATTERY_PRIORITY, DEFAULT_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MAX,
     DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
     TEMPO_RED,
+    BATTERY_FORCE_CHARGE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -710,6 +712,12 @@ class BatteryDevice:
         # batteries. Off → the battery is left out of the dispatch.
         self.driving: bool          = True
 
+        # Force mode (switch / selects / number helios_battery_force_*, persisted)
+        self.force_until: float | None = None              # epoch seconds
+        self.force_direction: str      = BATTERY_FORCE_CHARGE
+        self.force_power_w: float | None = None            # None → max power of the direction
+        self.force_duration_h: float   = 2.0
+
         # Interface fields (shared with ManagedDevice)
         self.fit: float             = 1.0
         self.is_on: bool            = False
@@ -780,6 +788,18 @@ class BatteryDevice:
     def manual_mode(self, value: bool) -> None:
         self.driving = not value
 
+    def force_active(self, now: float | None = None) -> bool:
+        """True while a force (charge / discharge at a fixed power) runs."""
+        if self.force_until is None:
+            return False
+        return (time_mod.time() if now is None else now) < self.force_until
+
+    def force_remaining_s(self, now: float | None = None) -> float:
+        if not self.force_active(now):
+            return 0.0
+        return self.force_until - (time_mod.time() if now is None else now)
+
     def is_manual(self, reader: StateReader) -> bool:  # noqa: ARG002 — same signature as ManagedDevice
-        """True when Helios does not drive the battery: left out of the dispatch."""
-        return not self.driving
+        """True when Helios does not drive the battery, or while it is forced:
+        left out of the dispatch."""
+        return not self.driving or self.force_active()

@@ -84,3 +84,52 @@ Helios, pour une ou plusieurs batteries, sans dépendre de la marque.
   2025.1 (minimum 0,001) : défaut antérieur, non traité ici.
 - `async_unload` n'annule pas la relance de démarrage du coordinator
   (`_startup_check_unsub`) : défaut antérieur, non traité ici.
+
+## Mode forçage : charge / décharge, puissance, durée (#6, 2026-11-10)
+
+### Contexte
+
+Les appareils ont un mode forçage (switch + durée) ; la batterie pilotée en
+Drive n'en avait pas. On veut forcer une charge ou une décharge à une
+puissance et pour une durée choisies, depuis la carte.
+
+### Décisions
+
+- **Entités** : `switch.helios_battery_force`,
+  `select.helios_battery_force_direction`, `number.helios_battery_force_power`
+  (nouvelle plateforme `number`), `select.helios_battery_force_duration`
+  (mêmes durées que les appareils). Réglages et échéance sauvegardés dans
+  `__battery__` du store et restaurés au redémarrage.
+- **Consigne fixe**, répartie comme la régulation ; puissance par défaut =
+  puissance max du sens. Un changement de sens ou de puissance s'applique tout
+  de suite.
+- **Limites : SOC seulement** (charge jusqu'à 100 %, décharge jusqu'à
+  `battery_soc_min`). Ni plafond de puissance souscrite, ni interdiction de
+  décharger en heures creuses.
+- **Limite de SOC atteinte** → fin du forçage, reprise de la régulation depuis
+  la puissance du forçage (sans à-coup). Idem à l'expiration (détectée au
+  relevé suivant ou à la vérification de 60 s) et à l'arrêt manuel, sans
+  inhibition.
+- **Pilotage OFF** : le forçage utilise Drive pour sa durée (script Drive puis
+  neutre), `battery_driving` reste OFF.
+- Priorité sur la pré-charge ; Helios coupé → forçage annulé ; batterie hors
+  dispatch pendant le forçage (`bat_available_w = 0`, pas de demande).
+- Consigne perdue pendant un forçage → la consigne forcée est réécrite tout de
+  suite.
+- **Carte** : section Forçage dans la modale batterie — sens, puissance par
+  boutons (±50 W, 25 / 50 / 75 / 100 % du max ; pas de champ de saisie, la
+  modale est reconstruite à chaque mise à jour), durées, bouton
+  « Forcer maintenant » / « Arrêter le forçage ».
+
+### Tests ajoutés
+
+- `test_battery_drive.py::TestForce` : écriture immédiate, puissance par
+  défaut, répartition, pas de régulation pendant le forçage, décharge forcée en
+  HC, pas de plafond d'abonnement, priorité sur la pré-charge, fin à la limite
+  de SOC (reprise sans à-coup), arrêt manuel, expiration, pilotage OFF (Drive
+  puis neutre), Helios coupé, changement de puissance, consigne perdue.
+- `test_battery_setup.py::test_force_through_entities` : de bout en bout par
+  les entités.
+- `test_battery_driving_persistence.py` : sauvegarde / restauration du
+  forçage, forçage expiré non restauré.
+- `test_bat_available.py::test_forced_returns_zero`.

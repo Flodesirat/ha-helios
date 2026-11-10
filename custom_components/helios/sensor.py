@@ -174,6 +174,13 @@ class EnergyOptimizerBatterySensor(_BaseEOSensor):
             "batteries":          drive.as_dict()["batteries"],
         }
         if bat is not None:
+            # Force mode (switch / selects / number helios_battery_force_*)
+            attrs["forced"]              = bat.force_active()
+            attrs["force_direction"]     = bat.force_direction
+            attrs["force_power_w"]       = bat.force_power_w
+            attrs["force_duration_h"]    = bat.force_duration_h
+            attrs["force_remaining_min"] = round(bat.force_remaining_s() / 60, 1)
+        if bat is not None:
             attrs["urgency"]         = round(bat.urgency, 3)
             attrs["fit"]             = round(bat.fit, 3)
             attrs["priority"]        = bat.priority

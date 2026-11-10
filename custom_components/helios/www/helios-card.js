@@ -901,6 +901,28 @@ class HeliosCard extends HTMLElement {
           this._hass.callService("homeassistant", isOn ? "turn_off" : "turn_on", { entity_id: sw });
         }
       }
+      if (!this._hass) return;
+      const f = this._batForceEntities();
+      if (action === "bat-force-toggle" && f.force) {
+        const isOn = this._hass.states[f.force]?.state === "on";
+        this._hass.callService("switch", isOn ? "turn_off" : "turn_on", { entity_id: f.force });
+      }
+      if (action === "bat-force-direction" && f.direction) {
+        this._hass.callService("select", "select_option", { entity_id: f.direction, option: btn.dataset.option });
+      }
+      if (action === "bat-force-duration" && f.duration) {
+        this._hass.callService("select", "select_option", { entity_id: f.duration, option: btn.dataset.option });
+      }
+      if (action === "bat-force-power" && f.power) {
+        const st  = this._hass.states[f.power];
+        const max = Number(st?.attributes?.max ?? 0);
+        const cur = Number(st?.state ?? 0);
+        let value = btn.dataset.pct !== undefined
+          ? Math.round(max * Number(btn.dataset.pct) / 100 / 50) * 50
+          : cur + Number(btn.dataset.step ?? 0);
+        value = Math.max(0, Math.min(max || value, value));
+        this._hass.callService("number", "set_value", { entity_id: f.power, value });
+      }
     });
 
     this._initialized = true;
@@ -1398,6 +1420,7 @@ class HeliosCard extends HTMLElement {
       regulating:   "Régulation",
       precharge:    "Pré-charge rouge",
       mode_lost:    "Consigne perdue",
+      forced:       "Forçage",
     }[state] ?? state;
   }
 
@@ -1408,6 +1431,7 @@ class HeliosCard extends HTMLElement {
       regulating:   "#1565C0",
       precharge:    "#C62828",
       mode_lost:    "#F44336",
+      forced:       "#FF9800",
     }[state] ?? "#9E9E9E";
   }
 
@@ -1930,6 +1954,62 @@ class HeliosCard extends HTMLElement {
     return this._hass?.states[candidate] !== undefined ? candidate : null;
   }
 
+  // Battery force entities, by unique_id suffix (fallback: default entity ids)
+  _batForceEntities() {
+    const entryId = this._config?.entry_id ?? this._autoDiscoverEntryId();
+    const disc = entryId ? this._discoverEntities(entryId) : null;
+    const pick = (suffix, fallback) => {
+      if (disc?.[suffix]) return disc[suffix];
+      return this._hass?.states[fallback] !== undefined ? fallback : null;
+    };
+    return {
+      force:     pick("battery_force",           "switch.helios_battery_force"),
+      direction: pick("battery_force_direction", "select.helios_battery_force_direction"),
+      duration:  pick("battery_force_duration",  "select.helios_battery_force_duration"),
+      power:     pick("battery_force_power",     "number.helios_battery_force_power"),
+    };
+  }
+
+  _buildBatForceSection(batEid) {
+    const f = this._batForceEntities();
+    if (!f.force) return "";
+    const st       = (eid) => this._hass?.states[eid];
+    const forceOn  = st(f.force)?.state === "on";
+    const remMin   = this._attr(batEid, "force_remaining_min") ?? 0;
+    const dir      = st(f.direction)?.state ?? this._attr(batEid, "force_direction") ?? "charge";
+    const dur      = st(f.duration)?.state ?? "2h";
+    const durOpts  = st(f.duration)?.attributes?.options ?? ["15min","30min","1h","2h","4h","8h","12h","24h"];
+    const powerW   = Number(st(f.power)?.state ?? this._attr(batEid, "force_power_w") ?? 0);
+    const chip = (active, attrs, label) => `
+      <button class="hm-manual-btn ${active ? "hm-manual-on" : "hm-manual-off"}" ${attrs}
+        style="padding:3px 8px;font-size:11px">${label}</button>`;
+
+    const dirChips = f.direction ? [["charge", "⬇ Charge"], ["discharge", "⬆ Décharge"]]
+      .map(([opt, label]) => chip(opt === dir, `data-action="bat-force-direction" data-option="${opt}"`, label))
+      .join("") : "";
+    const powerChips = f.power ? `
+      ${chip(false, `data-action="bat-force-power" data-step="-50"`, "−50")}
+      <span class="hm-stat" style="min-width:64px;text-align:center;font-weight:600">${Math.round(powerW)} W</span>
+      ${chip(false, `data-action="bat-force-power" data-step="50"`, "+50")}
+      ${[25, 50, 75, 100].map(pct => chip(false, `data-action="bat-force-power" data-pct="${pct}"`, `${pct} %`)).join("")}` : "";
+    const durChips = f.duration ? durOpts
+      .map(opt => chip(opt === dur, `data-action="bat-force-duration" data-option="${opt}"`, opt)).join("") : "";
+
+    return `
+      <div class="hm-section">
+        <div class="hm-section-title">Forçage</div>
+        ${forceOn ? `<span class="hm-force-lbl">🔒 ${dir === "discharge" ? "Décharge" : "Charge"} forcée à ${Math.round(powerW)} W — ${Math.round(remMin)} min restantes</span>` : ""}
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0">${dirChips}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin:4px 0">${powerChips}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0">${durChips}</div>
+        <div>
+          <button class="hm-manual-btn ${forceOn ? "hm-manual-on" : "hm-manual-off"}" data-action="bat-force-toggle">
+            ${forceOn ? "🔒 Arrêter le forçage" : "🔒 Forcer maintenant"}
+          </button>
+        </div>
+      </div>`;
+  }
+
   _openBatModal() {
     this._batModalOpen = true;
     const modal = this.shadowRoot.getElementById("h-bat-modal");
@@ -2051,6 +2131,7 @@ class HeliosCard extends HTMLElement {
         <button class="hm-close" data-action="close-bat">✕</button>
       </div>
       ${controlHtml}
+      ${this._buildBatForceSection(e.battery)}
       ${regulationHtml}
       ${stateHtml}
       ${scoreHtml}`;

@@ -1,12 +1,14 @@
 """Tests for BatteryDriveController — Drive regulation through HA entities and scripts."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+import time
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pytest_homeassistant_custom_component.common import async_mock_service
 
 from custom_components.helios.battery_drive import BatteryDriveController
+from custom_components.helios.managed_device import BatteryDevice
 from custom_components.helios.const import (
     CONF_BATTERIES, CONF_BATTERY_ENABLED, CONF_BATTERY_NAME,
     CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_DRIVE_POWER_ENTITY,
@@ -16,7 +18,7 @@ from custom_components.helios.const import (
     CONF_BATTERY_GRID_TARGET_BLUE_W, CONF_BATTERY_GRID_TARGET_RED_W,
     CONF_GRID_POWER_ENTITY, CONF_GRID_SUBSCRIPTION_W,
     BATTERY_STATE_OFF, BATTERY_STATE_STARTUP_WAIT, BATTERY_STATE_REGULATING,
-    BATTERY_STATE_PRECHARGE, BATTERY_STATE_MODE_LOST,
+    BATTERY_STATE_PRECHARGE, BATTERY_STATE_MODE_LOST, BATTERY_STATE_FORCED,
     BATTERY_DRIVE_STARTUP_HOLD_S,
 )
 
@@ -50,6 +52,8 @@ def _coordinator(batteries: list[dict], **cfg) -> MagicMock:
     coord.tempo_color = "blue"
     coord.tempo_next_color = "blue"
     coord.is_off_peak_now.return_value = False
+    coord.device_manager.battery_device = BatteryDevice({})
+    coord.device_manager.async_persist_device_state = AsyncMock()
     return coord
 
 
@@ -322,4 +326,171 @@ class TestRobustness:
         assert d["setpoint_w"] == 470
         assert d["target_w"] == 30
         assert d["batteries"] == [{"name": "A", "entity": "number.a_drive", "written_w": 470}]
+        ctrl.async_stop()
+
+
+# ---------------------------------------------------------------------------
+# Force (switch.helios_battery_force)
+# ---------------------------------------------------------------------------
+
+def _force(coord, direction="charge", power=None, minutes=60):
+    bat = coord.device_manager.battery_device
+    bat.force_direction = direction
+    bat.force_power_w = power
+    bat.force_until = time.time() + minutes * 60
+    return bat
+
+
+class TestForce:
+
+    async def test_forced_charge_written_at_once(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        ctrl = await _started(hass, coord)
+        _force(coord, "charge", power=800)
+        await ctrl.async_sync()
+        assert _written(services) == [("number.a_drive", -800)]
+        assert ctrl.state == BATTERY_STATE_FORCED
+        ctrl.async_stop()
+
+    async def test_default_power_is_max_of_direction(self, hass, services):
+        coord = _coordinator([_battery("A"), _battery("B", max_w=1000)])
+        ctrl = await _started(hass, coord)
+        _force(coord, "discharge")
+        await ctrl.async_sync()
+        assert _written(services) == [("number.a_drive", 1450), ("number.b_drive", 1000)]
+        ctrl.async_stop()
+
+    async def test_split_between_batteries(self, hass, services):
+        coord = _coordinator([_battery("A"), _battery("B")])
+        ctrl = await _started(hass, coord)
+        _force(coord, "discharge", power=1000)
+        await ctrl.async_sync()
+        assert _written(services) == [("number.a_drive", 500), ("number.b_drive", 500)]
+        ctrl.async_stop()
+
+    async def test_reading_does_not_regulate_while_forced(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        ctrl = await _started(hass, coord)
+        _force(coord, "charge", power=800)
+        await ctrl.async_sync()
+        await ctrl.async_handle_reading(2000.0, at=100.0)
+        assert _written(services) == [("number.a_drive", -800)]
+        ctrl.async_stop()
+
+    async def test_forced_discharge_allowed_off_peak(self, hass, services):
+        """Le forçage passe outre l'interdiction de décharger en heures creuses."""
+        coord = _coordinator([_battery("A")])
+        coord.is_off_peak_now.return_value = True
+        ctrl = await _started(hass, coord)
+        _force(coord, "discharge", power=600)
+        await ctrl.async_sync()
+        assert _written(services) == [("number.a_drive", 600)]
+        ctrl.async_stop()
+
+    async def test_no_subscription_cap(self, hass, services):
+        coord = _coordinator([_battery("A")], **{CONF_GRID_SUBSCRIPTION_W: 1000})
+        ctrl = await _started(hass, coord)
+        _force(coord, "charge", power=1450)
+        await ctrl.async_handle_reading(900.0, at=100.0)
+        assert _written(services) == [("number.a_drive", -1450)]
+        ctrl.async_stop()
+
+    async def test_has_priority_over_precharge(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        coord.tempo_next_color = "red"
+        coord.is_off_peak_now.return_value = True
+        ctrl = await _started(hass, coord)
+        _force(coord, "discharge", power=500)
+        await ctrl.async_handle_reading(300.0, at=100.0)
+        assert _written(services) == [("number.a_drive", 500)]
+        ctrl.async_stop()
+
+    async def test_soc_limit_ends_force(self, hass, services):
+        """Batterie pleine pendant une charge forcée → fin du forçage, retour à la régulation."""
+        coord = _coordinator([_battery("A")])
+        ctrl = await _started(hass, coord)
+        bat = _force(coord, "charge", power=800)
+        await ctrl.async_sync()
+        hass.states.async_set("sensor.a_soc", "100")
+        await ctrl.async_handle_reading(0.0, at=100.0)
+        assert bat.force_until is None
+        coord.device_manager.async_persist_device_state.assert_awaited()
+        assert ctrl.state == BATTERY_STATE_REGULATING
+        # Regulation resumes from the forced power (bumpless)
+        assert ctrl.regulator.applied(at=1e9) == -800
+        ctrl.async_stop()
+
+    async def test_switch_off_resumes_regulation(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        ctrl = await _started(hass, coord)
+        bat = _force(coord, "charge", power=800)
+        await ctrl.async_sync()
+        bat.force_until = None
+        await ctrl.async_sync()
+        assert ctrl.state == BATTERY_STATE_REGULATING
+        await ctrl.async_handle_reading(-100.0, at=100.0)
+        assert _written(services)[-1] == ("number.a_drive", -930)  # −800 + (−100) − 30
+        ctrl.async_stop()
+
+    async def test_expiry_detected_by_status_check(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        ctrl = await _started(hass, coord)
+        bat = _force(coord, "charge", power=800)
+        await ctrl.async_sync()
+        bat.force_until = time.time() - 1  # expired
+        await ctrl._async_check_setpoints()
+        assert ctrl.state == BATTERY_STATE_REGULATING
+        ctrl.async_stop()
+
+    async def test_force_with_driving_off_uses_drive_temporarily(self, hass, services):
+        """Pilotage OFF : script Drive au début, script neutre à la fin, switch inchangé."""
+        coord = _coordinator([_battery("A")])
+        coord.battery_driving = False
+        ctrl = await _started(hass, coord)
+        assert ctrl.active is False
+        bat = _force(coord, "discharge", power=700)
+        await ctrl.async_sync()
+        assert len(services["a_drive"]) == 1
+        assert _written(services) == [("number.a_drive", 700)]
+        bat.force_until = None
+        await ctrl.async_sync()
+        assert len(services["a_neutral"]) == 1
+        assert ctrl.active is False
+        assert ctrl.state == BATTERY_STATE_OFF
+        assert coord.battery_driving is False
+        ctrl.async_stop()
+
+    async def test_helios_off_cancels_force(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        ctrl = await _started(hass, coord)
+        bat = _force(coord, "charge", power=800)
+        await ctrl.async_sync()
+        coord.enabled = False
+        await ctrl.async_sync()
+        assert bat.force_until is None
+        assert len(services["a_neutral"]) == 1
+        assert ctrl.state == BATTERY_STATE_OFF
+        ctrl.async_stop()
+
+    async def test_power_change_applied_at_once(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        ctrl = await _started(hass, coord)
+        bat = _force(coord, "charge", power=800)
+        await ctrl.async_sync()
+        bat.force_power_w = 400
+        await ctrl.async_sync()
+        assert _written(services)[-1] == ("number.a_drive", -400)
+        ctrl.async_stop()
+
+    async def test_lost_setpoint_rewrites_force(self, hass, services):
+        coord = _coordinator([_battery("A")])
+        ctrl = await _started(hass, coord)
+        _force(coord, "charge", power=800)
+        await ctrl.async_sync()
+        hass.states.async_set("number.a_drive", "0")
+        await ctrl._async_check_setpoints()
+        await ctrl._async_check_setpoints()
+        assert _written(services)[-1] == ("number.a_drive", -800)
+        assert len(_written(services)) == 2
+        assert ctrl.state == BATTERY_STATE_FORCED
         ctrl.async_stop()

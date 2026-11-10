@@ -1,7 +1,7 @@
 """Constants for Helios Energy Optimizer."""
 
 DOMAIN = "helios"
-PLATFORMS = ["sensor", "switch", "binary_sensor", "select", "button"]
+PLATFORMS = ["sensor", "switch", "binary_sensor", "select", "button", "number"]
 
 # ---------------------------------------------------------------------------
 # Config entry keys — sources
@@ -53,10 +53,16 @@ BATTERY_STATE_STARTUP_WAIT = "startup_wait"  # passage en Drive : relevés ignor
 BATTERY_STATE_REGULATING   = "regulating"    # régulation du réseau vers la cible
 BATTERY_STATE_PRECHARGE    = "precharge"     # charge maximale avant un jour rouge
 BATTERY_STATE_MODE_LOST    = "mode_lost"     # consigne perdue par l'intégration : reprise depuis 0 W
+BATTERY_STATE_FORCED       = "forced"        # forçage manuel : consigne fixe (sens, puissance, durée)
 BATTERY_STATES = [
     BATTERY_STATE_OFF, BATTERY_STATE_STARTUP_WAIT, BATTERY_STATE_REGULATING,
-    BATTERY_STATE_PRECHARGE, BATTERY_STATE_MODE_LOST,
+    BATTERY_STATE_PRECHARGE, BATTERY_STATE_MODE_LOST, BATTERY_STATE_FORCED,
 ]
+
+# Battery force direction (select.helios_battery_force_direction)
+BATTERY_FORCE_CHARGE     = "charge"
+BATTERY_FORCE_DISCHARGE  = "discharge"
+BATTERY_FORCE_DIRECTIONS = [BATTERY_FORCE_CHARGE, BATTERY_FORCE_DISCHARGE]
 
 # ---------------------------------------------------------------------------
 # Config entry keys — device list

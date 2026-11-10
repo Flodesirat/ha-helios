@@ -406,7 +406,8 @@
           "startup_wait": "Switching to Drive",
           "regulating": "Regulating",
           "precharge": "Red-day pre-charge",
-          "mode_lost": "Setpoint lost"
+          "mode_lost": "Setpoint lost",
+          "forced": "Forced"
         }
       },
       "eo_tempo_next_color": {
@@ -486,6 +487,9 @@
       },
       "eo_battery_driving": {
         "name": "Battery driving"
+      },
+      "eo_battery_force": {
+        "name": "Battery force"
       }
     },
     "select": {
@@ -498,11 +502,36 @@
           "12h": "12 hours",
           "24h": "24 hours"
         }
+      },
+      "eo_battery_force_direction": {
+        "name": "Battery force direction",
+        "state": {
+          "charge": "Charge",
+          "discharge": "Discharge"
+        }
+      },
+      "eo_battery_force_duration": {
+        "name": "Battery force duration",
+        "state": {
+          "15min": "15 minutes",
+          "30min": "30 minutes",
+          "1h": "1 hour",
+          "2h": "2 hours",
+          "4h": "4 hours",
+          "8h": "8 hours",
+          "12h": "12 hours",
+          "24h": "24 hours"
+        }
       }
     },
     "button": {
       "force_optimization": {
         "name": "Run optimization"
+      }
+    },
+    "number": {
+      "eo_battery_force_power": {
+        "name": "Battery force power"
       }
     }
   }

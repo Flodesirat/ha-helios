@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.helios.battery_drive import BatteryDriveController
+from custom_components.helios.managed_device import BatteryDevice
 from custom_components.helios.const import (
     CONF_BATTERIES, CONF_BATTERY_ENABLED, CONF_BATTERY_NAME,
     CONF_BATTERY_DRIVE_POWER_ENTITY,
@@ -73,6 +74,7 @@ def _controller() -> tuple[BatteryDriveController, list[float]]:
     coordinator.tempo_color = "blue"
     coordinator.tempo_next_color = "blue"
     coordinator.is_off_peak_now.return_value = False  # 10:09–17:26, daytime
+    coordinator.device_manager.battery_device = BatteryDevice({})  # no force
     ctrl = BatteryDriveController(hass, coordinator)
     ctrl.active = True  # as after the Drive script
     return ctrl, written

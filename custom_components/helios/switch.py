@@ -66,6 +66,7 @@ async def async_setup_entry(
     entities = [EnergyOptimizerModeSwitch(coordinator, entry)]
     if coordinator.config.get(CONF_BATTERY_ENABLED) and coordinator.device_manager.battery_device is not None:
         entities.append(BatteryDrivingSwitch(coordinator, entry))
+        entities.append(BatteryForceSwitch(coordinator, entry))
     # switch.helios_battery_manual (before 1.1) is replaced by battery_driving
     registry = er.async_get(hass)
     if old_id := registry.async_get_entity_id("switch", DOMAIN, f"{entry.entry_id}_battery_manual"):
@@ -234,6 +235,65 @@ class DeviceForceSwitch(_BaseDeviceSwitch):
         await self.coordinator.device_manager.async_persist_device_state()
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
+
+
+class BatteryForceSwitch(CoordinatorEntity, SwitchEntity):
+    """Force a charge or a discharge of the batteries (direction, power and
+    duration set by select.helios_battery_force_direction,
+    number.helios_battery_force_power and select.helios_battery_force_duration).
+
+    Works with driving off too: Drive is then used for the force only.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "eo_battery_force"
+    suggested_object_id = "battery_force"
+
+    def __init__(self, coordinator: EnergyOptimizerCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_battery_force"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # A force ends between coordinator cycles (expiry, SOC limit)
+        self.async_on_remove(self.coordinator.battery_drive.add_listener(self.async_write_ha_state))
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.battery_forced
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        bat = self.coordinator.device_manager.battery_device
+        return {"force_remaining_min": round(bat.force_remaining_s() / 60, 1) if bat else 0.0}
+
+    async def _async_set(self, until: float | None) -> None:
+        bat = self.coordinator.device_manager.battery_device
+        if bat is None:
+            return
+        bat.force_until = until
+        await self.coordinator.device_manager.async_persist_device_state()
+        self.async_write_ha_state()
+        await self.coordinator.battery_drive.async_sync()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        bat = self.coordinator.device_manager.battery_device
+        if bat is not None:
+            await self._async_set(time.time() + bat.force_duration_h * 3600)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._async_set(None)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry.entry_id)},
+            name="Helios",
+            manufacturer="Community",
+            model="Helios",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
 
 class DeviceManualSwitch(_BaseDeviceSwitch):

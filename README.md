@@ -86,6 +86,25 @@ consigne = clamp( puissance appliquée au moment du relevé + réseau − cible 
 
 **Pilotage désactivé** (switch sur OFF, ou Helios coupé) : le script neutre est appelé, Helios n'écrit plus de consigne, et la batterie sort du dispatch des appareils (`bat_available_w` = 0, aucune demande de charge).
 
+#### Forçage de la batterie
+
+Comme les autres appareils, la batterie peut être forcée, depuis la modale batterie de la carte (clic sur la batterie) ou par ses entités :
+
+| Réglage | Entité | Description |
+|---------|--------|-------------|
+| Sens | `select.helios_battery_force_direction` | `charge` ou `discharge` |
+| Puissance | `number.helios_battery_force_power` | Puissance totale (W), répartie entre les batteries comme la régulation. Par défaut : la puissance max du sens choisi. |
+| Durée | `select.helios_battery_force_duration` | 15 min à 24 h |
+| Lancer / arrêter | `switch.helios_battery_force` | Attribut `force_remaining_min` |
+
+- Pendant le forçage, la régulation est suspendue et la consigne est fixe (`+puissance` en décharge, `−puissance` en charge). Changer le sens ou la puissance s'applique tout de suite.
+- **Seules les limites de SOC s'appliquent** : charge jusqu'à 100 %, décharge jusqu'à `SOC min`. La puissance souscrite et l'interdiction de décharger en heures creuses ne s'appliquent pas.
+- Le forçage s'arrête à la fin de la durée, à l'arrêt du switch, ou dès que les batteries atteignent leur limite de SOC. La régulation reprend alors depuis la puissance du forçage.
+- Il passe avant la pré-charge du jour rouge.
+- Avec le pilotage sur OFF, le forçage utilise Drive le temps du forçage : script Drive au début, script neutre à la fin ; `switch.helios_battery_driving` reste sur OFF.
+- Couper Helios annule le forçage. Pendant le forçage, la batterie sort du dispatch des appareils.
+- Sens, puissance, durée et échéance sont sauvegardés : un forçage en cours reprend après un redémarrage.
+
 #### Détection d'une batterie indisponible
 
 Helios surveille en permanence les entités SOC configurées. Dès que l'état d'une batterie cesse d'être numérique (`unavailable`, `unknown`, ou toute valeur non parseable comme un nombre), elle est considérée comme **indisponible** :
@@ -482,8 +501,12 @@ La prévision est disponible en attributs du sensor `helios_forecast` (voir auss
 
 | Entité | Type | Description |
 |--------|------|-------------|
-| `sensor.helios_battery` | Sensor | État de la régulation : `off` (non pilotée), `startup_wait` (passage en Drive), `regulating`, `precharge` (pré-charge jour rouge), `mode_lost` (consigne perdue, reprise depuis 0 W). Mis à jour à chaque relevé réseau. Attributs : `setpoint_w` (consigne calculée, + = décharge), `target_w` (cible réseau active), `last_grid_w` (dernier relevé), `batteries` (consigne écrite par batterie), `driving`, `soc` (%, pondéré par les capacités), `power_w` (W mesurés, négatif = charge), `available_w` (W de décharge disponibles pour le dispatch), `demand_w` (W demandés en charge), `battery_available`, `urgency` [0–1], `effective_score` [0–1] |
+| `sensor.helios_battery` | Sensor | État de la régulation : `off` (non pilotée), `startup_wait` (passage en Drive), `regulating`, `precharge` (pré-charge jour rouge), `mode_lost` (consigne perdue, reprise depuis 0 W), `forced` (forçage). Mis à jour à chaque relevé réseau. Attributs : `setpoint_w` (consigne calculée, + = décharge), `target_w` (cible réseau active), `last_grid_w` (dernier relevé), `batteries` (consigne écrite par batterie), `driving`, `forced`, `force_direction`, `force_power_w`, `force_duration_h`, `force_remaining_min`, `soc` (%, pondéré par les capacités), `power_w` (W mesurés, négatif = charge), `available_w` (W de décharge disponibles pour le dispatch), `demand_w` (W demandés en charge), `battery_available`, `urgency` [0–1], `effective_score` [0–1] |
 | `switch.helios_battery_driving` | Switch | Helios pilote les batteries (mode Drive). OFF → script neutre, plus de consigne, batterie exclue du dispatch. État sauvegardé. Remplace `switch.helios_battery_manual` (supprimé à la mise à jour ; un mode manuel actif devient pilotage OFF). |
+| `switch.helios_battery_force` | Switch | Lance / arrête un forçage (voir [Forçage de la batterie](#forçage-de-la-batterie)). Attribut `force_remaining_min`. |
+| `select.helios_battery_force_direction` | Select | Sens du forçage : `charge` / `discharge` |
+| `number.helios_battery_force_power` | Number | Puissance du forçage (W, totale) |
+| `select.helios_battery_force_duration` | Select | Durée du forçage (15 min à 24 h) |
  
 #### Entités par appareil
 

@@ -1,6 +1,7 @@
 """Tests for the persistence of switch.helios_battery_driving across restarts."""
 from __future__ import annotations
 
+import time
 from collections import deque
 from unittest.mock import AsyncMock, MagicMock
 
@@ -60,4 +61,29 @@ class TestBatteryDrivingPersistence:
         mgr.battery_device.driving = False
         await mgr.async_persist_device_state()
         saved = mgr._store.async_save.call_args.args[0]
-        assert saved["__battery__"] == {"driving": False}
+        assert saved["__battery__"]["driving"] is False
+
+    @pytest.mark.asyncio
+    async def test_force_saved_and_restored(self):
+        """Forçage en cours : sens, puissance, durée et échéance survivent au redémarrage."""
+        mgr = _make_manager({})
+        await mgr.async_setup()
+        bat = mgr.battery_device
+        bat.force_until = time.time() + 600
+        bat.force_direction = "discharge"
+        bat.force_power_w = 800.0
+        bat.force_duration_h = 1.0
+        await mgr.async_persist_device_state()
+        saved = mgr._store.async_save.call_args.args[0]
+
+        restored = _make_manager(saved)
+        await restored.async_setup()
+        rb = restored.battery_device
+        assert rb.force_active()
+        assert (rb.force_direction, rb.force_power_w, rb.force_duration_h) == ("discharge", 800.0, 1.0)
+
+    @pytest.mark.asyncio
+    async def test_expired_force_not_restored(self):
+        mgr = _make_manager({"__battery__": {"driving": True, "force_until": time.time() - 10}})
+        await mgr.async_setup()
+        assert mgr.battery_device.force_active() is False

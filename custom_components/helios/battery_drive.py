@@ -54,12 +54,15 @@ from .const import (
     BATTERY_STATE_REGULATING,
     BATTERY_STATE_PRECHARGE,
     BATTERY_STATE_MODE_LOST,
+    BATTERY_STATE_FORCED,
+    BATTERY_FORCE_DISCHARGE,
     TEMPO_WHITE,
     TEMPO_RED,
 )
 
 if TYPE_CHECKING:
     from .coordinator import EnergyOptimizerCoordinator
+    from .managed_device import BatteryDevice
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -111,6 +114,7 @@ class BatteryDriveController:
         self.target_w: float = self._target_for(None)
         self._starting: bool = True      # until the first non-zero setpoint
         self._recovering: bool = False   # after a lost setpoint, until the hold ends
+        self._forcing: bool = False      # a force is being applied (until it ends)
         self._hold_until: float = 0.0
         self._lock = asyncio.Lock()
         self._started = False
@@ -167,19 +171,42 @@ class BatteryDriveController:
         for listener in list(self._listeners):
             listener()
 
+    def _forced_device(self) -> BatteryDevice | None:
+        """The battery device while a force runs, else None."""
+        bat = self._coordinator.device_manager.battery_device
+        return bat if bat is not None and bat.force_active() else None
+
     def _wanted(self) -> bool:
-        return self.configured and self._coordinator.enabled and self._coordinator.battery_driving
+        """Drive while Helios is on and the batteries are driven — or forced
+        (a force with driving off uses Drive for its duration only)."""
+        return self.configured and self._coordinator.enabled and (
+            self._coordinator.battery_driving or self._forced_device() is not None
+        )
 
     async def async_sync(self) -> None:
-        """Enter or leave Drive to match the switches (Helios on, battery driving)."""
+        """Match the switches: enter or leave Drive, start or end a force."""
         if not self._started:
             return
         async with self._lock:
-            wanted = self._wanted()
-            if wanted and not self.active:
-                await self._async_activate()
-            elif not wanted and self.active:
-                await self._async_deactivate()
+            await self._async_sync_locked(time.monotonic())
+
+    async def _async_sync_locked(self, at: float) -> None:
+        bat = self._coordinator.device_manager.battery_device
+        if bat is not None and bat.force_until is not None and not self._coordinator.enabled:
+            await self._async_cancel_force(bat, "Helios switched off")
+        wanted = self._wanted()
+        if wanted and not self.active:
+            await self._async_activate()
+        elif not wanted and self.active:
+            self._forcing = False
+            await self._async_deactivate()
+            return
+        if not self.active:
+            return
+        if self._forced_device() is not None:
+            await self._async_apply_force(at)
+        elif self._forcing:
+            self._leave_force()
 
     async def _async_activate(self) -> None:
         _LOGGER.info("Battery Drive: activating %d battery(ies)", len(self.batteries))
@@ -246,22 +273,12 @@ class BatteryDriveController:
                 return
             if at < self._hold_until:
                 return  # the battery is still switching to Drive
+            if self._forcing or self._forced_device() is not None:
+                await self._async_sync_locked(at)  # applies the force, or ends it
+                return
             precharge = self._precharge_wanted()
             off_peak = self._coordinator.is_off_peak_now()
-
-            batteries: list[_Battery] = []
-            limits: list[BatteryLimits] = []
-            for bat in self.batteries:
-                soc = state_float(self.hass, bat.soc_entity)
-                if bat.soc_entity and soc is None:
-                    bat.written = None  # unavailable: left out of the split
-                    continue
-                batteries.append(bat)
-                limits.append(battery_limits(
-                    bat.max_discharge_w, bat.max_charge_w, soc,
-                    min_soc=self._soc_min, max_soc=BATTERY_DRIVE_MAX_SOC,
-                    allow_discharge=not (precharge or off_peak),
-                ))
+            batteries, limits = self._available(allow_discharge=not (precharge or off_peak))
             if not batteries:
                 return
 
@@ -294,6 +311,74 @@ class BatteryDriveController:
                 self.state = BATTERY_STATE_PRECHARGE if precharge else BATTERY_STATE_REGULATING
             self._notify()
 
+    def _available(self, allow_discharge: bool) -> tuple[list[_Battery], list[BatteryLimits]]:
+        """Batteries with a known SOC (or none configured) and what each may do."""
+        batteries: list[_Battery] = []
+        limits: list[BatteryLimits] = []
+        for bat in self.batteries:
+            soc = state_float(self.hass, bat.soc_entity)
+            if bat.soc_entity and soc is None:
+                bat.written = None  # unavailable: left out of the split
+                continue
+            batteries.append(bat)
+            limits.append(battery_limits(
+                bat.max_discharge_w, bat.max_charge_w, soc,
+                min_soc=self._soc_min, max_soc=BATTERY_DRIVE_MAX_SOC,
+                allow_discharge=allow_discharge,
+            ))
+        return batteries, limits
+
+    # ------------------------------------------------------------------
+    # Force (switch.helios_battery_force)
+    # ------------------------------------------------------------------
+    async def _async_apply_force(self, at: float) -> None:
+        """Write the forced setpoint: fixed power, SOC limits only (the
+        subscription and the off-peak rule do not apply)."""
+        dev = self._forced_device()
+        if dev is None:
+            return
+        self._forcing = True
+        batteries, limits = self._available(allow_discharge=True)
+        if not batteries:
+            return  # no SOC known: keep the current setpoints
+        discharge = dev.force_direction == BATTERY_FORCE_DISCHARGE
+        full_w = sum(b.max_discharge_w if discharge else b.max_charge_w for b in batteries)
+        power = full_w if dev.force_power_w is None else min(float(dev.force_power_w), full_w)
+        parts = split_setpoint(power if discharge else -power, limits)
+        if power > 0 and all(abs(p) < 1 for p in parts):
+            # Every battery is at its SOC limit: the force is over
+            await self._async_cancel_force(dev, "SOC limit reached")
+            if not self._wanted():
+                self._forcing = False
+                await self._async_deactivate()
+            else:
+                self._leave_force()
+            return
+        changed = False
+        for bat, part in zip(batteries, parts):
+            changed |= await self._async_write(bat, round(part))
+        if changed:
+            self.regulator.accepted(sum(b.written or 0 for b in batteries), at=at)
+        self.regulator.setpoint = float(sum(round(p) for p in parts))
+        self._starting = False
+        self._hold_until = 0.0
+        self.state = BATTERY_STATE_FORCED
+        self._notify()
+
+    async def _async_cancel_force(self, dev: BatteryDevice, reason: str) -> None:
+        _LOGGER.info("Battery Drive: force ended (%s)", reason)
+        dev.force_until = None
+        await self._coordinator.device_manager.async_persist_device_state()
+
+    def _leave_force(self) -> None:
+        """Back to regulation, from what the batteries deliver now (bumpless)."""
+        self._forcing = False
+        self.regulator.resync(float(sum(b.written or 0 for b in self.batteries)))
+        self._starting = False
+        self._hold_until = 0.0
+        self.state = BATTERY_STATE_REGULATING
+        self._notify()
+
     async def _async_write(self, bat: _Battery, value: int, force: bool = False) -> bool:
         """Write *value* to the battery's number entity if it changed; True if written."""
         if not force and bat.written == value:
@@ -320,6 +405,10 @@ class BatteryDriveController:
         if not self.active or self._lock.locked():
             return
         async with self._lock:
+            if self._forcing and self._forced_device() is None:
+                await self._async_sync_locked(time.monotonic())  # the force expired
+                if not self.active:
+                    return
             lost = []
             for bat in self.batteries:
                 if bat.written is None:
@@ -340,6 +429,9 @@ class BatteryDriveController:
                     bat.number_entity, value, bat.written,
                 )
             self._restart_from_zero()
+            if self._forced_device() is not None:
+                await self._async_apply_force(time.monotonic())
+                return
             self._recovering = True
             self.state = BATTERY_STATE_MODE_LOST
             self._notify()
@@ -384,6 +476,7 @@ class BatteryDriveController:
             "setpoint_w":       round(self.setpoint_w),
             "target_w":         round(self.target_w),
             "last_grid_w":      round(self.regulator.last_grid),
+            "forcing":          self._forcing,
             "batteries": [
                 {"name": b.name, "entity": b.number_entity, "written_w": b.written}
                 for b in self.batteries

@@ -67,6 +67,8 @@ def _make_coordinator(
     coord.battery_soc = soc
     coord.tempo_color = tempo_color
     coord.battery_power_w = battery_power_w
+    coord.battery_driving = True
+    coord.battery_forced = False
     coord._compute_bat_available_w = (
         EnergyOptimizerCoordinator._compute_bat_available_w.__get__(coord)
     )
@@ -241,3 +243,10 @@ def test_driving_returns_capacity():
     coord = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE)
     coord.battery_driving = True
     assert coord._compute_bat_available_w() > 0.0
+
+
+def test_forced_returns_zero():
+    """Forçage en cours → la batterie n'est pas disponible pour les appareils."""
+    coord = _make_coordinator(soc=85.0, tempo_color=TEMPO_BLUE)
+    coord.battery_forced = True
+    assert coord._compute_bat_available_w() == 0.0

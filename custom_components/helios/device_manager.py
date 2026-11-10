@@ -251,7 +251,17 @@ class DeviceManager:
                 self.battery_device.driving = bool(bat_stored["driving"])
             elif bat_stored.get("manual_mode", False):
                 self.battery_device.driving = False
-            _LOGGER.debug("BatteryDevice: restored driving=%s", self.battery_device.driving)
+            bat = self.battery_device
+            bat.force_direction  = bat_stored.get("force_direction", bat.force_direction)
+            bat.force_power_w    = bat_stored.get("force_power_w", bat.force_power_w)
+            bat.force_duration_h = float(bat_stored.get("force_duration_h", bat.force_duration_h))
+            force_until = bat_stored.get("force_until")
+            if force_until and float(force_until) > time_mod.time():
+                bat.force_until = float(force_until)
+            _LOGGER.debug(
+                "BatteryDevice: restored driving=%s, force %s",
+                bat.driving, f"{bat.force_remaining_s():.0f} s left" if bat.force_active() else "off",
+            )
 
         # Register immediate listeners on appliance ready entities.
         # This allows the prepare script to be triggered as soon as the user
@@ -355,7 +365,14 @@ class DeviceManager:
                 })
             data[device.name] = entry
         if self.battery_device is not None:
-            data["__battery__"] = {"driving": self.battery_device.driving}
+            bat = self.battery_device
+            data["__battery__"] = {
+                "driving":          bat.driving,
+                "force_until":      bat.force_until,
+                "force_direction":  bat.force_direction,
+                "force_power_w":    bat.force_power_w,
+                "force_duration_h": bat.force_duration_h,
+            }
         await self._store.async_save(data)
 
     async def async_persist_device_state(self) -> None:

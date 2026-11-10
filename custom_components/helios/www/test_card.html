@@ -334,6 +334,10 @@ const hassDay = makeHass({
   }),
 
   "switch.helios_battery_driving":        state("on"),
+  "switch.helios_battery_force":          state("off", { force_remaining_min: 0 }),
+  "select.helios_battery_force_direction": state("charge", { options: ["charge", "discharge"] }),
+  "select.helios_battery_force_duration":  state("1h", { options: ["15min","30min","1h","2h","4h","8h","12h","24h"] }),
+  "number.helios_battery_force_power":     state("1000", { min: 0, max: 1450, step: 50 }),
   "switch.helios_pool_manual":           state("off"),
   "switch.helios_water_heater_manual":   state("off"),
   "switch.helios_dishwasher_manual":     state("off"),

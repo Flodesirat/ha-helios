@@ -96,7 +96,7 @@ Couleur lue depuis une entité sensor standard (blue/white/red). Pas d'appel API
 6. **Tickets GitHub** : en terminant une tâche, fermer son ticket
    (`gh issue close <n>`).
 7. Commits en français, à l'impératif, un commit par lot, avec le trailer
-   `Co-Authored-By` attendu. Mentionner le ticket (`Ferme #<n>`).
+   `Co-Authored-By` attendu. Mentionner le ticket avec `Closes #<n>` (mot-clé anglais : GitHub ne reconnaît pas « Ferme »).
 
 ### Versioning
 

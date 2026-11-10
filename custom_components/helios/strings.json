@@ -436,7 +436,8 @@
           "startup_wait": "Passage en Drive",
           "regulating": "Régulation",
           "precharge": "Pré-charge jour rouge",
-          "mode_lost": "Consigne perdue"
+          "mode_lost": "Consigne perdue",
+          "forced": "Forçage"
         }
       },
       "eo_tempo_next_color": {
@@ -495,6 +496,9 @@
       },
       "eo_battery_driving": {
         "name": "Pilotage batterie"
+      },
+      "eo_battery_force": {
+        "name": "Forçage batterie"
       }
     },
     "select": {
@@ -523,11 +527,36 @@
           "12h": "12 heures",
           "24h": "24 heures"
         }
+      },
+      "eo_battery_force_direction": {
+        "name": "Sens du forçage batterie",
+        "state": {
+          "charge": "Charge",
+          "discharge": "Décharge"
+        }
+      },
+      "eo_battery_force_duration": {
+        "name": "Durée du forçage batterie",
+        "state": {
+          "15min": "15 minutes",
+          "30min": "30 minutes",
+          "1h": "1 heure",
+          "2h": "2 heures",
+          "4h": "4 heures",
+          "8h": "8 heures",
+          "12h": "12 heures",
+          "24h": "24 heures"
+        }
       }
     },
     "button": {
       "force_optimization": {
         "name": "Lancer l'optimisation"
+      }
+    },
+    "number": {
+      "eo_battery_force_power": {
+        "name": "Puissance du forçage batterie"
       }
     }
   }

@@ -266,6 +266,12 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         bat = self.device_manager.battery_device
         return bat.driving if bat is not None else False
 
+    @property
+    def battery_forced(self) -> bool:
+        """switch.helios_battery_force — a forced charge / discharge runs."""
+        bat = self.device_manager.battery_device
+        return bat.force_active() if bat is not None else False
+
     def _is_off_peak_now(self) -> bool:
         """Return True if the current time falls in any configured off-peak slot."""
         from datetime import time as dtime
@@ -603,8 +609,8 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         cfg = self._cfg
         if not cfg.get(CONF_BATTERY_ENABLED):
             return 0.0
-        if not self.battery_driving:
-            return 0.0  # not driven: Helios cannot count on the battery
+        if not self.battery_driving or self.battery_forced:
+            return 0.0  # not driven, or forced: Helios cannot count on the battery
         soc = self.battery_soc
         if soc is None:
             return 0.0

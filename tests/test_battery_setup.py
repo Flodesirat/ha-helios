@@ -80,7 +80,6 @@ async def test_v1_entry_migrated_on_setup(hass: HomeAssistant):
 
 async def test_drive_cycle(hass: HomeAssistant):
     """Démarrage en Drive, consigne écrite au relevé, arrêt via le switch."""
-    set_value = async_mock_service(hass, "number", "set_value")
     drive = async_mock_service(hass, "script", "venus_drive")
     neutral = async_mock_service(hass, "script", "venus_neutral")
     entry = MockConfigEntry(
@@ -88,6 +87,8 @@ async def test_drive_cycle(hass: HomeAssistant):
         data={**_SOURCES, CONF_BATTERIES: [_VENUS]},
     )
     assert await _setup(hass, entry)
+    # After the setup: loading the number platform registers the real service
+    set_value = async_mock_service(hass, "number", "set_value")
     assert len(drive) == 1
     assert hass.states.get("sensor.helios_battery").state == "startup_wait"
 
@@ -159,4 +160,47 @@ async def test_old_manual_switch_removed(hass: HomeAssistant):
         await hass.async_block_till_done()
     assert registry.async_get_entity_id("switch", DOMAIN, "helios_reg_battery_manual") is None
     assert hass.states.get("switch.helios_battery_driving") is not None
+    await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_force_through_entities(hass: HomeAssistant):
+    """Forçage piloté par les entités (comme la carte) : sens, puissance, durée, switch."""
+    async_mock_service(hass, "script", "venus_drive")
+    async_mock_service(hass, "script", "venus_neutral")
+    entry = MockConfigEntry(
+        domain=DOMAIN, version=2, entry_id="helios_force",
+        data={**_SOURCES, CONF_BATTERIES: [_VENUS]},
+    )
+    assert await _setup(hass, entry)
+    set_value = async_mock_service(hass, "number", "set_value")
+    # The real number.set_value is mocked now: set the force power on the entity directly
+    power = hass.data["entity_components"]["number"].get_entity("number.helios_battery_force_power")
+    await power.async_set_native_value(600)
+
+    await hass.services.async_call(
+        "select", "select_option",
+        {"entity_id": "select.helios_battery_force_direction", "option": "discharge"}, blocking=True,
+    )
+    await hass.services.async_call(
+        "select", "select_option",
+        {"entity_id": "select.helios_battery_force_duration", "option": "30min"}, blocking=True,
+    )
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.helios_battery_force"}, blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert [c.data["value"] for c in set_value] == [600]
+    battery = hass.states.get("sensor.helios_battery")
+    assert battery.state == "forced"
+    assert battery.attributes["force_direction"] == "discharge"
+    assert 29 <= battery.attributes["force_remaining_min"] <= 30
+    assert hass.states.get("switch.helios_battery_force").state == "on"
+
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.helios_battery_force"}, blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.helios_battery").state == "regulating"
+    assert hass.states.get("switch.helios_battery_force").state == "off"
     await hass.config_entries.async_unload(entry.entry_id)
