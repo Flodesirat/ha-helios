@@ -193,6 +193,32 @@ async def test_forecast_kwh_none_when_not_configured(
     )
 
 
+async def test_unload_cancels_startup_refresh(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+):
+    """Unloading while sources are unavailable must cancel the 60 s startup refresh.
+
+    Regression test (#5): the timer survived the unload and fired on the
+    unloaded coordinator (the HA fixture fails on "Lingering timer").
+    """
+    config_entry.add_to_hass(hass)
+    with (
+        patch.object(Store, "async_load", return_value=None),
+        patch.object(Store, "async_save", return_value=None),
+    ):
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+
+        coordinator = hass.data[DOMAIN][config_entry.entry_id]
+        assert coordinator._startup_check_unsub is not None, (
+            "Startup refresh should be scheduled while sources are missing"
+        )
+
+        assert await hass.config_entries.async_unload(config_entry.entry_id)
+
+    assert coordinator._startup_check_unsub is None
+
+
 async def test_double_unload_is_safe(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,

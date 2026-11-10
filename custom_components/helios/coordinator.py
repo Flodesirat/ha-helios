@@ -343,6 +343,9 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         if self._unsub_energy_reset:
             self._unsub_energy_reset()
             self._unsub_energy_reset = None
+        if self._startup_check_unsub:
+            self._startup_check_unsub()
+            self._startup_check_unsub = None
         self.battery_drive.async_stop()
         self.device_manager.async_unload()
 

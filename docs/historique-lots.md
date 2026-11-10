@@ -9,6 +9,7 @@ Chaque lot livré est consigné à la fin du fichier de son domaine dans
 | Drive | 2026-11-10 | batterie | #2 | Régulation en mode Drive, multi-batteries, pré-charge avant jour rouge, `switch.helios_battery_driving` | [historique/batterie.md](historique/batterie.md) |
 | Forçage | 2026-11-10 | batterie | #6 | Forçage de la batterie : charge / décharge, puissance, durée, depuis la carte | [historique/batterie.md](historique/batterie.md) |
 | Pas des prix | 2026-11-10 | config-flow | #4 | Formulaire Stratégie : pas des prix Tempo `0.0001` → `"any"` (refusé par HA) | [historique/config-flow.md](historique/config-flow.md) |
+| Relance de démarrage | 2026-11-10 | infra | #5 | Le timer de relance (sources indisponibles) est annulé au déchargement du coordinator | [historique/infra.md](historique/infra.md) |
 
 ## Consigner un nouveau lot
 
