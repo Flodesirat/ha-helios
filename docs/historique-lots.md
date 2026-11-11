@@ -18,6 +18,7 @@ Chaque lot livré est consigné à la fin du fichier de son domaine dans
 | Consigne climate | 2026-11-11 | appareils | #11 | HVAC : consigne lue dans l'attribut `temperature` d'une entité `climate` | [historique/appareils.md](historique/appareils.md) |
 | Sans Codecov | 2026-11-11 | infra | #13 | CI : suppression de l'envoi de couverture vers Codecov (échouait sans jeton) | [historique/infra.md](historique/infra.md) |
 | Économies et charge réseau | 2026-11-11 | batterie | #12 | Économies : la charge batterie depuis le réseau fait baisser les compteurs (plus de plancher à 0) | [historique/batterie.md](historique/batterie.md) |
+| Recalcul du quota piscine | 2026-11-11 | appareils | #15 | Piscine : quota du jour recalculé au rechargement après une modification de la config, depuis la température de minuit | [historique/appareils.md](historique/appareils.md) |
 
 ## Consigner un nouveau lot
 

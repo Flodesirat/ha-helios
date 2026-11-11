@@ -622,6 +622,110 @@ class TestPersistence:
         assert d2.pool_wintering is True
 
 
+async def _reload(device: ManagedDevice, stored: dict) -> DeviceManager:
+    """Simulate an options reload: a fresh DeviceManager restores *stored*."""
+    mgr, _ = _manager(device, {})
+    mgr._store.async_load = AsyncMock(return_value=stored)
+    mgr._unsub_ready_listeners = []
+    await mgr.async_setup()
+    return mgr
+
+
+def _stored_today(**over) -> dict:
+    entry = {
+        "date": date.today().isoformat(),
+        "minutes": 90.0,
+        "required_minutes": 360.0,   # 15 °C with "10:2, 20:10, 30:24"
+        "ref_water_temp": 15.0,
+        "wintering_prev": False,
+        "pool_wintering": False,
+    }
+    entry.update(over)
+    return {"Piscine": entry}
+
+
+class TestRecomputeAfterReload:
+    def test_capture_keeps_reference(self):
+        d = _device()
+        d.pool_wintering = True
+        d.try_capture_pool_required(_reader({WATER: "13"}), current_hour=0)
+        assert d.pool_ref_water_temp == 13.0
+        assert d.pool_wintering_prev is True
+
+    @pytest.mark.asyncio
+    async def test_saved_with_reference(self):
+        d = _device()
+        d.try_capture_pool_required(_reader({WATER: "15"}), current_hour=0)
+        mgr, _ = _manager(d, {})
+        await mgr._async_save_device_data()
+        saved = mgr._store.async_save.call_args[0][0]["Piscine"]
+        assert saved["ref_water_temp"] == 15.0
+        assert saved["wintering_prev"] is False
+
+    @pytest.mark.asyncio
+    async def test_table_change_recomputes_quota_and_keeps_run_time(self):
+        d = _device(**{CONF_POOL_FILTRATION_TABLE: "10:4, 20:12"})
+        mgr = await _reload(d, _stored_today())
+        assert d.pool_required_minutes_today == pytest.approx(480.0)   # 15 °C → 8 h
+        assert d.pool_daily_run_minutes == pytest.approx(90.0)
+        saved = mgr._store.async_save.call_args[0][0]["Piscine"]
+        assert saved["required_minutes"] == pytest.approx(480.0)
+
+    @pytest.mark.asyncio
+    async def test_unchanged_config_same_quota_no_save(self):
+        d = _device()
+        mgr = await _reload(d, _stored_today())
+        assert d.pool_required_minutes_today == pytest.approx(360.0)
+        mgr._store.async_save.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_wintering_threshold_change_replays_decision(self):
+        stored = _stored_today(ref_water_temp=13.0, wintering_prev=True,
+                               pool_wintering=True, required_minutes=120.0)
+        # Same threshold (12): 13 °C < 12 + 2 → still wintering
+        d = _device()
+        await _reload(d, stored)
+        assert d.pool_wintering is True
+        assert d.pool_required_minutes_today == pytest.approx(120.0)
+        # Threshold lowered to 10: 13 °C ≥ 10 + 2 → leaves wintering, table applies
+        d2 = _device(**{CONF_POOL_WINTERING_TEMP: 10.0})
+        await _reload(d2, stored)
+        assert d2.pool_wintering is False
+        assert d2.pool_required_minutes_today == pytest.approx(
+            filtration_hours(d2.pool_filtration_table, 13.0) * 60
+        )
+
+    @pytest.mark.asyncio
+    async def test_wintering_disabled_or_duration_changed(self):
+        stored = _stored_today(ref_water_temp=8.0, wintering_prev=True,
+                               pool_wintering=True, required_minutes=120.0)
+        d = _device(**{CONF_POOL_WINTERING_DURATION_H: 3.0})
+        await _reload(d, stored)
+        assert d.pool_required_minutes_today == pytest.approx(180.0)
+        d2 = _device(**{CONF_POOL_WINTERING_ENABLED: False})
+        await _reload(d2, stored)
+        assert d2.pool_wintering is False
+        assert d2.pool_required_minutes_today == pytest.approx(120.0)  # 8 °C → table end (2 h)
+
+    @pytest.mark.asyncio
+    async def test_old_store_without_reference_kept_as_is(self):
+        stored = _stored_today()
+        del stored["Piscine"]["ref_water_temp"]
+        del stored["Piscine"]["wintering_prev"]
+        d = _device(**{CONF_POOL_FILTRATION_TABLE: "10:4, 20:12"})
+        mgr = await _reload(d, stored)
+        assert d.pool_required_minutes_today == pytest.approx(360.0)
+        mgr._store.async_save.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stale_day_not_recomputed(self):
+        stored = _stored_today(date="2000-01-01")
+        d = _device(**{CONF_POOL_FILTRATION_TABLE: "10:4, 20:12"})
+        d.pool_last_date = None
+        await _reload(d, stored)
+        assert d.pool_required_minutes_today is None   # new day: wait for the midnight reading
+
+
 class TestConfigFlowValidation:
     def test_valid(self):
         assert _validate_pool(_cfg()) == {}

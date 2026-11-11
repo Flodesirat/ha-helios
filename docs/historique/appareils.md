@@ -158,3 +158,33 @@ toujours « satisfait », clim jamais. Trouvé en écrivant les tests de #8.
 - `test_managed_device_misc.py::TestHvacClimateSetpoint` (satisfaction et
   urgence avec une consigne `climate`, consigne absente) ; `TestHvac` pour la
   logique HVAC elle-même, jusque-là non testée.
+
+## Piscine : recalcul du quota après modification de la config (#15, 2026-11-11)
+
+### Contexte
+
+Modifier la loi de filtration dans les options recharge l'intégration, mais le
+quota du jour était restauré depuis le stockage : l'ancienne table restait
+appliquée jusqu'au minuit suivant.
+
+### Décisions
+
+- Le quota est recalculé au rechargement (`DeviceManager.async_setup`), avec la
+  **même référence** que le calcul de minuit : la température d'eau lue à
+  minuit, désormais sauvegardée (`ref_water_temp`). La sonde n'est pas relue.
+- L'état d'hivernage de la veille est sauvegardé (`wintering_prev`) pour
+  rejouer la décision du jour avec les nouveaux paramètres (activation, seuil,
+  durée), hystérésis comprise.
+- Le temps déjà filtré est conservé. Le nouveau quota est sauvegardé à la fin
+  de la restauration (après la batterie, pour ne pas écraser son état).
+- Stockage antérieur sans `ref_water_temp` : quota restauré tel quel. Jour
+  périmé : rien n'est recalculé, la lecture de minuit fera le calcul.
+- Correctif : pas de changement de version (la CI incrémente).
+
+### Tests ajoutés
+
+- `test_pool_filtration.py::TestRecomputeAfterReload` : référence gardée à la
+  lecture et sauvegardée ; table modifiée → nouveau quota, temps conservé,
+  sauvegarde ; config inchangée → même quota, pas de sauvegarde ; seuil
+  d'hivernage modifié (hystérésis rejouée) ; hivernage désactivé ou durée
+  modifiée ; ancien stockage ; jour périmé.

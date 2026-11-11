@@ -186,7 +186,7 @@ La même nuit, la pré-charge de la batterie mesure l'import réseau (chauffe-ea
 | Hors-gel : seuil de marche continue | −2 °C | Local sous ce seuil → marche continue ; sortie à seuil + 1 °C |
 | Hors-gel : durée d'une session | 15 min | Minutes de marche au début de chaque heure |
 
-**Journée** : le compteur de filtration et le quota repartent à minuit (premier cycle de la journée). Le hors-gel qui tourne après minuit compte donc dans la nouvelle journée.
+**Journée** : le compteur de filtration et le quota repartent à minuit (premier cycle de la journée). Le hors-gel qui tourne après minuit compte donc dans la nouvelle journée. Si la configuration de la piscine est modifiée dans la journée (loi de filtration, paramètres d'hivernage), le quota du jour est recalculé aussitôt, à partir de la température d'eau lue à minuit ; le temps déjà filtré est conservé.
 
 **Hivernage** : pas de plage horaire. La filtration se fait sur le surplus solaire ; ce qui manque se fait en heures creuses avant minuit. Helios force la pompe en heures creuses dès que le temps d'heures creuses restant avant minuit ne dépasse plus le temps manquant (ex. HC 22h–6h, 2 h manquantes → 22h–24h). Jamais de marche forcée en heures pleines. Sans créneau d'heures creuses configuré, l'urgence se calcule jusqu'à minuit.
 

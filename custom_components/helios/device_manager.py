@@ -98,6 +98,7 @@ class DeviceManager:
         data: dict = await self._store.async_load() or {}
         today = date.today()
         now_ts = time_mod.time()
+        pool_recomputed = False
 
         for device in self.devices:
             stored = data.get(device.name, {})
@@ -119,6 +120,10 @@ class DeviceManager:
                             required = stored.get("required_minutes")
                             if required is not None:
                                 device.pool_required_minutes_today = float(required)
+                            ref_temp = stored.get("ref_water_temp")
+                            if ref_temp is not None:
+                                device.pool_ref_water_temp = float(ref_temp)
+                                device.pool_wintering_prev = bool(stored.get("wintering_prev", False))
                             _LOGGER.debug(
                                 "Pool '%s': restored %.1f min done, %.1f min required for today",
                                 device.name, device.pool_daily_run_minutes,
@@ -129,6 +134,19 @@ class DeviceManager:
 
                 # Wintering state is kept across days (its hysteresis needs it)
                 device.pool_wintering = bool(stored.get("pool_wintering", False))
+
+                # The configuration may have changed (options reload): redo
+                # today's quota from the midnight reading, keep the run time.
+                before_required = device.pool_required_minutes_today
+                if device.recompute_pool_required():
+                    _LOGGER.info(
+                        "Pool '%s': quota recomputed after configuration change "
+                        "(water %.1f °C): %.1f → %.1f min%s",
+                        device.name, device.pool_ref_water_temp,
+                        before_required or 0.0, device.pool_required_minutes_today,
+                        " (wintering)" if device.pool_wintering else "",
+                    )
+                    pool_recomputed = True
 
                 # Restore force/inhibit only if still active
                 force_until = stored.get("pool_force_until")
@@ -279,6 +297,10 @@ class DeviceManager:
             if device.device_type == DEVICE_TYPE_APPLIANCE and device.appliance_ready_entity:
                 self._register_appliance_ready_listener(device)
 
+        # Persist a recomputed pool quota — once everything (battery included) is restored
+        if pool_recomputed:
+            await self._async_save_device_data()
+
     def _register_appliance_ready_listener(self, device: ManagedDevice) -> None:
         """Watch the ready entity and immediately trigger prepare on rising edge."""
 
@@ -372,6 +394,8 @@ class DeviceManager:
                     "pool_force_until":   device.pool_force_until,
                     "pool_inhibit_until": device.pool_inhibit_until,
                     "pool_wintering":     device.pool_wintering,
+                    "ref_water_temp":     device.pool_ref_water_temp,
+                    "wintering_prev":     device.pool_wintering_prev,
                 })
             data[device.name] = entry
         if self.battery_device is not None:

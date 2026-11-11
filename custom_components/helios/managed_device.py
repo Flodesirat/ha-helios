@@ -233,6 +233,10 @@ class ManagedDevice:
         self.pool_required_minutes_today: float | None = None
         # Wintering state decided at the midnight snapshot (persisted for its hysteresis)
         self.pool_wintering: bool                = False
+        # Inputs of today's snapshot, persisted so the quota can be recomputed
+        # with the same reference after a configuration change (reload)
+        self.pool_ref_water_temp: float | None   = None
+        self.pool_wintering_prev: bool           = False
         # Frost protection level, updated every cycle from the pump-room temperature
         self.pool_frost_level: str               = FROST_OFF
         # Runtime — current Tempo day is red (set by DeviceManager each cycle)
@@ -564,15 +568,35 @@ class ManagedDevice:
         water_temp = self._pool_temp(reader, self.pool_water_temp_entity)
         if water_temp is None:
             return  # no sensor / unavailable — try again next cycle
-        self.pool_wintering = self.pool_wintering_enabled and next_wintering(
-            self.pool_wintering, water_temp, self.pool_wintering_temp,
-        )
-        self.pool_required_minutes_today = self._pool_minutes_for(water_temp, self.pool_wintering)
+        self.pool_ref_water_temp = water_temp
+        self.pool_wintering_prev = self.pool_wintering
+        self._apply_pool_snapshot()
         _LOGGER.info(
             "Pool '%s': water %.1f °C at %02d:xx → %.1f min required today%s",
             self.name, water_temp, current_hour, self.pool_required_minutes_today,
             " (wintering)" if self.pool_wintering else "",
         )
+
+    def _apply_pool_snapshot(self) -> None:
+        """Wintering decision and quota from today's reference reading."""
+        self.pool_wintering = self.pool_wintering_enabled and next_wintering(
+            self.pool_wintering_prev, self.pool_ref_water_temp, self.pool_wintering_temp,
+        )
+        self.pool_required_minutes_today = self._pool_minutes_for(
+            self.pool_ref_water_temp, self.pool_wintering,
+        )
+
+    def recompute_pool_required(self) -> bool:
+        """Recompute today's quota with the current configuration (after a reload).
+
+        Uses the midnight reference reading — the sensor is not read again.
+        Returns True when the quota or the wintering state changed.
+        """
+        if self.pool_ref_water_temp is None:
+            return False  # no reference (store written before 1.2.x): keep as restored
+        before = (self.pool_required_minutes_today, self.pool_wintering)
+        self._apply_pool_snapshot()
+        return (self.pool_required_minutes_today, self.pool_wintering) != before
 
     def _pool_minutes_for(self, water_temp: float, wintering: bool) -> float:
         """Required filtration minutes for a given water temperature."""
