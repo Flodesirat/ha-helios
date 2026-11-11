@@ -318,8 +318,9 @@ class EnergyDailySavingsSensor(_BaseEOSensor):
     """Money saved today by solar self-consumption (€).
 
     Formula at each sample: (house_power - max(0, grid_power)) * dt_h * price_€/kWh
-    The price used is: price_hc during off-peak slots, price_rouge_hp on Tempo rouge peak,
-    price_hp otherwise.
+    Not floored at 0: charging the battery from the grid lowers the counter,
+    discharging it raises it back. The price is the Tempo color × HC/HP cell
+    of the current moment.
     """
 
     _attr_has_entity_name = True

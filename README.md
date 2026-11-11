@@ -564,6 +564,8 @@ Compteurs journaliers remis à zéro à minuit, et cumul total des économies :
 | `sensor.helios_daily_savings` | Sensor | Économie réalisée dans la journée par rapport à une consommation 100 % réseau (€) — remis à zéro à minuit |
 | `sensor.helios_total_savings` | Sensor | Économie cumulée depuis la création de l'intégration (€) |
 
+L'économie est calculée à chaque relevé : `(consommation maison − import réseau) × prix du moment` (couleur Tempo × HC/HP), soit le coût sans installation moins le coût réel. L'export n'est pas valorisé. Elle n'est pas bornée à 0 : une charge de la batterie depuis le réseau (forçage, pré-charge de nuit) **fait baisser** les compteurs du coût de l'énergie achetée, que la décharge restitue ensuite au tarif du moment. Sur un cycle charge HC / décharge HP, il reste le gain d'arbitrage moins les pertes. L'économie d'une journée peut donc être négative.
+
 #### Entité prévision journalière
 
 | Entité | Type | Description |

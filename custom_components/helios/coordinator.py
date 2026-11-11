@@ -220,9 +220,12 @@ class EnergyOptimizerCoordinator(DataUpdateCoordinator):
         self._energy_import_kwh      += max(0.0,  grid_w) * dt_kwh
         self._energy_export_kwh      += max(0.0, -grid_w) * dt_kwh
 
-        # Savings accumulation — self-consumed power (not imported) * current tariff
-        self_consumed_w = max(0.0, house_w - max(0.0, grid_w))
-        _savings_increment = self_consumed_w * dt_kwh * self._current_price_eur_kwh()
+        # Savings accumulation — (house - import) * current tariff, i.e. cost
+        # without the installation minus actual cost. Not floored at 0: house_w
+        # excludes battery charging, so a grid-fed charge makes it negative and
+        # the energy bought is credited back only when the battery discharges.
+        avoided_import_w = house_w - max(0.0, grid_w)
+        _savings_increment = avoided_import_w * dt_kwh * self._current_price_eur_kwh()
         self._savings_eur       += _savings_increment
         self._savings_month_eur += _savings_increment
         self._savings_total_eur += _savings_increment

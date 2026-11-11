@@ -13,6 +13,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.helios.const import (
     DOMAIN, CONF_GRID_POWER_ENTITY, CONF_HOUSE_POWER_ENTITY,
     CONF_PRICE_RED_HC, CONF_PRICE_RED_HP, CONF_PRICE_WHITE_HP,
+    CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS,
 )
 
 from .test_init import _setup
@@ -155,6 +156,65 @@ async def test_energy_from_another_month_keeps_total_only(hass, config_entry):
     await _restore(coord, _STORED, _local(2026, 12, 2, 10))
     assert coord._savings_month_eur == 0.0
     assert coord._savings_total_eur == 250.0
+
+
+# ---------------------------------------------------------------------------
+# Savings accumulation (issue #12)
+# ---------------------------------------------------------------------------
+
+async def _sample(hass, coord, *, grid: float, house: float, price: float) -> float:
+    """Run one sampling tick, return the energy of 1 W over the tick (kWh)."""
+    hass.states.async_set("sensor.grid_power", str(grid))
+    hass.states.async_set("sensor.house_power", str(house))
+    with patch.object(coord, "_current_price_eur_kwh", return_value=price):
+        await coord._async_sample_sensors(None)
+    sample_s = int(coord._cfg.get(CONF_SAMPLE_INTERVAL_SECONDS, DEFAULT_SAMPLE_INTERVAL_SECONDS))
+    return sample_s / 3_600_000.0
+
+
+def _zero_savings(coord) -> None:
+    coord._savings_eur = coord._savings_month_eur = coord._savings_total_eur = 0.0
+
+
+def _savings(coord) -> tuple[float, float, float]:
+    return coord._savings_eur, coord._savings_month_eur, coord._savings_total_eur
+
+
+async def test_grid_charge_decrements_savings(hass, config_entry):
+    """Battery charged from the grid: import 3000 W > house 500 W → counters drop."""
+    coord = await _coordinator(hass, config_entry)
+    _zero_savings(coord)
+    dt = await _sample(hass, coord, grid=3000.0, house=500.0, price=0.13)
+    expected = -2500.0 * dt * 0.13
+    assert _savings(coord) == pytest.approx((expected,) * 3)
+
+
+async def test_discharge_increments_savings(hass, config_entry):
+    """Battery feeds the house: no import → whole house consumption is saved."""
+    coord = await _coordinator(hass, config_entry)
+    _zero_savings(coord)
+    dt = await _sample(hass, coord, grid=0.0, house=800.0, price=0.70)
+    assert _savings(coord) == pytest.approx((800.0 * dt * 0.70,) * 3)
+
+
+async def test_export_counts_house_only(hass, config_entry):
+    """Exporting: the export itself is not valued, the house is."""
+    coord = await _coordinator(hass, config_entry)
+    _zero_savings(coord)
+    dt = await _sample(hass, coord, grid=-1500.0, house=400.0, price=0.16)
+    assert coord._savings_eur == pytest.approx(400.0 * dt * 0.16)
+
+
+async def test_hc_charge_hp_discharge_cycle_keeps_arbitrage(hass, config_entry):
+    """Charge 2000 W in HC, give back 1500 W in HP (losses): net = arbitrage gain."""
+    coord = await _coordinator(hass, config_entry)
+    _zero_savings(coord)
+    # HC: house 300 W, battery charges 2000 W from the grid → import 2300 W
+    dt = await _sample(hass, coord, grid=2300.0, house=300.0, price=0.13)
+    assert coord._savings_eur < 0
+    # HP: house 1500 W fully covered by the battery
+    await _sample(hass, coord, grid=0.0, house=1500.0, price=0.70)
+    assert coord._savings_eur == pytest.approx((1500.0 * 0.70 - 2000.0 * 0.13) * dt)
 
 
 # ---------------------------------------------------------------------------

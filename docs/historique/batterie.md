@@ -133,3 +133,33 @@ puissance et pour une durée choisies, depuis la carte.
 - `test_battery_driving_persistence.py` : sauvegarde / restauration du
   forçage, forçage expiré non restauré.
 - `test_bat_available.py::test_forced_returns_zero`.
+
+## Économies et charge depuis le réseau (#12, 2026-11-11)
+
+### Contexte
+
+Une charge de la batterie depuis le réseau (forçage, pré-charge de nuit) ne
+faisait pas bouger les compteurs d'économies, alors que la décharge était
+ensuite comptée comme économie. L'électricité achetée ressortait comme
+économisée. Cause : `max(0, maison − import)` dans
+`coordinator._async_sample_sensors`. `house_power` n'inclut pas la charge
+batterie, donc `maison − import < 0` pendant une charge réseau, et le plancher
+annulait l'incrément.
+
+### Décisions
+
+- **Économie = coût sans installation − coût réel**, soit
+  `(maison − import) × prix du moment`, sans plancher à 0. C'est la définition
+  qu'utilisait déjà la simulation (`cost_no_pv_eur − cost_eur`).
+- Charge réseau → les compteurs baissent au tarif du moment (HC) ; décharge →
+  ils remontent au tarif du moment (HP). Il reste le gain d'arbitrage moins les
+  pertes de rendement. La charge depuis le surplus PV reste neutre.
+- L'export n'est toujours pas valorisé.
+- L'économie d'une journée peut être négative. Les capteurs sont en
+  `state_class = TOTAL`, qui accepte les baisses : pas de changement d'entité.
+
+### Tests ajoutés
+
+- `test_coordinator_misc.py` : charge réseau (compteurs en baisse), décharge
+  (hausse), export (seule la maison compte), cycle charge HC / décharge HP
+  (solde = gain d'arbitrage).
