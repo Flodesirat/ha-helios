@@ -98,6 +98,7 @@ class DeviceManager:
         data: dict = await self._store.async_load() or {}
         today = date.today()
         now_ts = time_mod.time()
+        reader = ManagedDevice._make_ha_reader(self._hass)  # noqa: SLF001
         pool_recomputed = False
 
         for device in self.devices:
@@ -134,6 +135,22 @@ class DeviceManager:
 
                 # Wintering state is kept across days (its hysteresis needs it)
                 device.pool_wintering = bool(stored.get("pool_wintering", False))
+
+                # Today's quota was taken by a version that did not save its
+                # reference reading: read the sensor now and use it for the
+                # rest of the day (saved, so later reloads reuse it). Yesterday's
+                # wintering state is unknown — today's serves for the hysteresis.
+                if device.pool_quota_known() and device.pool_ref_water_temp is None:
+                    water_temp = device._pool_temp(reader, device.pool_water_temp_entity)  # noqa: SLF001
+                    if water_temp is not None:
+                        device.pool_ref_water_temp = water_temp
+                        device.pool_wintering_prev = device.pool_wintering
+                        pool_recomputed = True
+                        _LOGGER.info(
+                            "Pool '%s': no saved reference for today's quota — "
+                            "using the current water reading (%.1f °C)",
+                            device.name, water_temp,
+                        )
 
                 # The configuration may have changed (options reload): redo
                 # today's quota from the midnight reading, keep the run time.

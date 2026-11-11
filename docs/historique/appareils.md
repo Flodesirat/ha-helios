@@ -177,7 +177,12 @@ appliquée jusqu'au minuit suivant.
   durée), hystérésis comprise.
 - Le temps déjà filtré est conservé. Le nouveau quota est sauvegardé à la fin
   de la restauration (après la batterie, pour ne pas écraser son état).
-- Stockage antérieur sans `ref_water_temp` : quota restauré tel quel. Jour
+- Stockage antérieur sans `ref_water_temp` (jour de la mise à jour, constaté
+  en 1.3.0b1) : la sonde d'eau est lue au rechargement et devient la
+  référence du jour, sauvegardée et réutilisée aux rechargements suivants.
+  L'état d'hivernage du jour sert d'état de la veille pour l'hystérésis.
+  Limite acceptée par l'utilisateur : pompe arrêtée → la sonde peut indiquer la
+  température du local. Sonde indisponible : quota restauré tel quel. Jour
   périmé : rien n'est recalculé, la lecture de minuit fera le calcul.
 - Correctif : pas de changement de version (la CI incrémente).
 
@@ -187,4 +192,6 @@ appliquée jusqu'au minuit suivant.
   lecture et sauvegardée ; table modifiée → nouveau quota, temps conservé,
   sauvegarde ; config inchangée → même quota, pas de sauvegarde ; seuil
   d'hivernage modifié (hystérésis rejouée) ; hivernage désactivé ou durée
-  modifiée ; ancien stockage ; jour périmé.
+  modifiée ; jour périmé ; ancien stockage : sonde indisponible (quota
+  inchangé), lecture au rechargement puis réutilisée, référence sauvegardée
+  même à quota égal, hivernage conservé.
