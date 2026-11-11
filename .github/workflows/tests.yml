@@ -28,16 +28,7 @@ jobs:
             --cov=custom_components/helios \
             --cov-fail-under=100 \
             --cov-report=term-missing \
-            --cov-report=html:coverage-report \
-            --cov-report=xml:coverage.xml
-
-      - name: Upload coverage to Codecov
-        if: always()
-        uses: codecov/codecov-action@v4
-        with:
-          files: coverage.xml
-          flags: unittests
-          fail_ci_if_error: false
+            --cov-report=html:coverage-report
 
       - name: Upload test results
         if: always()

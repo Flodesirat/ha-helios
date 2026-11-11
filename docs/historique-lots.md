@@ -16,6 +16,7 @@ Chaque lot livré est consigné à la fin du fichier de son domaine dans
 | Couverture 100 % | 2026-11-11 | infra | #8 | Couverture de tests à 100 % exigée par la CI, code mort supprimé | [historique/infra.md](historique/infra.md) |
 | Sources vides | 2026-11-11 | config-flow | #10 | Options flow Sources : entités facultatives en `suggested_value`, champ vidé = source retirée | [historique/config-flow.md](historique/config-flow.md) |
 | Consigne climate | 2026-11-11 | appareils | #11 | HVAC : consigne lue dans l'attribut `temperature` d'une entité `climate` | [historique/appareils.md](historique/appareils.md) |
+| Sans Codecov | 2026-11-11 | infra | #13 | CI : suppression de l'envoi de couverture vers Codecov (échouait sans jeton) | [historique/infra.md](historique/infra.md) |
 
 ## Consigner un nouveau lot
 

@@ -65,3 +65,21 @@ Compléments dans `test_battery_drive.py` (erreurs de service, SOC inconnu,
 forçage avec pilotage coupé), `test_battery_config.py`, `test_daily_optimizer.py`,
 `test_diagnostics.py`. Les tests d'échéance figent l'heure (`datetime` patché)
 pour ne pas dépendre de l'heure d'exécution.
+
+## Suppression de l'envoi vers Codecov (#13, 2026-11-11)
+
+### Contexte
+
+L'étape Codecov de `tests.yml` échouait à chaque run : `codecov-action@v4`
+exige un jeton pour les pushes du dépôt. L'échec ne bloquait rien
+(`fail_ci_if_error: false`) et Codecov n'était utilisé nulle part.
+
+### Décisions
+
+- Étape supprimée, ainsi que `--cov-report=xml:coverage.xml` qui ne servait
+  qu'à elle. La couverture reste exigée par `--cov-fail-under=100` ; le détail
+  est dans les logs (`term-missing`) et l'artefact `coverage-report`.
+
+### Tests
+
+- Aucun changement de code : la CI doit rester verte avec le seuil de 100 %.
