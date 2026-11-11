@@ -34,6 +34,7 @@ from .const import (
     CONF_BATTERY_MAX_CHARGE_POWER_W,
     CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN,
+    CONF_BATTERY_MORNING_RESERVE_SOC, DEFAULT_BATTERY_MORNING_RESERVE_SOC,
     CONF_BATTERY_GRID_TARGET_BLUE_W,
     CONF_BATTERY_GRID_TARGET_WHITE_W,
     CONF_BATTERY_GRID_TARGET_RED_W,
@@ -103,6 +104,9 @@ class BatteryDriveController:
         self._cfg = cfg
         self._grid_entity: str | None = cfg.get(CONF_GRID_POWER_ENTITY)
         self._soc_min = float(cfg.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN))
+        # Off-peak floor: what is kept for the first peak hours, never below soc_min
+        self._morning_reserve = max(self._soc_min, float(cfg.get(
+            CONF_BATTERY_MORNING_RESERVE_SOC, DEFAULT_BATTERY_MORNING_RESERVE_SOC)))
         self._subscription_w = float(cfg.get(CONF_GRID_SUBSCRIPTION_W, DEFAULT_GRID_SUBSCRIPTION_W))
         self.batteries: list[_Battery] = [
             _Battery(b) for b in get_batteries(cfg) if b.get(CONF_BATTERY_DRIVE_POWER_ENTITY)
@@ -278,7 +282,7 @@ class BatteryDriveController:
                 return
             precharge = self._precharge_wanted()
             off_peak = self._coordinator.is_off_peak_now()
-            batteries, limits = self._available(allow_discharge=not (precharge or off_peak))
+            batteries, limits = self._available(allow_discharge=not precharge, off_peak=off_peak)
             if not batteries:
                 return
 
@@ -311,8 +315,15 @@ class BatteryDriveController:
                 self.state = BATTERY_STATE_PRECHARGE if precharge else BATTERY_STATE_REGULATING
             self._notify()
 
-    def _available(self, allow_discharge: bool) -> tuple[list[_Battery], list[BatteryLimits]]:
-        """Batteries with a known SOC (or none configured) and what each may do."""
+    def _available(
+        self, allow_discharge: bool, off_peak: bool = False,
+    ) -> tuple[list[_Battery], list[BatteryLimits]]:
+        """Batteries with a known SOC (or none configured) and what each may do.
+
+        Off-peak, discharge stops at the morning reserve; a battery without a
+        SOC entity does not discharge then, since the reserve cannot be checked.
+        """
+        min_soc = self._morning_reserve if off_peak else self._soc_min
         batteries: list[_Battery] = []
         limits: list[BatteryLimits] = []
         for bat in self.batteries:
@@ -323,8 +334,8 @@ class BatteryDriveController:
             batteries.append(bat)
             limits.append(battery_limits(
                 bat.max_discharge_w, bat.max_charge_w, soc,
-                min_soc=self._soc_min, max_soc=BATTERY_DRIVE_MAX_SOC,
-                allow_discharge=allow_discharge,
+                min_soc=min_soc, max_soc=BATTERY_DRIVE_MAX_SOC,
+                allow_discharge=allow_discharge and not (off_peak and soc is None),
             ))
         return batteries, limits
 

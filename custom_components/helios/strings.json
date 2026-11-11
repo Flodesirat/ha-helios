@@ -29,6 +29,7 @@
           "battery_soc_min": "SOC minimum (%)",
           "battery_soc_max": "SOC maximum (%)",
           "battery_soc_reserve_rouge": "SOC de réserve jours rouges (%)",
+          "battery_morning_reserve_soc": "Réserve du matin (SOC %)",
           "battery_priority": "Priorité de la batterie (1–10)",
           "battery_grid_target_blue_w": "Cible réseau jour bleu (W)",
           "battery_grid_target_white_w": "Cible réseau jour blanc (W)",
@@ -38,6 +39,7 @@
           "battery_soc_min": "Plancher de décharge sur jours bleus et blancs. Helios n'utilisera pas l'énergie batterie en dessous de ce seuil pour alimenter les appareils. Augmentez cette valeur pour conserver une réserve pour la nuit (ex : 30 %). La régulation ne décharge pas non plus en dessous.",
           "battery_soc_max": "Plafond de charge. Utilisé par l'optimiseur journalier pour les simulations. Doit correspondre à la valeur configurée dans votre onduleur. La régulation, elle, charge jusqu'à 100 %.",
           "battery_soc_reserve_rouge": "Seuil de protection en jour rouge. Si le SOC descend en dessous, Helios réserve la batterie : seuls les appareils dont la consommation tient dans le surplus PV seul peuvent être démarrés. La charge forcée la veille remplit la batterie à son maximum indépendamment de ce seuil. Ce seuil ne limite pas la régulation de la batterie.",
+          "battery_morning_reserve_soc": "SOC conservé en fin d'heures creuses pour couvrir les premières heures pleines, avant que les panneaux produisent. Au-dessus, la batterie se décharge la nuit pour laisser de la place au solaire ; en dessous, elle ne se décharge pas en heures creuses. Toujours au moins égal au SOC minimum. 100 % = aucune décharge en heures creuses.",
           "battery_priority": "Priorité relative de la batterie face aux appareils dans le dispatch greedy (1 = faible, 10 = haute). Recommandé : 7.",
           "battery_grid_target_blue_w": "Puissance réseau visée par la régulation (+ = import). Une petite valeur positive évite d'exporter."
         }
@@ -253,6 +255,7 @@
           "battery_soc_min": "SOC minimum (%)",
           "battery_soc_max": "SOC maximum (%)",
           "battery_soc_reserve_rouge": "SOC de réserve jours rouges (%)",
+          "battery_morning_reserve_soc": "Réserve du matin (SOC %)",
           "battery_priority": "Priorité de la batterie (1–10)",
           "battery_grid_target_blue_w": "Cible réseau jour bleu (W)",
           "battery_grid_target_white_w": "Cible réseau jour blanc (W)",
@@ -262,6 +265,7 @@
           "battery_soc_min": "Plancher de décharge sur jours bleus et blancs. Helios n'utilisera pas l'énergie batterie en dessous de ce seuil pour alimenter les appareils. Augmentez cette valeur pour conserver une réserve pour la nuit (ex : 30 %). La régulation ne décharge pas non plus en dessous.",
           "battery_soc_max": "Plafond de charge. Utilisé par l'optimiseur journalier pour les simulations. Doit correspondre à la valeur configurée dans votre onduleur. La régulation, elle, charge jusqu'à 100 %.",
           "battery_soc_reserve_rouge": "Seuil de protection en jour rouge. Si le SOC descend en dessous, Helios réserve la batterie : seuls les appareils dont la consommation tient dans le surplus PV seul peuvent être démarrés. La charge forcée la veille remplit la batterie à son maximum indépendamment de ce seuil. Ce seuil ne limite pas la régulation de la batterie.",
+          "battery_morning_reserve_soc": "SOC conservé en fin d'heures creuses pour couvrir les premières heures pleines, avant que les panneaux produisent. Au-dessus, la batterie se décharge la nuit pour laisser de la place au solaire ; en dessous, elle ne se décharge pas en heures creuses. Toujours au moins égal au SOC minimum. 100 % = aucune décharge en heures creuses.",
           "battery_priority": "Priorité relative de la batterie face aux appareils dans le dispatch greedy (1 = faible, 10 = haute). Recommandé : 7.",
           "battery_grid_target_blue_w": "Puissance réseau visée par la régulation (+ = import). Une petite valeur positive évite d'exporter."
         }

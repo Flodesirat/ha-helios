@@ -15,7 +15,7 @@ from custom_components.helios.const import (
     CONF_BATTERY_SOC_ENTITY, CONF_BATTERY_DRIVE_POWER_ENTITY,
     CONF_BATTERY_DRIVE_SCRIPT, CONF_BATTERY_NEUTRAL_SCRIPT,
     CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
-    CONF_BATTERY_SOC_MIN,
+    CONF_BATTERY_SOC_MIN, CONF_BATTERY_MORNING_RESERVE_SOC,
     CONF_BATTERY_GRID_TARGET_BLUE_W, CONF_BATTERY_GRID_TARGET_RED_W,
     CONF_GRID_POWER_ENTITY, CONF_GRID_SUBSCRIPTION_W,
     BATTERY_STATE_OFF, BATTERY_STATE_STARTUP_WAIT, BATTERY_STATE_REGULATING,
@@ -231,6 +231,68 @@ class TestRegulation:
         assert _written(services) == [("number.a_drive", 0)]
         await ctrl.async_handle_reading(-400.0, at=101.0)
         assert _written(services)[-1] == ("number.a_drive", -430)
+        ctrl.async_stop()
+
+
+# ---------------------------------------------------------------------------
+# Morning reserve (off-peak discharge floor)
+# ---------------------------------------------------------------------------
+
+class TestMorningReserve:
+
+    async def _off_peak(self, hass, reserve, soc, battery=None):
+        coord = _coordinator([battery or _battery("A")], **{CONF_BATTERY_MORNING_RESERVE_SOC: reserve})
+        coord.is_off_peak_now.return_value = True
+        ctrl = await _started(hass, coord)
+        hass.states.async_set("sensor.a_soc", str(soc))
+        return coord, ctrl
+
+    async def test_discharges_above_reserve(self, hass, services):
+        """Heures creuses, SOC au-dessus de la réserve → décharge vers la cible."""
+        _, ctrl = await self._off_peak(hass, reserve=60, soc=80)
+        await ctrl.async_handle_reading(500.0, at=100.0)
+        assert _written(services) == [("number.a_drive", 470)]
+        ctrl.async_stop()
+
+    async def test_stops_at_reserve(self, hass, services):
+        """SOC = réserve → plus de décharge, la charge sur export reste possible."""
+        _, ctrl = await self._off_peak(hass, reserve=60, soc=60)
+        await ctrl.async_handle_reading(500.0, at=100.0)
+        assert _written(services) == [("number.a_drive", 0)]
+        await ctrl.async_handle_reading(-400.0, at=101.0)
+        assert _written(services)[-1] == ("number.a_drive", -430)
+        ctrl.async_stop()
+
+    async def test_reserve_used_during_peak_hours(self, hass, services):
+        """Heures pleines : la réserve est consommée, jusqu'au SOC min."""
+        coord, ctrl = await self._off_peak(hass, reserve=60, soc=40)
+        coord.is_off_peak_now.return_value = False
+        await ctrl.async_handle_reading(500.0, at=100.0)
+        assert _written(services) == [("number.a_drive", 470)]
+        ctrl.async_stop()
+
+    async def test_reserve_never_below_soc_min(self, hass, services):
+        """Réserve < SOC min (10 %) → le SOC min s'applique."""
+        _, ctrl = await self._off_peak(hass, reserve=5, soc=10)
+        await ctrl.async_handle_reading(500.0, at=100.0)
+        assert _written(services) == [("number.a_drive", 0)]
+        ctrl.async_stop()
+
+    async def test_no_soc_entity_no_discharge(self, hass, services):
+        """Sans entité SOC, la réserve ne peut pas être vérifiée : pas de décharge en HC."""
+        bat = _battery("A")
+        del bat[CONF_BATTERY_SOC_ENTITY]
+        _, ctrl = await self._off_peak(hass, reserve=60, soc=80, battery=bat)
+        await ctrl.async_handle_reading(500.0, at=100.0)
+        assert _written(services) == [("number.a_drive", 0)]
+        ctrl.async_stop()
+
+    async def test_precharge_wins_over_reserve(self, hass, services):
+        """Veille de jour rouge : la pré-charge reste prioritaire."""
+        coord, ctrl = await self._off_peak(hass, reserve=60, soc=80)
+        coord.tempo_next_color = "red"
+        await ctrl.async_handle_reading(300.0, at=100.0)
+        assert _written(services) == [("number.a_drive", -1450)]
         ctrl.async_stop()
 
 

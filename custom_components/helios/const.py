@@ -23,6 +23,7 @@ CONF_BATTERY_PRIORITY             = "battery_priority"
 CONF_BATTERY_SOC_MIN              = "battery_soc_min"
 CONF_BATTERY_SOC_MAX              = "battery_soc_max"
 CONF_BATTERY_SOC_RESERVE_ROUGE    = "battery_soc_reserve_rouge"
+CONF_BATTERY_MORNING_RESERVE_SOC  = "battery_morning_reserve_soc"  # SOC gardé en heures creuses pour le matin
 CONF_BATTERY_GRID_TARGET_BLUE_W   = "battery_grid_target_blue_w"   # cible réseau de la régulation (W, + = import)
 CONF_BATTERY_GRID_TARGET_WHITE_W  = "battery_grid_target_white_w"
 CONF_BATTERY_GRID_TARGET_RED_W    = "battery_grid_target_red_w"
@@ -253,6 +254,7 @@ DEFAULT_BATTERY_PRIORITY           = 7
 DEFAULT_BATTERY_SOC_MIN            = 10     # %
 DEFAULT_BATTERY_SOC_MAX            = 95     # %
 DEFAULT_BATTERY_SOC_RESERVE_ROUGE  = 80     # %
+DEFAULT_BATTERY_MORNING_RESERVE_SOC = 100   # % — 100 = pas de décharge en heures creuses
 DEFAULT_BATTERY_CAPACITY_KWH       = 5.0
 DEFAULT_BATTERY_GRID_TARGET_W      = 30     # W — léger import plutôt que risquer d'exporter
 DEFAULT_BATTERY_NAME               = "Batterie"

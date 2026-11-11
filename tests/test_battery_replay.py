@@ -14,6 +14,9 @@ The reference (540 Wh import, 119 Wh export) is marstek-smartmeter's
 tools/replay.py with the settings of tools/ha_drive.py — target 30 W, settle
 3 s, 1450 W, 30 W step — which knows exactly what was sent (the _Sent model).
 Helios does not: it counts a written value as applied.
+
+The same day is also replayed as if it were off-peak, with a morning reserve:
+above it the regulation is unchanged, at it the battery does not discharge.
 """
 from __future__ import annotations
 
@@ -27,7 +30,8 @@ from custom_components.helios.battery_drive import BatteryDriveController
 from custom_components.helios.managed_device import BatteryDevice
 from custom_components.helios.const import (
     CONF_BATTERIES, CONF_BATTERY_ENABLED, CONF_BATTERY_NAME,
-    CONF_BATTERY_DRIVE_POWER_ENTITY,
+    CONF_BATTERY_DRIVE_POWER_ENTITY, CONF_BATTERY_SOC_ENTITY,
+    CONF_BATTERY_MORNING_RESERVE_SOC,
     CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     CONF_BATTERY_GRID_TARGET_BLUE_W, CONF_GRID_POWER_ENTITY,
     BATTERY_STATE_REGULATING,
@@ -49,8 +53,13 @@ def _load_house() -> list[tuple[float, float]]:
         return [(float(r["seconds"]), float(r["house_w"])) for r in rows]
 
 
-def _controller() -> tuple[BatteryDriveController, list[float]]:
-    """A controller driving one battery, its number.set_value calls recorded."""
+def _controller(
+    off_peak: bool = False, soc: float | None = None, reserve: float | None = None,
+) -> tuple[BatteryDriveController, list[float]]:
+    """A controller driving one battery, its number.set_value calls recorded.
+
+    With *soc*, the battery has a SOC entity held at that level.
+    """
     written: list[float] = []
 
     async def _async_call(domain, service, data=None, blocking=False):  # noqa: ARG001
@@ -59,30 +68,36 @@ def _controller() -> tuple[BatteryDriveController, list[float]]:
 
     hass = MagicMock()
     hass.services.async_call = AsyncMock(side_effect=_async_call)
+    hass.states.get.return_value = MagicMock(state=str(soc))
+    battery = {
+        CONF_BATTERY_NAME: "Venus A",
+        CONF_BATTERY_DRIVE_POWER_ENTITY: "number.venus_drive",
+        CONF_BATTERY_MAX_CHARGE_POWER_W: _MAX_W,
+        CONF_BATTERY_MAX_DISCHARGE_POWER_W: _MAX_W,
+    }
+    if soc is not None:
+        battery[CONF_BATTERY_SOC_ENTITY] = "sensor.venus_soc"
     coordinator = MagicMock()
     coordinator.config = {
         CONF_BATTERY_ENABLED: True,
         CONF_GRID_POWER_ENTITY: "sensor.grid",
         CONF_BATTERY_GRID_TARGET_BLUE_W: 30,
-        CONF_BATTERIES: [{
-            CONF_BATTERY_NAME: "Venus A",
-            CONF_BATTERY_DRIVE_POWER_ENTITY: "number.venus_drive",
-            CONF_BATTERY_MAX_CHARGE_POWER_W: _MAX_W,
-            CONF_BATTERY_MAX_DISCHARGE_POWER_W: _MAX_W,
-        }],
+        CONF_BATTERIES: [battery],
     }
+    if reserve is not None:
+        coordinator.config[CONF_BATTERY_MORNING_RESERVE_SOC] = reserve
     coordinator.tempo_color = "blue"
     coordinator.tempo_next_color = "blue"
-    coordinator.is_off_peak_now.return_value = False  # 10:09–17:26, daytime
+    coordinator.is_off_peak_now.return_value = off_peak  # recorded 10:09–17:26, daytime
     coordinator.device_manager.battery_device = BatteryDevice({})  # no force
     ctrl = BatteryDriveController(hass, coordinator)
     ctrl.active = True  # as after the Drive script
     return ctrl, written
 
 
-async def _replay() -> dict[str, float]:
+async def _replay(**kwargs) -> dict[str, float]:
     house = _load_house()
-    ctrl, written = _controller()
+    ctrl, written = _controller(**kwargs)
     battery: list[tuple[float, float]] = [(float("-inf"), 0.0)]  # (takes effect at, W)
     sent, sent_at = 0.0, float("-inf")
 
@@ -113,6 +128,7 @@ async def _replay() -> dict[str, float]:
         key = "import_wh" if grid >= 0 else "export_wh"
         result[key] += abs(grid) * (b - a) / 3600
     result["state"] = ctrl.state
+    result["max_written"] = max(written, default=0.0)
     return result
 
 
@@ -127,3 +143,20 @@ async def test_replay_16_10_close_to_reference():
     assert r["state"] == BATTERY_STATE_REGULATING
     assert r["import_wh"] <= REFERENCE_IMPORT_WH * 1.05
     assert r["export_wh"] <= REFERENCE_EXPORT_WH * 1.10
+
+
+@pytest.mark.asyncio
+async def test_replay_off_peak_above_morning_reserve():
+    """Heures creuses, SOC au-dessus de la réserve : régulation identique."""
+    day = await _replay()
+    night = await _replay(off_peak=True, soc=80, reserve=50)
+    assert night["import_wh"] == pytest.approx(day["import_wh"])
+    assert night["export_wh"] == pytest.approx(day["export_wh"])
+
+
+@pytest.mark.asyncio
+async def test_replay_off_peak_at_morning_reserve():
+    """SOC à la réserve : aucune consigne de décharge, la charge sur export reste."""
+    r = await _replay(off_peak=True, soc=50, reserve=50)
+    assert r["max_written"] == 0
+    assert r["import_wh"] > REFERENCE_IMPORT_WH * 3

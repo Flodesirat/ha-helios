@@ -137,6 +137,7 @@ def _make_coordinator(
         "battery_soc_min":               10,
         "battery_soc_max":               95,
         "battery_soc_reserve_rouge":     80,
+        "battery_morning_reserve_soc":   60,
         "battery_max_charge_power_w":    3000,
         "battery_max_discharge_power_w": 3000,
         # Strategy
@@ -338,6 +339,7 @@ class TestConfigurationSection:
         assert bat["soc_min"]           == 10
         assert bat["soc_max"]           == 95
         assert bat["soc_reserve_rouge"] == 80
+        assert bat["morning_reserve_soc"] == 60
         assert bat["max_charge_power_w"]    == 3000
         assert bat["max_discharge_power_w"] == 3000
 

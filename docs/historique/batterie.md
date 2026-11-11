@@ -163,3 +163,42 @@ annulait l'incrément.
 - `test_coordinator_misc.py` : charge réseau (compteurs en baisse), décharge
   (hausse), export (seule la maison compte), cycle charge HC / décharge HP
   (solde = gain d'arbitrage).
+
+## Réserve du matin (#14, 2026-11-11)
+
+### Contexte
+
+La régulation Drive interdisait toute décharge en heures creuses (règle
+« première version » du lot Drive). Une batterie pleine le soir le restait
+jusqu'au matin : la nuit était couverte par le réseau et, au lever du jour, la
+batterie ne pouvait pas absorber la production solaire.
+
+### Décisions
+
+- Nouveau paramètre global `battery_morning_reserve_soc` (« Réserve du
+  matin », %), étape Battery et options flow. Il arbitre entre deux
+  objectifs : garder de l'énergie pour les premières heures pleines (un kWh
+  restitué en HP vaut plus qu'en HC) et vider la batterie pour le solaire.
+- En heures creuses, la régulation décharge jusqu'à
+  `max(battery_soc_min, réserve)` ; au-dessous, consigne ≤ 0 (la charge sur
+  export reste possible). En heures pleines, seul `battery_soc_min` compte.
+- **Défaut 100 %** : comportement inchangé pour les installations existantes.
+- Batterie sans entité SOC : pas de décharge en heures creuses, la réserve ne
+  pouvant pas être vérifiée (comme avant).
+- Pré-charge avant jour rouge prioritaire (pas de décharge) ; forçage
+  inchangé (limites SOC globales seulement).
+- Le dispatch des appareils (`bat_available_w`) n'est pas modifié.
+- Exposé dans les diagnostics (`battery.morning_reserve_soc`).
+- Pistes non retenues pour ce lot : réserve selon la couleur Tempo du
+  lendemain, réserve calculée depuis la prévision PV et la consommation du
+  matin.
+
+### Tests ajoutés
+
+- `test_battery_drive.py::TestMorningReserve` : décharge au-dessus de la
+  réserve, arrêt à la réserve (charge sur export conservée), réserve consommée
+  en HP, réserve < SOC min, batterie sans entité SOC, pré-charge prioritaire.
+- `test_battery_replay.py` : rejeu du 16/10 en heures creuses — SOC au-dessus
+  de la réserve (import / export identiques au rejeu de jour), SOC à la
+  réserve (aucune consigne de décharge).
+- `test_diagnostics.py` : clé `morning_reserve_soc`.

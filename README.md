@@ -39,6 +39,7 @@ L'étape se fait en deux temps : les réglages communs, puis un formulaire par b
 | Batterie activée | Active tout le module batterie |
 | SOC min | Plancher de charge journalier (%). En dessous de ce seuil, la batterie est prioritaire sur tous les appareils (urgence = 1.0) et `bat_available_w` = 0 (la batterie ne cède rien aux autres). La régulation ne décharge pas non plus en dessous. |
 | SOC min jour rouge | Plancher de charge les jours Tempo rouge (%), pour le pilotage des appareils. Remplace `SOC min` en jour rouge — même logique, plancher plus élevé pour protéger la réserve. **Ne limite pas la régulation.** |
+| Réserve du matin | SOC conservé en fin d'heures creuses pour couvrir les premières heures pleines, avant que les panneaux produisent (%). En heures creuses, la régulation décharge jusqu'à ce seuil puis s'arrête : au-dessus, la batterie se vide la nuit pour laisser de la place au solaire. En heures pleines, la réserve est consommée normalement, jusqu'au `SOC min`. Jamais inférieure au `SOC min`. Défaut : 100 % (aucune décharge en heures creuses). |
 | SOC max | Plafond de charge (%) pour le pilotage des appareils. La demande de charge de la batterie descend linéairement de `charge_max_w` à 0 entre `SOC min` et `SOC max`. Au-delà, la batterie ne demande plus de budget. La régulation, elle, charge jusqu'à 100 %. |
 | Priorité batterie (1–10) | Importance de la batterie dans l'allocation greedy, sur la même échelle que les appareils. Défaut : 7. Une priorité haute garantit que la batterie est chargée avant les appareils moins importants ; une priorité basse lui permet de passer après eux quand le surplus est limité. Son urgence (dérivée du déficit SOC) peut amplifier ou atténuer l'effet de la priorité. |
 | Cible réseau jour bleu / blanc / rouge | Puissance réseau visée par la régulation selon la couleur Tempo du jour (W, + = import). Défaut : 30 W — un léger import plutôt que de risquer d'exporter. |
@@ -69,7 +70,7 @@ consigne = clamp( puissance appliquée au moment du relevé + réseau − cible 
 - **Correction immédiate et complète**, sans gain, bande morte ni filtre (testé sur une journée rejouée : ces variantes coûtaient environ 20 % d'import en plus).
 - **Base = consigne réellement appliquée au moment de la mesure** : une consigne écrite compte comme appliquée 3 s après l'écriture. Sans cela, avec un compteur lent (10 à 15 s), la même erreur serait corrigée deux fois.
 - **Bornes** : puissances max de chaque batterie ; pas de décharge si SOC ≤ `SOC min` ; pas de charge à 100 %.
-- **Pas de décharge en heures creuses** : la consigne est bornée à ≤ 0 (la charge sur export reste possible).
+- **Heures creuses : décharge jusqu'à la réserve du matin** (`battery_morning_reserve_soc`). Au-dessous, la consigne est bornée à ≤ 0 (la charge sur export reste possible). Une batterie sans entité SOC ne se décharge pas en heures creuses (la réserve ne peut pas être vérifiée). Avec la réserve à 100 % (défaut), aucune décharge en heures creuses.
 - **Plusieurs batteries** : la consigne est répartie à parts égales (consigne / N). La part qu'une batterie ne peut pas prendre (vide, pleine, à sa puissance max) va aux autres. Une batterie dont le SOC est indisponible est laissée de côté.
 - La consigne n'est écrite (`number.set_value`) que si sa valeur arrondie change. Le seuil d'envoi et le rafraîchissement vers la batterie restent gérés par l'intégration de la batterie.
 
@@ -100,7 +101,7 @@ Comme les autres appareils, la batterie peut être forcée, depuis la modale bat
 | Lancer / arrêter | `switch.helios_battery_force` | Attribut `force_remaining_min` |
 
 - Pendant le forçage, la régulation est suspendue et la consigne est fixe (`+puissance` en décharge, `−puissance` en charge). Changer le sens ou la puissance s'applique tout de suite.
-- **Seules les limites de SOC s'appliquent** : charge jusqu'à 100 %, décharge jusqu'à `SOC min`. La puissance souscrite et l'interdiction de décharger en heures creuses ne s'appliquent pas.
+- **Seules les limites de SOC s'appliquent** : charge jusqu'à 100 %, décharge jusqu'à `SOC min`. La puissance souscrite et la réserve du matin ne s'appliquent pas.
 - Le forçage s'arrête à la fin de la durée, à l'arrêt du switch, ou dès que les batteries atteignent leur limite de SOC. La régulation reprend alors depuis la puissance du forçage.
 - Il passe avant la pré-charge du jour rouge.
 - Avec le pilotage sur OFF, le forçage utilise Drive le temps du forçage : script Drive au début, script neutre à la fin ; `switch.helios_battery_driving` reste sur OFF.

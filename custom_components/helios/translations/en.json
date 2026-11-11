@@ -29,6 +29,7 @@
           "battery_soc_min": "Minimum SOC (%)",
           "battery_soc_max": "Maximum SOC (%)",
           "battery_soc_reserve_rouge": "Reserve SOC on red Tempo days (%)",
+          "battery_morning_reserve_soc": "Morning reserve (SOC %)",
           "battery_priority": "Battery priority (1–10)",
           "battery_grid_target_blue_w": "Grid target on blue days (W)",
           "battery_grid_target_white_w": "Grid target on white days (W)",
@@ -38,6 +39,7 @@
           "battery_soc_min": "Discharge floor on blue and white days. Helios will not draw battery energy below this threshold to power appliances. Increase this value to keep a reserve for the evening (e.g. 30%). The regulation does not discharge below it either.",
           "battery_soc_max": "Charge ceiling. Used by the daily optimizer for simulations. Should match the value configured in your inverter. The regulation itself charges up to 100 %.",
           "battery_soc_reserve_rouge": "Protection threshold on red Tempo days. If SOC drops below this level, Helios reserves the battery: only appliances whose consumption fits within the PV surplus alone can be started. The forced charge the previous evening fills the battery to its maximum regardless of this threshold. This threshold does not limit the battery regulation.",
+          "battery_morning_reserve_soc": "SOC kept at the end of off-peak hours to cover the first peak hours, before the panels produce. Above it, the battery discharges at night to make room for solar; below it, it does not discharge during off-peak hours. Never lower than the minimum SOC. 100 % = no discharge during off-peak hours.",
           "battery_priority": "Relative priority of the battery vs. devices in greedy dispatch (1 = low, 10 = high). Recommended: 7.",
           "battery_grid_target_blue_w": "Grid power the regulation aims at (+ = import). A small positive value avoids exporting."
         }
@@ -242,6 +244,7 @@
           "battery_soc_min": "Minimum SOC (%)",
           "battery_soc_max": "Maximum SOC (%)",
           "battery_soc_reserve_rouge": "Reserve SOC on red Tempo days (%)",
+          "battery_morning_reserve_soc": "Morning reserve (SOC %)",
           "battery_priority": "Battery priority (1–10)",
           "battery_grid_target_blue_w": "Grid target on blue days (W)",
           "battery_grid_target_white_w": "Grid target on white days (W)",
@@ -251,6 +254,7 @@
           "battery_soc_min": "Discharge floor on blue and white days. Helios will not draw battery energy below this threshold to power appliances. Increase this value to keep a reserve for the evening (e.g. 30%). The regulation does not discharge below it either.",
           "battery_soc_max": "Charge ceiling. Used by the daily optimizer for simulations. Should match the value configured in your inverter. The regulation itself charges up to 100 %.",
           "battery_soc_reserve_rouge": "Protection threshold on red Tempo days. If SOC drops below this level, Helios reserves the battery: only appliances whose consumption fits within the PV surplus alone can be started. The forced charge the previous evening fills the battery to its maximum regardless of this threshold. This threshold does not limit the battery regulation.",
+          "battery_morning_reserve_soc": "SOC kept at the end of off-peak hours to cover the first peak hours, before the panels produce. Above it, the battery discharges at night to make room for solar; below it, it does not discharge during off-peak hours. Never lower than the minimum SOC. 100 % = no discharge during off-peak hours.",
           "battery_priority": "Relative priority of the battery vs. devices in greedy dispatch (1 = low, 10 = high). Recommended: 7.",
           "battery_grid_target_blue_w": "Grid power the regulation aims at (+ = import). A small positive value avoids exporting."
         }

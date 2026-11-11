@@ -24,6 +24,7 @@ from .const import (
     CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN,
     CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX,
     CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE,
+    CONF_BATTERY_MORNING_RESERVE_SOC, DEFAULT_BATTERY_MORNING_RESERVE_SOC,
     CONF_BATTERY_MAX_CHARGE_POWER_W, CONF_BATTERY_MAX_DISCHARGE_POWER_W,
     # Strategy
     CONF_ENABLED, DEFAULT_ENABLED, DEFAULT_SCAN_INTERVAL,
@@ -210,6 +211,7 @@ async def async_get_config_entry_diagnostics(
             "soc_min":             cfg.get(CONF_BATTERY_SOC_MIN, DEFAULT_BATTERY_SOC_MIN),
             "soc_max":             cfg.get(CONF_BATTERY_SOC_MAX, DEFAULT_BATTERY_SOC_MAX),
             "soc_reserve_rouge":   cfg.get(CONF_BATTERY_SOC_RESERVE_ROUGE, DEFAULT_BATTERY_SOC_RESERVE_ROUGE),
+            "morning_reserve_soc": cfg.get(CONF_BATTERY_MORNING_RESERVE_SOC, DEFAULT_BATTERY_MORNING_RESERVE_SOC),
             "max_charge_power_w":  cfg.get(CONF_BATTERY_MAX_CHARGE_POWER_W),
             "max_discharge_power_w": cfg.get(CONF_BATTERY_MAX_DISCHARGE_POWER_W),
         },
